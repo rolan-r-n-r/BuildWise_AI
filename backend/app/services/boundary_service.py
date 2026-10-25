@@ -28,6 +28,15 @@ SQM_PER_SQFT = 0.09290304
 BOUNDARY_MIN_AREA_SQM = 36.0
 BOUNDARY_MIN_EDGE_M = 1.0
 
+# Upper bounds are NOT statutory: they are the operational envelope of the
+# geometry engine.  The site-preview solve scans a 0.75 m grid over the plot,
+# so its cost grows with the square of the span; an unbounded span let a single
+# 1e9 m boundary occupy the worker indefinitely.  2000 m matches
+# the FloorPlanRequest dimension cap, and 100 ha is far beyond any single
+# building project this tool assesses.
+BOUNDARY_MAX_SPAN_M = 2000.0
+BOUNDARY_MAX_AREA_SQM = 1_000_000.0
+
 
 class BoundaryValidationError(ValueError):
     """A boundary the statutory/geometry checks reject (maps to HTTP 422)."""
@@ -88,6 +97,9 @@ def summarize_boundary(boundary: Any) -> dict:
             "Boundary polygon is self-intersecting (bow-tie outline). "
             "Re-capture a simple, non-crossing plot boundary."
         )
+    violation = boundary_bounds_violation(vertices)
+    if violation:
+        raise BoundaryValidationError(violation)
 
     client_area = getattr(boundary, "area_sqm", None)
     area_sqft = round(area / SQM_PER_SQFT, 1)
@@ -117,6 +129,34 @@ def summarize_boundary(boundary: Any) -> dict:
             "area_method": "shoelace (server-recomputed, authoritative)",
         },
     }
+
+
+def boundary_bounds_violation(vertices: Sequence[Tuple[float, float]]) -> Optional[str]:
+    """Return the operational-limit message for an unbounded/oversized plot.
+
+    Shared by ``summarize_boundary`` (/api/analyze) and the site-preview solve
+    so both entry points refuse the same inputs with the same wording.  Without
+    this the preview's grid scan is unbounded work for an unauthenticated
+    request.
+    """
+    if not vertices:
+        return None
+    xs = [v[0] for v in vertices]
+    ys = [v[1] for v in vertices]
+    span = max(max(xs) - min(xs), max(ys) - min(ys))
+    if span > BOUNDARY_MAX_SPAN_M:
+        return (
+            f"Boundary span {span:,.0f} m exceeds the {BOUNDARY_MAX_SPAN_M:,.0f} m "
+            "operational limit for site analysis. Capture the building plot, not a "
+            "regional extent."
+        )
+    area = shoelace_area_sqm(vertices)
+    if area > BOUNDARY_MAX_AREA_SQM:
+        return (
+            f"Boundary area {area:,.0f} m² exceeds the {BOUNDARY_MAX_AREA_SQM:,.0f} m² "
+            "operational limit for site analysis."
+        )
+    return None
 
 
 def _signed_area(vertices: Sequence[Tuple[float, float]]) -> float:

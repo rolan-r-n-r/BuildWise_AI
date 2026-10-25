@@ -28,6 +28,7 @@ from shapely.ops import unary_union
 
 from app.schemas.site_intelligence import SiteAnnotation, SitePreviewRequest, SitePreviewResponse
 from app.schemas.site_plan import PlotPolygonModel, SitePlanModel
+from app.services.boundary_service import boundary_bounds_violation
 from app.services.floorplan.site_geometry import compute_canonical_site_plan
 
 PREVIEW_CACHE_MAX_ENTRIES = 128
@@ -276,6 +277,12 @@ def compute_site_preview(req: SitePreviewRequest) -> SitePreviewResponse:
         raise BoundaryStatutoryViolation(f"Boundary area {area} m² is below the statutory minimum 36 m².")
     if min_edge < 1.0:
         raise BoundaryStatutoryViolation(f"Boundary edge {min_edge:.2f} m is below the statutory minimum 1.00 m.")
+
+    # Operational envelope: the solve below is a 0.75 m grid scan, so an
+    # unbounded span turns one request into unbounded work.
+    bounds_violation = boundary_bounds_violation([(v.x, v.y) for v in b.vertices])
+    if bounds_violation:
+        raise BoundaryStatutoryViolation(bounds_violation)
 
     coverage = req.ground_coverage_ratio if req.ground_coverage_ratio is not None else 0.60
     frontage_idx = (
