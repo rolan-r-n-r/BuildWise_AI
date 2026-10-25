@@ -139,15 +139,17 @@ The architecture behind these suites is documented in [Space Engine](space-engin
 #### The gate set — one command, one exit status
 
 Every change that can move a drawn plan, a printed page or an invariant runs the
-same commands. CI (`.github/workflows/ci.yml`) calls exactly these, so a green
-local run means a green pipeline step.
+same commands. CI (`.github/workflows/ci.yml`) runs the backend gates and the
+build/report-surface and selection-policy steps; the full browser set below is
+run locally before delivery, and uses the same scripts CI runs.
 
 | Gate | Command (from the stated directory) | Passes when |
 |:---|:---|:---|
-| Backend gates | `cd backend && python scripts/qa_gates.py` | the suite, the report/PDF/SVG parity contracts, rectangle equivalence and the invariant sweep all pass |
+| Backend gates | `cd backend && python scripts/qa_gates.py` | the suite, the report/PDF/SVG parity contracts, rectangle equivalence, the cross-process matrix and the invariant sweep all pass |
+| — of which matrix | `cd backend && python scripts/qa_circulation_determinism.py --matrix` | all 64 cases are generated in **two separate processes** (`PYTHONHASHSEED=0` and `=1`) and their warning lists, sponsor doors and door sets are byte-identical |
 | — of which sweep | `cd backend && python scripts/qa_invariant_sweep.py` | its verdict names **0 TRUE FAILURES**; a DISCLOSED-only register is tolerated (the runner reads the verdict block, not just the exit code) |
 | Build + report surface | `cd frontend && npm run gates` | `tsc -b && vite build`, then the L16 table / FAIL stamp / print-wiring pins pass |
-| Browser gates | `cd frontend && npm run gates:browser` | the selection-policy pass and the full funnel pass against live servers (`E2E_URL`, `CHROME_PATH`) |
+| Browser gates | `cd frontend && npm run gates:browser` | the selection-policy pass, the full funnel pass and the UI-closure pass against live servers (`E2E_URL`, `CHROME_PATH`) |
 
 `python scripts/qa_gates.py --list` prints the command set it runs, and
 `--only sweep` runs one gate. The backend gates working directory is fixed to

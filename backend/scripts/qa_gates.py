@@ -13,6 +13,9 @@ The gates are the ones a user-visible plan change can break:
   parity      page-1 / SVG-vs-PDF / gate-integrity / PDF-hygiene contracts
   rectangle   the rectangle-equivalence block (the canonical plates must not
               be partitioned as irregular ones)
+  matrix      the 64-case proportion matrix generated in TWO separate
+              processes (PYTHONHASHSEED 0 and 1); warning lists, sponsor
+              doors and door sets must be byte-identical
   sweep       qa_invariant_sweep.py over the full typology x plot x storey x
               strictness matrix
 
@@ -70,6 +73,8 @@ STEPS = [
     Step("suite", "backend test suite", [PY, "-m", "pytest", "tests/", "-q"]),
     Step("parity", "report / PDF / gate parity", [PY, "-m", "pytest", *PARITY_TESTS, "-q"]),
     Step("rectangle", "rectangle equivalence", [PY, "-m", "pytest", *RECTANGLE_TESTS, "-q"]),
+    Step("matrix", "cross-process 64-case matrix determinism",
+         [PY, "scripts/qa_circulation_determinism.py", "--matrix"]),
     Step("sweep", "invariant sweep (DISCLOSED-only tolerated)",
          [PY, "scripts/qa_invariant_sweep.py"], sweep=True),
 ]

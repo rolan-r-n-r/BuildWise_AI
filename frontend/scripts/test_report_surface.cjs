@@ -161,6 +161,36 @@ async function main() {
     check(/data-critical="false"/.test(bannerWarn), 'a listed PROP-ASPECT advisory is not critical');
     check(!bannerWarn.includes('FAIL stamp'), 'WARN/advisory banner never shows the FAIL stamp');
 
+    const bannerSplit = renderToStaticMarkup(
+      React.createElement(WarningsBanner, {
+        data: {
+          warnings: [
+            'PROP-IDEAL: bath_1 aspect 1:1.80 is outside the 1:1.50 ideal band.',
+            'ROOM-MAX: dining_0_1 is 19.2 m², above its 14.0 m² catalogue maximum.',
+            'Road network telemetry unavailable. Approach-side alignment bonus omitted.',
+            'Guidance rate is effective 2024 and may be stale relative to the current market.',
+          ],
+        },
+      }),
+    );
+    check(/data-plan-warning-count="2"/.test(bannerSplit), 'banner counts only the two plan lines');
+    check(
+      /data-degradation-count="2"/.test(bannerSplit),
+      'banner counts the two degradation lines separately',
+    );
+    check(
+      bannerSplit.includes('Plan warnings') && bannerSplit.includes('Data degradation notice'),
+      'banner labels plan disclosures and provenance caveats separately',
+    );
+    check(
+      bannerSplit.includes('banner-degradation-notice'),
+      'degradation lines render in their own labelled block',
+    );
+    check(
+      !bannerSplit.includes('Proportion / programme non-compliance'),
+      'banner never labels provenance caveats as proportion non-compliance',
+    );
+
     console.log('\n[3] PlanVerdictChip');
     const chipFail = renderToStaticMarkup(
       React.createElement(PlanVerdictChip, { isValid: false, gateStatus: 'FAIL' }),
@@ -203,6 +233,52 @@ async function main() {
     );
     check(merged.length === 10 && merged[1] === planWarnings[0], 'banner merges analysis + plan list in order');
 
+    console.log('\n[4b] One plan verdict across card / certificate / viewer');
+    const verdictFail = 'NOT-CERTIFIED-FAIL-STAMP';
+    const certFail = renderToStaticMarkup(
+      React.createElement(CertificatePanel, {
+        qa: qaFixture('WARN'),
+        variant: 'sheet',
+        planVerdict: verdictFail,
+      }),
+    );
+    check(
+      /data-testid="certificate-plan-verdict"/.test(certFail) && certFail.includes(verdictFail),
+      'the certificate panel renders the server verdict verbatim',
+    );
+    const certCertified = renderToStaticMarkup(
+      React.createElement(CertificatePanel, {
+        qa: qaFixture('PASS'),
+        variant: 'sheet',
+        planVerdict: 'CERTIFIED',
+      }),
+    );
+    check(certCertified.includes('CERTIFIED'), 'a certified plan renders CERTIFIED');
+    const certNoVerdict = renderToStaticMarkup(
+      React.createElement(CertificatePanel, { qa: qaFixture('WARN'), variant: 'sheet' }),
+    );
+    check(!certNoVerdict.includes('certificate-plan-verdict'), 'no verdict prop => no verdict claimed');
+
+    const viewerChip = renderToStaticMarkup(
+      React.createElement(PlanVerdictChip, { verdict: verdictFail }),
+    );
+    check(viewerChip.includes(verdictFail), 'the viewer chip renders the same token');
+    const viewerChipCertified = renderToStaticMarkup(
+      React.createElement(PlanVerdictChip, { verdict: 'CERTIFIED' }),
+    );
+    check(viewerChipCertified === '', 'a CERTIFIED plan renders no not-certified chip');
+
+    const cardSrc = fs.readFileSync(
+      path.join(ROOT, 'src', 'components', 'FloorPlanGeneratorCard.tsx'),
+      'utf8',
+    );
+    check(/data-testid="plan-verdict"/.test(cardSrc), 'the plan card renders a plan-verdict token');
+    check(/planVerdict/.test(cardSrc), 'the card consumes the server verdict');
+    check(
+      /planVerdict=\{planVerdict\}/.test(cardSrc),
+      'the card passes the same verdict to the certificate panel',
+    );
+
     console.log('\n[5] Print page-1 wiring');
     const sheet = fs.readFileSync(path.join(ROOT, 'src', 'components', 'ReportSheet.tsx'), 'utf8');
     check(!/WarningsBanner\s+data=\{analysisData\}/.test(sheet), 'no WarningsBanner still reads analysisData alone');
@@ -214,6 +290,131 @@ async function main() {
     check(
       /bannerWarnings\(analysisData, floorPlanData\)/.test(sheet),
       'bannerData is built by the shared planWarnings helper',
+    );
+
+    console.log('\n[6] Engine state badge');
+    const { AppHeader } = await server.ssrLoadModule('/src/components/AppHeader.tsx');
+    const headerProps = {
+      onOpenMethodology: () => {},
+      onReset: () => {},
+      theme: 'light',
+    };
+    const header = (over) =>
+      renderToStaticMarkup(
+        React.createElement(AppHeader, {
+          ...headerProps,
+          backendConnected: true,
+          activeAiProvider: 'groq',
+          serverStatus: { groq: true, gemini: false },
+          ...over,
+        }),
+      );
+
+    const live = header();
+    check(live.includes('data-engine-state="live"'), 'a configured hosted key renders the live state');
+    check(live.includes('Live · Groq'), 'the live label names the probed provider');
+    check(
+      /reachability is not/i.test(live),
+      'the live title discloses that reachability is not probed',
+    );
+
+    const noKey = header({ serverStatus: { groq: false, gemini: false } });
+    check(
+      noKey.includes('data-engine-state="deterministic"'),
+      'a hosted provider without a key renders the deterministic state',
+    );
+    check(!noKey.includes('Offline'), 'a working deterministic engine is never labelled offline');
+    check(noKey.includes('Deterministic'), 'the deterministic label is explicit');
+
+    const mock = header({ activeAiProvider: 'mock' });
+    check(mock.includes('data-engine-state="deterministic"'), 'the built-in provider renders deterministic');
+
+    const offline = header({ backendConnected: false, serverStatus: null });
+    check(offline.includes('data-engine-state="offline"'), 'an unreachable backend renders offline');
+    check(offline.includes('>Offline<') || offline.includes('Offline</span>'), 'the offline label is explicit');
+
+    const gemini = header({ activeAiProvider: 'gemini', serverStatus: { groq: false, gemini: true } });
+    check(gemini.includes('data-engine-state="live"') && gemini.includes('Live · Gemini'),
+      'each hosted provider is probed independently');
+
+    const ollama = header({ activeAiProvider: 'ollama' });
+    check(
+      ollama.includes('data-engine-state="unverified"'),
+      'an unprobed local provider is never claimed live or deterministic',
+    );
+
+    for (const [name, html] of [['live', live], ['no-key', noKey], ['mock', mock], ['offline', offline], ['ollama', ollama]]) {
+      check(!/Engine Offline \(Local Mock\)/.test(html), `${name}: retired misleading offline-mock copy is gone`);
+    }
+
+    console.log('\n[7] Key-removal fallback disclosure');
+    const { RecommendationPanel } = await server.ssrLoadModule('/src/components/RecommendationPanel.tsx');
+    const narrative = (providerUsed) =>
+      renderToStaticMarkup(
+        React.createElement(RecommendationPanel, {
+          summary: 'The site is workable with the stated brief.',
+          recommendations: ['Confirm the frontage before setting out.'],
+          aiMetadata: {
+            provider_requested: 'groq',
+            provider_used: providerUsed,
+            parameter_reflection: 'The plot carries a workable programme.',
+            fallback_reason: providerUsed.includes('mock')
+              ? 'GROQ_API_KEY is not configured in environment'
+              : undefined,
+          },
+        }),
+      );
+
+    const fallbackNarrative = narrative('mock_fallback');
+    check(
+      fallbackNarrative.includes('Deterministic engine narrative'),
+      'a key-removal fallback is labelled as the deterministic engine',
+    );
+    check(
+      !/AI narrative/i.test(fallbackNarrative),
+      'a fallback is never labelled an AI narrative',
+    );
+    check(
+      !/AI-generated/i.test(fallbackNarrative),
+      'a fallback is never claimed AI-generated',
+    );
+
+    const liveNarrative = narrative('groq (gpt-oss-120b)');
+    check(
+      liveNarrative.includes('AI narrative — advisory, non-certified'),
+      'a real hosted answer carries the advisory, non-certified label',
+    );
+
+    console.log('\n[8] Narrative-engine badge vocabulary');
+    const { PROVIDER_STATE_LABEL, effectiveProviderState } = await server.ssrLoadModule(
+      '/src/services/providerBadge.ts',
+    );
+    check(PROVIDER_STATE_LABEL.live === 'Live', 'the hosted-key state reads Live');
+    check(PROVIDER_STATE_LABEL.deterministic === 'Deterministic', 'the built-in state reads Deterministic');
+    check(PROVIDER_STATE_LABEL.offline === 'Offline', 'the unreachable state reads Offline');
+    check(
+      effectiveProviderState('deterministic', false) === 'offline',
+      'an unreachable backend overrides the selected author with Offline',
+    );
+    check(
+      effectiveProviderState('deterministic', true) === 'deterministic',
+      'a reachable built-in engine stays Deterministic (never Live)',
+    );
+
+    console.log('\n[9] One live report tab bar');
+    const sheetSrc = fs.readFileSync(path.join(ROOT, 'src', 'components', 'ReportSheet.tsx'), 'utf8');
+    check(
+      /useMediaQuery\('\(min-width: 1024px\)'\)/.test(sheetSrc),
+      'the sheet chooses its tab bar from the viewport query',
+    );
+    check(
+      /desktopTabs && \(/.test(sheetSrc) && /!desktopTabs && \(/.test(sheetSrc),
+      'each tab bar is mounted only on its side of the breakpoint',
+    );
+    check(
+      !/report-sheet-tabs-nav hidden lg:flex/.test(sheetSrc) &&
+        !/report-sheet-tabs-nav lg:hidden/.test(sheetSrc),
+      'no CSS-hidden duplicate tab bar remains',
     );
   } finally {
     await server.close();
