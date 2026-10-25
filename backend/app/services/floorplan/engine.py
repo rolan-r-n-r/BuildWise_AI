@@ -5192,18 +5192,41 @@ class SoleGeometryEngine:
                 else 2 if self._is_wet_room(r) else 1
             ))
             target = unreachable[0]
-            reachable_rooms = [by_id[rid] for rid in seen if rid in by_id]
-            preferred = [r for r in reachable_rooms if r.zone_category == "circulation"]
+            # ``seen`` is a SET: iterating it made the reachable-room order - and
+            # therefore the sponsor choice on a tie - depend on the interpreter's
+            # string-hash seed.  The same plan then repaired differently in two
+            # processes.  Rebuild the list in layout order so the
+            # candidate sequence is reproducible by construction.  The target
+            # order above is deliberately left unchanged: sorting it by room_id
+            # would repair a different room first (and the loop stops at the
+            # first room no wall can host), which is a design change, not a
+            # determinism fix.
+            reachable_rooms = [r for r in rooms if r.room_id in seen]
+
+            def _sponsor_priority(r: MultiFloorRoomRectangle) -> Tuple[int, str]:
+                # Stated tie-break: circulation first, then the lowest room_id.
+                # The room_id makes the choice total and reproducible even when
+                # two hosts share a wall length; it never depends on the order
+                # the caller happened to build the list in.
+                return (0 if r.zone_category == "circulation" else 1, str(r.room_id))
+
+            preferred = sorted(
+                (r for r in reachable_rooms if r.zone_category == "circulation"),
+                key=_sponsor_priority,
+            )
             # A bathroom or kitchen may never be used as a PASS-THROUGH to reach
             # another room: the leaf rule (bath degree == 1) is a hygiene
             # requirement, and a connectivity repair that sponsors a door from
             # a bath turns it into a corridor. Prefer circulation, then any dry
             # space; only fall back to the target's own wet neighbour when the
             # target itself is wet (a bath needs exactly one door).
-            dry_sponsors = [
-                r for r in reachable_rooms
-                if r.zone_category not in ("service",) and not self._is_wet_room(r)
-            ]
+            dry_sponsors = sorted(
+                (
+                    r for r in reachable_rooms
+                    if r.zone_category not in ("service",) and not self._is_wet_room(r)
+                ),
+                key=_sponsor_priority,
+            )
             # Try progressively wider sponsor pools, but every candidate must
             # HOST the door in a wall the rooms actually share. A service room
             # (electrical / sanitary) may sponsor the spine or a bathroom; what
@@ -5217,6 +5240,7 @@ class SoleGeometryEngine:
             ):
                 if not pool:
                     continue
+                pool = sorted(pool, key=_sponsor_priority)
                 sponsor, hosted = find_door_host(target, pool, 0.90, preferred=preferred)
                 if sponsor is not None and hosted is not None:
                     break
