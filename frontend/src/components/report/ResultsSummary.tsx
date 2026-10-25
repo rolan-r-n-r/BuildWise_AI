@@ -52,6 +52,7 @@ export const ResultsSummary: React.FC<ResultsSummaryProps> = ({ data, onOpenRepo
             key={factor.factor_id}
             factor={factor}
             dataSources={data.data_sources}
+            methodology={data.methodology}
             variant="compact"
           />
         ))}

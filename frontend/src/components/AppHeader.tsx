@@ -22,6 +22,76 @@ interface AppHeaderProps {
   headerResultsToggleRef?: React.Ref<HTMLButtonElement>;
 }
 
+export type EngineBadgeState = 'live' | 'deterministic' | 'offline' | 'unverified';
+
+/**
+ * What the header may claim about the authoring engine, derived at RENDER time
+ * from the two probes the app actually has: `/api/status` (backend reachable +
+ * which hosted keys are configured) and the selected provider. Nothing here is
+ * a static label: if the backend stops answering, the badge says Offline; if the
+ * selected hosted provider has no key, it says Deterministic (the engine that
+ * really authors the text) instead of the old "Engine Offline (Local Mock)",
+ * which called a working deterministic engine offline. Ollama has no probe, so
+ * it is reported as Unverified rather than guessed either way.
+ */
+export function engineBadge(
+  backendConnected: boolean,
+  activeAiProvider: string,
+  serverStatus?: { groq: boolean; gemini: boolean } | null,
+): { state: EngineBadgeState; label: string; dotClass: string; title: string } {
+  if (!backendConnected) {
+    return {
+      state: 'offline',
+      label: 'Offline',
+      dotClass: 'bg-[var(--semantic-red)]',
+      title: 'AI engine: Offline — the backend did not answer the health probe.',
+    };
+  }
+
+  const hosted =
+    activeAiProvider === 'groq'
+      ? { name: 'Groq', available: Boolean(serverStatus?.groq) }
+      : activeAiProvider === 'gemini'
+        ? { name: 'Gemini', available: Boolean(serverStatus?.gemini) }
+        : null;
+
+  if (hosted?.available) {
+    return {
+      state: 'live',
+      label: `Live · ${hosted.name}`,
+      dotClass: 'bg-[var(--semantic-green)] animate-pulse',
+      title: `AI engine: Live — the ${hosted.name} key is configured. Key presence is probed; upstream reachability is not.`,
+    };
+  }
+
+  if (hosted) {
+    return {
+      state: 'deterministic',
+      label: 'Deterministic',
+      dotClass: 'bg-[var(--semantic-amber)]',
+      title: `AI engine: Deterministic — no ${hosted.name} key is configured, so the built-in engine authors the commentary and programme.`,
+    };
+  }
+
+  if (activeAiProvider === 'ollama') {
+    return {
+      state: 'unverified',
+      label: 'Unverified · Ollama',
+      dotClass: 'bg-[var(--semantic-amber)]',
+      title:
+        'AI engine: Unverified — Ollama has no health probe. If it is unreachable the built-in engine authors the text and the response discloses the fallback.',
+    };
+  }
+
+  return {
+    state: 'deterministic',
+    label: 'Deterministic',
+    dotClass: 'bg-[var(--semantic-amber)]',
+    title:
+      'AI engine: Deterministic — the built-in engine authors the commentary and programme; no hosted key is in use.',
+  };
+}
+
 export const AppHeader: React.FC<AppHeaderProps> = ({
   backendConnected,
   activeAiProvider,
@@ -257,34 +327,21 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <span className="hidden sm:inline">Reset</span>
         </button>
 
-        {/* Dynamic Engine Status pill: green pulse dot when key active, amber when mock, red when disconnected */}
+        {/* Engine state pill: ONE derivation from the health/key probes at
+            render time. Old copy called the deterministic engine
+            "Offline (Local Mock)", which mislabelled a working engine. */}
         {(() => {
-          let statusLabel = 'Engine Offline';
-          let dotColorClass = 'bg-[var(--semantic-red)]';
-
-          if (backendConnected) {
-            const isGroq = activeAiProvider === 'groq';
-            const isGemini = activeAiProvider === 'gemini';
-
-            if (isGroq && serverStatus?.groq) {
-              statusLabel = 'Engine Online (Groq)';
-              dotColorClass = 'bg-[var(--semantic-green)] animate-pulse';
-            } else if (isGemini && serverStatus?.gemini) {
-              statusLabel = 'Engine Online (Gemini)';
-              dotColorClass = 'bg-[var(--semantic-green)] animate-pulse';
-            } else {
-              statusLabel = 'Engine Offline (Local Mock)';
-              dotColorClass = 'bg-[var(--semantic-amber)]';
-            }
-          }
-
+          const badge = engineBadge(backendConnected, activeAiProvider, serverStatus);
           return (
             <div
+              data-testid="engine-state"
+              data-engine-state={badge.state}
+              aria-label={`AI engine state: ${badge.state}`}
               className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-[10px] bg-[var(--fill)] text-[12px] font-medium text-[var(--text-2)] shrink-0"
-              title={`AI Engine Status: ${statusLabel}`}
+              title={badge.title}
             >
-              <span className={`w-2 h-2 rounded-full shrink-0 ${dotColorClass}`} />
-              <span className="whitespace-nowrap">{statusLabel}</span>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${badge.dotClass}`} />
+              <span data-testid="engine-state-label" className="whitespace-nowrap">{badge.label}</span>
             </div>
           );
         })()}

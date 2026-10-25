@@ -4,6 +4,7 @@ import { Icon, type IconName } from '../Icon';
 import { StatusBadge } from './StatusBadge';
 import { MethodologyPopover, type MethodologyPayload } from './MethodologyPopover';
 import { deriveFactorProvenance } from './statusTaxonomy';
+import { methodologyFormula, NO_GENERATED_METHODOLOGY } from '../../services/methodologyText';
 
 interface ProvenanceFactorCardProps {
   factor: FactorScore;
@@ -11,6 +12,8 @@ interface ProvenanceFactorCardProps {
   rank?: number;
   /** Server-verified per-source fetch provenance (real timestamps). */
   dataSources?: Record<string, DataSourceProvenance>;
+  /** Server-generated methodology strings (same band table the engine ran). */
+  methodology?: Record<string, string> | null;
   /**
    * 'full'    — the report tab card (rank + disclosure popover).
    * 'compact' — the sidebar list (no rank; tighter padding).
@@ -33,7 +36,11 @@ function getFactorIcon(id: string): IconName {
 /** Plain-language scoring basis + actually consulted data source per factor. */
 const METHODOLOGY: Record<string, { formula: string; source: string }> = {
   slope: {
-    formula: 'Piecewise bands: 100 at ≤2%, −5 per % up to 6%, then steeper decrements to a 20 floor below 18%.',
+    // Only used when the payload carries no generated methodology (an older
+    // analysis object).  It deliberately does NOT restate a band table: the
+    // formula is generated from `backend/app/services/methodology.py` and
+    // served in `analysis.methodology.slope`.
+    formula: NO_GENERATED_METHODOLOGY,
     source: 'Open-Elevation / Open-Meteo digital elevation model (channel elevation samples)',
   },
   flood_risk: {
@@ -66,6 +73,7 @@ export const ProvenanceFactorCard: React.FC<ProvenanceFactorCardProps> = ({
   factor,
   rank,
   dataSources,
+  methodology: generatedMethodology,
   variant = 'full',
 }) => {
   const isCompact = variant === 'compact';
@@ -96,7 +104,10 @@ export const ProvenanceFactorCard: React.FC<ProvenanceFactorCardProps> = ({
   const sourceKey = FACTOR_SOURCE_KEY[factor.factor_id];
   const provenance = sourceKey ? dataSources?.[sourceKey] : undefined;
   const payload: MethodologyPayload = {
-    formula: methodology.formula,
+    formula:
+      factor.factor_id === 'slope'
+        ? methodologyFormula('slope', generatedMethodology)
+        : methodology.formula,
     dataSource: provenance?.source ?? methodology.source,
     fetchedAt: provenance?.fetched_at ?? null,
     status,

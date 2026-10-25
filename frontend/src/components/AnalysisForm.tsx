@@ -12,6 +12,11 @@ import {
   getTypologyConfig,
   type CanonicalTypology,
 } from '../services/typology';
+import {
+  PROVIDER_STATE_LABEL,
+  effectiveProviderState,
+  type ProviderState,
+} from '../services/providerBadge';
 
 /** Live provider-key availability reported by /api/status. */
 export interface ProviderAvailability {
@@ -30,6 +35,8 @@ interface AnalysisFormProps {
   onRequestCapture?: () => void;
   /** Provider keys reported by the backend status probe (drives the status dot). */
   providerAvailability?: ProviderAvailability | null;
+  /** Backend reachability from the same probe; false renders the badge Offline. */
+  engineOnline?: boolean;
   /** Captured plot area (m²); lets the coverage control print the resulting cap. */
   boundaryAreaSqm?: number | null;
 }
@@ -216,6 +223,7 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
   onSubmit,
   onRequestCapture,
   providerAvailability = null,
+  engineOnline = true,
   boundaryAreaSqm = null,
 }) => {
   const [isParsingConstraints, setIsParsingConstraints] = useState(false);
@@ -326,7 +334,6 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
   // Provider availability: green = key configured (or no key needed),
   // amber = will fall back to the deterministic engine, unknown = the backend
   // status probe has not answered (never claim a key is missing without proof).
-  type ProviderState = 'live' | 'fallback' | 'unknown';
   const statusKnown = providerAvailability !== null;
   const hostedDescription = (keyConfigured: boolean): string =>
     !statusKnown
@@ -356,7 +363,7 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
       id: 'mock',
       label: 'Built-in deterministic engine',
       description: 'No key, no network - always available',
-      state: 'live',
+      state: 'deterministic',
     },
     {
       id: 'ollama',
@@ -371,14 +378,19 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
     description: p.description,
   }));
   const activeProvider = providerOptions.find((p) => p.id === request.ai_provider) ?? providerOptions[2];
-  const providerStateLabel: Record<ProviderState, string> =
-    { live: 'Live', fallback: 'Fallback', unknown: 'Unknown' };
+  // One badge state from reachability + the selected author. Never show
+  // "Live" for the deterministic engine, and never show a provider claim when
+  // the backend itself is unreachable.
+  const badgeState = effectiveProviderState(activeProvider.state, engineOnline);
   const providerStateCaption: Record<ProviderState, string> = {
     live: 'Configured - the commentary and the room programme are authored by this engine.',
     fallback:
       'No key detected - the built-in deterministic engine authors the text and the response discloses the fallback.',
     unknown:
       'Status unverified - the request still runs, and the response always discloses which engine authored the text.',
+    deterministic:
+      'Built-in deterministic engine - no key, no network; the response discloses the deterministic author.',
+    offline: 'Backend unreachable - no analysis can run until the engine answers the health probe.',
   };
 
   // Calculate track fill percentages for iOS sliders
@@ -865,19 +877,25 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
           <span className="flex items-center gap-1.5 text-[11px] text-[var(--text-3)]">
             <span
               data-testid="provider-status-dot"
-              data-provider-state={activeProvider.state}
-              title={providerStateCaption[activeProvider.state]}
+              data-provider-state={badgeState}
+              title={providerStateCaption[badgeState]}
               aria-hidden="true"
               className="w-2 h-2 rounded-full"
               style={{
                 background:
-                  activeProvider.state === 'live'
+                  badgeState === 'live'
                     ? 'var(--semantic-green)'
+                    : badgeState === 'offline'
+                    ? 'var(--semantic-red)'
                     : 'var(--semantic-amber)',
               }}
             />
-            <span className="font-medium" data-testid="provider-state-label">
-              {providerStateLabel[activeProvider.state]}
+            <span
+              className="font-medium"
+              data-testid="provider-state-label"
+              data-provider-state={badgeState}
+            >
+              {PROVIDER_STATE_LABEL[badgeState]}
             </span>
           </span>
         }
@@ -905,15 +923,17 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
             className="mt-1 flex items-start gap-1.5 text-[11px] text-[var(--text-3)] leading-snug"
           >
             <Icon
-              name={activeProvider.state === 'live' ? 'badge-check' : 'alert-triangle'}
+              name={badgeState === 'live' || badgeState === 'deterministic' ? 'badge-check' : 'alert-triangle'}
               size={12}
               className={`mt-[1px] shrink-0 ${
-                activeProvider.state === 'live'
+                badgeState === 'live'
                   ? 'text-[var(--semantic-green-ink)]'
+                  : badgeState === 'offline'
+                  ? 'text-[var(--semantic-red-ink)]'
                   : 'text-[var(--semantic-amber-ink)]'
               }`}
             />
-            <span className="min-w-0">{providerStateCaption[activeProvider.state]}</span>
+            <span className="min-w-0">{providerStateCaption[badgeState]}</span>
           </p>
         </div>
       </CollapsibleSection>

@@ -14,6 +14,8 @@ interface RecommendationPanelProps {
     fallback_reason?: string;
     parameter_reflection?: string;
     feasibility_score?: string;
+    narrative_class?: string;
+    narrative_redactions?: string;
   };
   parameterReflection?: string;
   summaryOnly?: boolean;
@@ -36,6 +38,18 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
   };
 
   const reflectionText = parameterReflection || aiMetadata?.parameter_reflection || '';
+
+  // The narrative is advisory text, never a source of report values.
+  // Every figure it asserted was stripped server-side; say so where it shows.
+  const providerUsed = String(aiMetadata?.provider_used || '').toLowerCase();
+  const narrativeIsDeterministic = providerUsed.includes('mock') || providerUsed.includes('deterministic');
+  const narrativeLabel = narrativeIsDeterministic
+    ? 'Deterministic engine narrative'
+    : 'AI narrative — advisory, non-certified';
+  const redactedClaims = String(aiMetadata?.narrative_redactions || '')
+    .split(',')
+    .map((r) => r.trim())
+    .filter(Boolean);
 
   // Deduplicate commentary: compare first 60 normalized chars
   const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -128,14 +142,23 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
 
       {/* Parameter Reflection: styled italic quote with sparkles icon and accent-tinted surface */}
       {reflectionText && (
-        <div className="p-3.5 bg-[var(--accent-tint)] border border-[var(--accent)]/20 rounded-[12px] space-y-1.5">
+        <div
+          data-testid="narrative-block"
+          className="p-3.5 bg-[var(--accent-tint)] border border-[var(--accent)]/20 rounded-[12px] space-y-1.5"
+        >
           <div className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--accent-ink)]">
             <Icon name="sparkles" size={13} className="text-[var(--accent-ink)]" />
-            <span>AI parameter reflection</span>
+            <span data-testid="narrative-label">{narrativeLabel}</span>
           </div>
           <p className="text-[13px] text-[var(--text-1)] leading-relaxed italic">
             "{reflectionText}"
           </p>
+          {redactedClaims.length > 0 && (
+            <p data-testid="narrative-redaction-note" className="text-[11px] text-[var(--text-2)] leading-snug">
+              {redactedClaims.join(', ')} claim{redactedClaims.length === 1 ? '' : 's'} removed — use the
+              certified values in this report.
+            </p>
+          )}
         </div>
       )}
 
