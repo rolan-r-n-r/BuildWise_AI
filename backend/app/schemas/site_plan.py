@@ -1,12 +1,13 @@
+import math
 from typing import List, Tuple, Optional, Dict, Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PlotVertex(BaseModel):
     """Survey vertex in local tangent plane (Easting, Northing)."""
     id: str = Field(..., description="Vertex identifier, e.g. P1, P2...")
-    x_m: float = Field(..., description="Local Easting in meters (+X is East)")
-    y_m: float = Field(..., description="Local Northing in meters (+Y is North)")
+    x_m: float = Field(..., allow_inf_nan=False, description="Local Easting in meters (+X is East)")
+    y_m: float = Field(..., allow_inf_nan=False, description="Local Northing in meters (+Y is North)")
 
 
 class SurveyEdge(BaseModel):
@@ -28,8 +29,19 @@ class PlotPolygonModel(BaseModel):
         ...,
         description="Ordered list of (x_m, y_m) vertices in local metric tangent plane"
     )
-    origin_lat: Optional[float] = Field(default=None, description="WGS84 origin latitude")
-    origin_lon: Optional[float] = Field(default=None, description="WGS84 origin longitude")
+    origin_lat: Optional[float] = Field(default=None, allow_inf_nan=False, description="WGS84 origin latitude")
+    origin_lon: Optional[float] = Field(default=None, allow_inf_nan=False, description="WGS84 origin longitude")
+
+    @field_validator("vertices")
+    @classmethod
+    def reject_non_finite_vertices(cls, vertices: List[Tuple[float, float]]):
+        """NaN/Infinity are not JSON and must not reach the geometry engine."""
+        for idx, (x, y) in enumerate(vertices):
+            if not math.isfinite(x):
+                raise ValueError(f"vertices[{idx}].x must be a finite number, got {x!r}")
+            if not math.isfinite(y):
+                raise ValueError(f"vertices[{idx}].y must be a finite number, got {y!r}")
+        return vertices
     projection_note: str = Field(
         default="Local tangent plane (E/N, equirectangular with cos(lat) scaling)",
         description="Projection methodology description"
