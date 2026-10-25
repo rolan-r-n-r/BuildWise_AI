@@ -2,12 +2,20 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from './Icon';
 import { Kbd } from '../design';
-import { geocodeSearch, type GeocodeResult } from '../services/geocodeApi';
+import { geocodeSearch, reverseGeocodeProbe, type GeocodeResult } from '../services/geocodeApi';
+import { evaluateManualCoordinate } from '../services/coordinateGuard';
 
 interface CoordinatesInputProps {
   latitude: number | null;
   longitude: number | null;
   formattedAddress?: string;
+  /**
+   * True when a plot is already captured.  The capture workflow owns its own
+   * take / re-capture / keep confirmation for that move, so this form must
+   * hand the change over immediately instead of stacking a second dialog
+   * (and an upstream probe) in front of it.
+   */
+  hasCapturedPlot?: boolean;
   onCoordinatesChange: (lat: number, lon: number, fromInput?: boolean) => void;
   onClear: () => void;
 }
@@ -26,6 +34,7 @@ export const CoordinatesInput: React.FC<CoordinatesInputProps> = ({
   latitude,
   longitude,
   formattedAddress,
+  hasCapturedPlot = false,
   onCoordinatesChange,
   onClear,
 }) => {
@@ -33,6 +42,13 @@ export const CoordinatesInput: React.FC<CoordinatesInputProps> = ({
   const [latInput, setLatInput] = useState<string>('');
   const [lonInput, setLonInput] = useState<string>('');
   const [inputError, setInputError] = useState<string | null>(null);
+  // Manual-entry guard: a candidate that is far from the current pin
+  // or reverse-geocodes to water waits here until the user confirms it.
+  const [pendingConfirm, setPendingConfirm] = useState<
+    { lat: number; lon: number; message: string } | null
+  >(null);
+  const [probeNotice, setProbeNotice] = useState<string | null>(null);
+  const [isChecking, setIsChecking] = useState<boolean>(false);
 
   // ---- search state ---------------------------------------------------------
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -78,6 +94,7 @@ export const CoordinatesInput: React.FC<CoordinatesInputProps> = ({
     if (longitude !== null) setLonInput(longitude.toFixed(5));
     else setLonInput('');
     setInputError(null);
+    setPendingConfirm(null);
   }, [latitude, longitude]);
 
   // --------------------------------------------------------------------------
@@ -189,6 +206,8 @@ export const CoordinatesInput: React.FC<CoordinatesInputProps> = ({
     setSuggestions([]);
     setIsSuggestionsOpen(false);
     setSearchError(null);
+    setPendingConfirm(null);
+    setProbeNotice(null);
     onClear();
   };
 
@@ -223,7 +242,7 @@ export const CoordinatesInput: React.FC<CoordinatesInputProps> = ({
   // --------------------------------------------------------------------------
   // Manual lat/lon form apply
   // --------------------------------------------------------------------------
-  const handleApply = (e: React.FormEvent) => {
+  const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
     const lat = parseFloat(latInput);
     const lon = parseFloat(lonInput);
@@ -238,7 +257,56 @@ export const CoordinatesInput: React.FC<CoordinatesInputProps> = ({
     }
 
     setInputError(null);
+    setProbeNotice(null);
+
+    // The capture workflow already asks before moving a captured plot; adding
+    // this form's probe would delay that dialog and stack a second question.
+    if (hasCapturedPlot) {
+      onCoordinatesChange(lat, lon, true);
+      return;
+    }
+
+    // Distance is free and catches the common swap before any network call.
+    const distanceGuard = evaluateManualCoordinate({
+      lat,
+      lon,
+      currentLat: latitude,
+      currentLon: longitude,
+    });
+    if (distanceGuard.needsConfirmation) {
+      setPendingConfirm({ lat, lon, message: distanceGuard.message! });
+      return;
+    }
+
+    setIsChecking(true);
+    const probe = await reverseGeocodeProbe(lat, lon);
+    setIsChecking(false);
+
+    const guard = evaluateManualCoordinate({
+      lat,
+      lon,
+      currentLat: latitude,
+      currentLon: longitude,
+      water: probe.water,
+      waterName: probe.water_name,
+    });
+    if (guard.needsConfirmation) {
+      setPendingConfirm({ lat, lon, message: guard.message! });
+      return;
+    }
+    if (probe.is_fallback) {
+      setProbeNotice(
+        'Offshore check unavailable (the geocoder did not answer); the pin was applied without water verification.',
+      );
+    }
     onCoordinatesChange(lat, lon, true);
+  };
+
+  const confirmPending = () => {
+    if (!pendingConfirm) return;
+    onCoordinatesChange(pendingConfirm.lat, pendingConfirm.lon, true);
+    setPendingConfirm(null);
+    setProbeNotice(null);
   };
 
 // Helper to parse location display_name into primary title and secondary address details
@@ -490,7 +558,11 @@ function parseLocationName(displayName: string): { title: string; subtitle: stri
               id="lat-input"
               type="text"
               value={latInput}
-              onChange={(e) => setLatInput(e.target.value)}
+              onChange={(e) => {
+                setLatInput(e.target.value);
+                setPendingConfirm(null);
+                setProbeNotice(null);
+              }}
               placeholder="e.g. 12.9716"
               className="w-full bg-[var(--fill)] border-0 rounded-[10px] px-3 py-2 text-[13px] font-medium text-[var(--text-1)] outline-none focus:ring-[3px] focus:ring-[var(--accent)]/25 transition-ui placeholder:text-[var(--text-3)]"
             />
@@ -506,7 +578,11 @@ function parseLocationName(displayName: string): { title: string; subtitle: stri
               id="lon-input"
               type="text"
               value={lonInput}
-              onChange={(e) => setLonInput(e.target.value)}
+              onChange={(e) => {
+                setLonInput(e.target.value);
+                setPendingConfirm(null);
+                setProbeNotice(null);
+              }}
               placeholder="e.g. 77.5946"
               className="w-full bg-[var(--fill)] border-0 rounded-[10px] px-3 py-2 text-[13px] font-medium text-[var(--text-1)] outline-none focus:ring-[3px] focus:ring-[var(--accent)]/25 transition-ui placeholder:text-[var(--text-3)]"
             />
@@ -521,11 +597,56 @@ function parseLocationName(displayName: string): { title: string; subtitle: stri
 
         <button
           type="submit"
-          className="w-full h-10 bg-[var(--accent)] text-white text-[13px] font-semibold rounded-[12px] transition-[transform,opacity,background-color,border-color,color,box-shadow] duration-200 hover:bg-[var(--accent-hover)] active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+          disabled={isChecking}
+          className="w-full h-10 bg-[var(--accent)] text-white text-[13px] font-semibold rounded-[12px] transition-[transform,opacity,background-color,border-color,color,box-shadow] duration-200 hover:bg-[var(--accent-hover)] active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-wait"
         >
           <Icon name="map-pin" size={14} className="shrink-0" />
-          <span>Update Pin</span>
+          <span>{isChecking ? 'Checking coordinates…' : 'Update Pin'}</span>
         </button>
+
+        {pendingConfirm && (
+          <div
+            role="alertdialog"
+            aria-labelledby="coord-confirm-title"
+            data-testid="coordinate-confirm"
+            className="p-3 rounded-[10px] bg-[var(--semantic-amber)]/10 border border-[var(--semantic-amber)]/40 space-y-2"
+          >
+            <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[var(--semantic-amber-ink)]">
+              <Icon name="alert-triangle" size={13} className="shrink-0" />
+              <span id="coord-confirm-title">Confirm this coordinate</span>
+            </div>
+            <p className="text-[11px] leading-snug text-[var(--text-2)]">
+              {pendingConfirm.message}
+            </p>
+            <p className="text-[11px] font-mono text-[var(--text-1)]">
+              {pendingConfirm.lat.toFixed(5)}, {pendingConfirm.lon.toFixed(5)}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="coordinate-confirm-apply"
+                onClick={confirmPending}
+                className="h-8 px-2.5 rounded-[8px] bg-[var(--accent)] text-white text-[11px] font-semibold cursor-pointer"
+              >
+                Yes, move the pin
+              </button>
+              <button
+                type="button"
+                data-testid="coordinate-confirm-cancel"
+                onClick={() => setPendingConfirm(null)}
+                className="h-8 px-2.5 rounded-[8px] bg-[var(--fill)] text-[var(--text-1)] text-[11px] font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {probeNotice && (
+          <p data-testid="offshore-check-notice" className="text-[11px] leading-snug text-[var(--text-3)]">
+            {probeNotice}
+          </p>
+        )}
       </form>
 
       {formattedAddress && (

@@ -24,6 +24,15 @@ export interface GeocodeResponse {
   error: string | null;
 }
 
+export interface ReverseGeocodeProbe {
+  address: string | null;
+  water: boolean;
+  water_name: string | null;
+  /** True when the probe could not answer; do NOT read this as "on land". */
+  is_fallback: boolean;
+  error?: string;
+}
+
 // -------------------------------------------------------------------------- //
 // localStorage cache helpers (24 h TTL)
 // -------------------------------------------------------------------------- //
@@ -73,6 +82,36 @@ const _memCache = new Map<string, GeocodeResponse>();
  *
  * Never throws; always resolves with a GeocodeResponse.
  */
+/**
+ * Probe one coordinate for the manual-entry guard.
+ * Never throws: an unreachable probe returns ``is_fallback: true`` so the UI
+ * can disclose that the offshore check did not run rather than claim land.
+ */
+export async function reverseGeocodeProbe(lat: number, lon: number): Promise<ReverseGeocodeProbe> {
+  try {
+    const resp = await fetch(
+      `${API_BASE_URL}/api/geocode/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
+      { headers: { Accept: 'application/json' } },
+    );
+    if (!resp.ok) throw new Error(`reverse geocode HTTP ${resp.status}`);
+    const data = (await resp.json()) as Partial<ReverseGeocodeProbe>;
+    return {
+      address: data.address ?? null,
+      water: data.water === true,
+      water_name: data.water_name ?? null,
+      is_fallback: data.is_fallback !== false,
+    };
+  } catch {
+    return {
+      address: null,
+      water: false,
+      water_name: null,
+      is_fallback: true,
+      error: 'Offshore check unavailable.',
+    };
+  }
+}
+
 export async function geocodeSearch(query: string): Promise<GeocodeResponse> {
   const key = query.trim().toLowerCase();
   if (!key) {
