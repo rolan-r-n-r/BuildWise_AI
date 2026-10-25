@@ -204,6 +204,107 @@ async def _search_photon(query: str) -> List[GeocodeResult]:
 #  Public entry point                                                          #
 # --------------------------------------------------------------------------- #
 
+# --------------------------------------------------------------------------- #
+#  Reverse probe: is this manual coordinate on open water?                     #
+# --------------------------------------------------------------------------- #
+
+_WATER_TYPES = {
+    "sea", "ocean", "bay", "strait", "gulf", "water", "lake", "reservoir",
+    "river", "canal", "dock", "pond",
+}
+_WATER_WORDS = (
+    " sea", " ocean", " bay", " gulf", " strait", " lake", " reservoir",
+    " river", " canal",
+)
+
+
+def _water_name(payload: Dict[str, Any]) -> Optional[str]:
+    """Return the water feature's name when the reverse result IS water."""
+    klass = str(payload.get("class") or "")
+    feature_type = str(payload.get("type") or "")
+    address = payload.get("address") if isinstance(payload.get("address"), dict) else {}
+    name = payload.get("name") or payload.get("display_name") or ""
+
+    is_water = (
+        feature_type in _WATER_TYPES
+        or klass == "waterway"
+        or any(k in address for k in ("sea", "ocean", "bay", "strait", "water"))
+    )
+    if not is_water and klass in ("natural", "waterway", "place", "boundary"):
+        # A feature-class fallback only: "Lake View Road" (class=highway) is a
+        # street named after water, not a place to drown a foundation.
+        lowered = f" {str(payload.get('display_name') or '').lower()}"
+        is_water = any(word in lowered for word in _WATER_WORDS)
+    if not is_water:
+        return None
+
+    for key in ("sea", "ocean", "bay", "strait", "water", "lake", "reservoir", "river"):
+        if address.get(key):
+            return str(address[key])
+    return str(name).split(",")[0].strip() or "open water"
+
+
+async def reverse_geocode_probe(lat: float, lon: float) -> Dict[str, Any]:
+    """Reverse-geocode one coordinate for the manual-entry guard.
+
+    Returns ``water``/``water_name`` so the client can ask the user to confirm a
+    coordinate that lands in the sea (the classic lat/lon swap).  ``is_fallback``
+    means the probe could not answer - the caller must NOT treat that as "land".
+    Never raises.
+    """
+    key = f"rev:{lat:.4f}:{lon:.4f}"
+    cached = _cache.get(key)
+    if cached is not None:
+        return {**cached, "cached": True}
+
+    try:
+        await _nominatim_throttle()
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.get(
+                "https://nominatim.openstreetmap.org/reverse",
+                params={
+                    "lat": f"{lat:.6f}",
+                    "lon": f"{lon:.6f}",
+                    "format": "jsonv2",
+                    "zoom": "16",
+                    "addressdetails": "1",
+                },
+                headers={"User-Agent": _NOMINATIM_UA},
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+    except Exception as exc:
+        logger.warning("Reverse geocode probe error: %s", exc)
+        return {
+            "address": None,
+            "water": False,
+            "water_name": None,
+            "is_fallback": True,
+            "cached": False,
+        }
+
+    if not isinstance(payload, dict) or payload.get("error"):
+        return {
+            "address": None,
+            "water": False,
+            "water_name": None,
+            "is_fallback": True,
+            "cached": False,
+        }
+
+    address = payload.get("display_name")
+    water_name = _water_name(payload)
+    result = {
+        "address": address,
+        "water": water_name is not None,
+        "water_name": water_name,
+        "is_fallback": False,
+        "cached": False,
+    }
+    _cache.set(key, {**result})
+    return result
+
+
 async def geocode_search(query: str) -> Dict[str, Any]:
     """
     Forward-geocode *query* and return up to 5 suggestions.
