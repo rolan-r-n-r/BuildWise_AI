@@ -1,32 +1,21 @@
 import math
 from typing import Any, List, Optional, Tuple
 from app.schemas.response import FactorScore
+from app.services.methodology import slope_band_for, slope_score_for
 
 
 def calculate_slope_score(slope_pct: float) -> Tuple[float, str, str]:
     """
     Computes slope suitability score (0-100), status, and engineering description.
+
+    The bands live in app.services.methodology.SLOPE_BANDS; the same rows render
+    the report's methodology popover, so the disclosure cannot describe a table
+    the engine does not implement.
     """
-    if slope_pct <= 3.0:
-        score = 100.0
-        status = "optimal"
-        details = f"Flat terrain ({slope_pct}% grade). Ideal for conventional shallow footings with minimal cut-and-fill."
-    elif slope_pct <= 8.0:
-        score = max(70.0, 85.0 - (slope_pct - 3.0) * 3.0)
-        status = "optimal"
-        details = f"Gentle slope ({slope_pct}% grade). Natural storm drainage advantage; standard stepped footings recommended."
-    elif slope_pct <= 15.0:
-        score = max(45.0, 70.0 - (slope_pct - 8.0) * 3.5)
-        status = "acceptable"
-        details = f"Moderate slope ({slope_pct}% grade). Requires site benching, reinforced retaining structures, and slope stability analysis."
-    elif slope_pct <= 25.0:
-        score = max(20.0, 45.0 - (slope_pct - 15.0) * 2.5)
-        status = "critical"
-        details = f"Steep slope ({slope_pct}% grade). Significant excavation costs, stepped terracing, and deep pier/raft foundations required."
-    else:
-        score = max(10.0, 20.0 - (slope_pct - 25.0))
-        status = "critical"
-        details = f"Extreme slope ({slope_pct}% grade). Severe landslide/erosion vulnerability. Unsuitable for standard civil structures."
+    band = slope_band_for(slope_pct)
+    score = slope_score_for(slope_pct, band)
+    status = band["status"]
+    details = band["detail"].format(slope=slope_pct)
 
     return round(score, 1), status, details
 
