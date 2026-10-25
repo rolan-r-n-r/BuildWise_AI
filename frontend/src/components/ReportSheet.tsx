@@ -34,7 +34,7 @@ import { FloorPlanGeneratorCard } from './FloorPlanGeneratorCard';
 import type { SharedBoundaryState } from '../services/siteBoundary';
 import { DownloadReportButton } from './DownloadReportButton';
 import { Icon } from './Icon';
-import { SegmentedControl } from '../design';
+import { SegmentedControl, useMediaQuery } from '../design';
 import { ReportEmptyState } from './report/ReportEmptyState';
 import { CPWD_DISCLOSURE } from './report/termDisclosures';
 import { TabContextBar } from './report/TabContextBar';
@@ -211,7 +211,11 @@ const GRADE_RATES_INR_PER_SQFT = [
 ] as const;
 
 /** Memoized factor-card list: re-renders only when the data or unit preference changes. */
-const MemoizedFactorList: React.FC<{ factors: AnalysisResponse['factors']; dataSources?: AnalysisResponse['data_sources'] }> = React.memo(({ factors, dataSources }) => (
+const MemoizedFactorList: React.FC<{
+  factors: AnalysisResponse['factors'];
+  dataSources?: AnalysisResponse['data_sources'];
+  methodology?: AnalysisResponse['methodology'];
+}> = React.memo(({ factors, dataSources, methodology }) => (
   <div className="divide-y divide-[var(--hairline)]">
     {factors.map((factor, idx) => (
       <ProvenanceFactorCard
@@ -219,6 +223,7 @@ const MemoizedFactorList: React.FC<{ factors: AnalysisResponse['factors']; dataS
         factor={factor}
         rank={idx + 1}
         dataSources={dataSources}
+        methodology={methodology}
       />
     ))}
   </div>
@@ -256,6 +261,20 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
    * print media-type override) until `afterprint` (or media exit).
    */
   const [printing, engagePrintMode] = usePrintMode();
+
+  /**
+   * ONE live tab bar, not two CSS-hidden ones.
+   *
+   * Both the desktop segmented control and the compact strip used to be
+   * mounted at every width and hidden with `hidden lg:flex` / `lg:hidden`. The
+   * hidden copy still contributed `role="tab"` buttons with `tabIndex=0` and a
+   * 0x0 box: a phantom focus target and a duplicate
+   * tab set. Mounting only the bar for the current width removes the
+   * hidden set structurally: every `role="tab"` in the sheet is now a visible,
+   * measured control. The hook reads the media query before first paint, so the
+   * correct bar is chosen on the first render instead of flashing the other.
+   */
+  const desktopTabs = useMediaQuery('(min-width: 1024px)');
 
   /**
    * THE PLAN ARRIVAL.
@@ -813,8 +832,10 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
             </button>
           </div>
 
-          {/* Center: Desktop Segmented Tab Bar (Hidden on <1024px, shown in sub-header) */}
-          <div className="report-sheet-tabs-nav hidden lg:flex items-center justify-center flex-1 max-w-md mx-auto">
+          {/* Center: Desktop Segmented Tab Bar (mounted only at >=1024px; below
+              that the compact strip is the one live tab set) */}
+          {desktopTabs && (
+          <div className="report-sheet-tabs-nav flex items-center justify-center flex-1 max-w-md mx-auto">
             <SegmentedControl
               role="tablist"
               ariaLabel="Report sections"
@@ -837,6 +858,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
               }))}
             />
           </div>
+          )}
 
           {/* Right: unit switch, Download PDF (primary), Print, Close. The
               scroll-spy caption that used to sit here is gone: the section nav
@@ -924,8 +946,9 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
           )}
         </div>
 
-        {/* Mobile Horizontal Sub-Header Tabs (<1024px) */}
-        <div className="report-sheet-tabs-nav lg:hidden border-b border-[var(--hairline)] px-4 py-2 bg-[var(--sheet-bg)] bw-tab-strip bw-fade-x shrink-0">
+        {/* Compact Horizontal Sub-Header Tabs (<1024px; mounted only here) */}
+        {!desktopTabs && (
+        <div className="report-sheet-tabs-nav border-b border-[var(--hairline)] px-4 py-2 bg-[var(--sheet-bg)] bw-tab-strip bw-fade-x shrink-0">
           <div
             role="tablist"
             className="bg-[var(--fill)] rounded-[10px] p-[2px] flex items-center gap-1 min-w-max text-[12px] font-medium"
@@ -960,6 +983,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
             ))}
           </div>
         </div>
+        )}
 
         {/* Content Area: overflow-y auto with scrollbar-apple, padding 24px, inner max-width 1160px centered */}
         <main
@@ -1006,7 +1030,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                         }
                       >
                         {analysisData.factors.length > 0 ? (
-                          <MemoizedFactorList factors={analysisData.factors} dataSources={analysisData.data_sources} />
+                          <MemoizedFactorList factors={analysisData.factors} dataSources={analysisData.data_sources} methodology={analysisData.methodology} />
                         ) : (
                           <ReportEmptyState
                             icon="layers"
@@ -1467,6 +1491,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                         key={factor.factor_id}
                         factor={factor}
                         dataSources={analysisData.data_sources}
+                        methodology={analysisData.methodology}
                         variant="print"
                       />
                     ))}

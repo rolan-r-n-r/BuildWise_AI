@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { FloorPlanRequest, FloorPlanResponse, AnalysisParams, FloorPlanParamsSnapshot, PlotPolygon } from '../services/types';
-import { isCriticalPlanWarning } from '../services/planWarnings';
+import { isCriticalPlanWarning, planVerdictBadge, splitPlanWarnings, planWarningsHeadline } from '../services/planWarnings';
 import { generateFloorPlan } from '../services/api';
 import { BlueprintViewer } from './BlueprintViewer';
 import { Icon } from './Icon';
@@ -12,6 +12,24 @@ import {
 import { ConstraintChips } from './ConstraintChips';
 import { SegmentedControl } from '../design';
 import { Skeleton } from './report/Skeleton';
+
+/**
+ * A generation request that never answers must not leave the card spinning
+ * forever. 120 s is well above the
+ * engine's observed worst case (the whole funnel waits 60 s for a solve) and
+ * still bounded. Abort is an explicit, disclosed failure: nothing is drawn and
+ * the previous plan stays on screen.
+ */
+const GENERATION_TIMEOUT_MS = 120_000;
+
+/** Dev-only test seam so the timeout branch can be exercised without waiting 2 min. */
+function generationTimeoutMs(): number {
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    const override = Number((window as unknown as { __bwGenerationTimeoutMs?: number }).__bwGenerationTimeoutMs);
+    if (Number.isFinite(override) && override > 0) return override;
+  }
+  return GENERATION_TIMEOUT_MS;
+}
 import { CertificatePanel } from './report/CertificatePanel';
 import { SchemePicker, type SchemeSelectionStatus } from './SchemePicker';
 import {
@@ -359,6 +377,30 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
     isCriticalPlanWarning(String(w)),
   ));
 
+  // The verdict is the SERVER's. The local scan above is only a
+  // fallback for payloads generated before `plan_verdict` existed; the card,
+  // the certificate panel and the exported PDF all render this one string.
+  const planVerdict: 'CERTIFIED' | 'ADVISORY' | 'NOT-CERTIFIED-FAIL-STAMP' =
+    floorPlan?.plan_verdict ??
+    ((floorPlan?.mathematical_certificate as any)?.is_valid === false ||
+    String(gateStatus || '').toUpperCase() === 'FAIL' ||
+    planWarningsCritical
+      ? 'NOT-CERTIFIED-FAIL-STAMP'
+      : (floorPlan?.warnings ?? []).some((w) =>
+          /^(PROP-|PROGRAMME-|PLINTH:|ROOM-MIN|ROOM-MAX|ROOM-OVERLAP|SELECTION-FALLBACK|GATE-FAIL|PLATE-SHORT)/.test(
+            String(w),
+          ),
+        )
+      ? 'ADVISORY'
+      : 'CERTIFIED');
+  const planVerdictCritical = planVerdict === 'NOT-CERTIFIED-FAIL-STAMP';
+  // The banner used to count every solver line under a
+  // "Proportion / programme non-compliance" headline, so 15 lines of which 6
+  // were plan disclosures read as 15 proportion failures.  Count what the
+  // headline names (the page-1 list), and keep the resolver noise in its own
+  // labelled block.
+  const { planWarnings: planPageWarnings, resolverNotes } = splitPlanWarnings(floorPlan?.warnings);
+
   // Scheme portfolio + what the backend did with the selection.
   // Read from the response, never inferred from the presence of a profile.
   const schemeAlternatives = floorPlan?.scheme_alternatives ?? [];
@@ -484,8 +526,16 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
       selected_scheme_id: activeSchemeProfile || undefined,
     };
 
+    const controller = new AbortController();
+    const timeoutMs = generationTimeoutMs();
+    let timedOut = false;
+    const timeoutTimer = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+
     try {
-      const resp = await generateFloorPlan(req);
+      const resp = await generateFloorPlan(req, controller.signal);
       // Plumbing: the card owns the freshness snapshot and therefore REPLACES
       // the server's `params_snapshot`. The backend's selection provenance has
       // to ride across that replacement - dropping it here is exactly what made
@@ -541,8 +591,13 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
         onFloorPlanGenerated(freshPlan);
       }
     } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to generate floor plan.');
+      setErrorMessage(
+        timedOut
+          ? `Generation timed out after ${Math.round(timeoutMs / 1000)} s — the engine did not answer. Nothing was drawn; the previous plan is unchanged. Retry when the engine is responsive.`
+          : err.message || 'Failed to generate floor plan.'
+      );
     } finally {
+      window.clearTimeout(timeoutTimer);
       setIsGenerating(false);
       setPendingSchemeProfile(null);
     }
@@ -644,7 +699,10 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
 
       {/* Error Notice */}
       {errorMessage && (
-        <div className="p-2.5 rounded-[10px] bg-[var(--fill)] text-[12px] text-[var(--semantic-red-ink)] flex items-center gap-2">
+        <div
+          data-testid="floorplan-generate-error"
+          className="p-2.5 rounded-[10px] bg-[var(--fill)] text-[12px] text-[var(--semantic-red-ink)] flex items-center gap-2"
+        >
           <Icon name="alert-triangle" size={14} className="shrink-0" />
           <span>{errorMessage}</span>
         </div>
@@ -1384,13 +1442,31 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
               </div>
             )}
 
+            {/* ONE plan verdict, identical to the certificate panel and the
+                exported PDF. */}
+            <div
+              data-testid="plan-verdict"
+              data-verdict={planVerdict}
+              className={`mt-2.5 flex items-center gap-2 text-[11px] font-semibold ${
+                planVerdictCritical
+                  ? 'text-rose-700 dark:text-rose-300'
+                  : planVerdict === 'ADVISORY'
+                  ? 'text-amber-700 dark:text-amber-300'
+                  : 'text-[var(--semantic-green-ink)]'
+              }`}
+            >
+              <Icon name={planVerdictCritical ? 'alert-triangle' : 'shield-check'} size={12} className="shrink-0" />
+              <span>Plan verdict:</span>
+              <span className="font-mono">{planVerdict}</span>
+            </div>
+
             {/* Solver Warnings Banner (Refusal: red + FAIL stamp when critical) */}
             {floorPlan.warnings && floorPlan.warnings.length > 0 && (
               <div
                 data-testid="plan-warnings-banner"
-                data-critical={planWarningsCritical ? 'true' : 'false'}
+                data-critical={planVerdictCritical ? 'true' : 'false'}
                 className={`mt-2.5 p-3 rounded-[10px] border space-y-1 ${
-                  planWarningsCritical
+                  planVerdictCritical
                     ? 'bg-rose-500/10 border-rose-500/30 text-rose-800 dark:text-rose-100'
                     : 'bg-amber-500/10 border-amber-500/25 text-amber-800 dark:text-amber-200'
                 }`}
@@ -1398,28 +1474,55 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
                 <div className="flex items-center gap-1.5 font-semibold text-[12px]">
                   <Icon name="alert-triangle" size={13} className="shrink-0" />
                   <span>
-                    {planWarningsCritical
-                      ? 'Proportion / programme non-compliance'
-                      : 'Engineering & Degradation Advisories'} ({floorPlan.warnings.length})
+                    {planWarningsHeadline(planPageWarnings.length, resolverNotes.length)}
                   </span>
-                  {planWarningsCritical && (
+                  {planVerdictCritical && (
                     <span className="ml-auto inline-flex items-center px-1.5 py-0.5 rounded-full bg-[var(--semantic-red)] text-white text-[9px] font-bold uppercase tracking-wider">
                       FAIL stamp
                     </span>
                   )}
                 </div>
-                {planWarningsCritical && (
+                {planVerdictCritical && (
                   <p className="text-[11px] leading-snug pl-4">
                     The plan is drawn and exported with a FAIL stamp. The squeezed rooms and every
                     relaxation are named individually below; refusal is reserved for statutory,
                     egress and stacking failures.
                   </p>
                 )}
-                <ul className="text-[11px] space-y-0.5 pl-4 list-disc opacity-90">
-                  {floorPlan.warnings.map((w, idx) => (
-                    <li key={idx} className="leading-snug">{w}</li>
-                  ))}
-                </ul>
+                {planPageWarnings.length > 0 && (
+                  <>
+                    <p className="text-[11px] leading-snug pl-4 opacity-90">
+                      Proportion, programme, plinth and room-band disclosures — the same lines
+                      page 1 of the exported sheet prints.
+                    </p>
+                    <ul
+                      data-testid="plan-warning-list"
+                      data-count={planPageWarnings.length}
+                      className="text-[11px] space-y-0.5 pl-4 list-disc opacity-90"
+                    >
+                      {planPageWarnings.map((w, idx) => (
+                        <li key={idx} className="leading-snug">{w}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {resolverNotes.length > 0 && (
+                  <details
+                    data-testid="resolver-notes"
+                    data-count={resolverNotes.length}
+                    className="pl-4 text-[11px] opacity-90"
+                  >
+                    <summary className="cursor-pointer select-none font-medium leading-snug">
+                      Resolver notes ({resolverNotes.length}) — door swings, circulation repairs and
+                      inapplicable rules
+                    </summary>
+                    <ul className="mt-1 space-y-0.5 list-disc pl-4">
+                      {resolverNotes.map((w, idx) => (
+                        <li key={idx} className="leading-snug">{w}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
               </div>
             )}
 
@@ -1580,12 +1683,18 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
             // No optimistic fallback list.
             const certifiedRules: string[] = cert.certified_rules || [];
             const certFailures: string[] = Array.isArray(cert.failures) ? cert.failures : [];
-            const effectiveGateStatus = gateStatus || (cert.details && cert.details.validation_gate && cert.details.validation_gate.overall_status);
-            const badge = !isValid || effectiveGateStatus === 'FAIL'
-              ? { text: 'NON-COMPLIANT', cls: 'bg-rose-600 text-white' }
-              : effectiveGateStatus === 'WARN'
-              ? { text: 'CERTIFIED · ADVISORIES', cls: 'bg-amber-500 text-white' }
-              : { text: 'VERIFIED & CERTIFIED', cls: 'bg-emerald-600 text-white' };
+            // The badge follows the PLAN verdict. A certified geometry
+            // with named programme deficits must not read "CERTIFIED" here.
+            const verdictBadge = planVerdictBadge(planVerdict);
+            const badge = {
+              text: verdictBadge.text,
+              cls:
+                verdictBadge.tone === 'red'
+                  ? 'bg-rose-600 text-white'
+                  : verdictBadge.tone === 'amber'
+                  ? 'bg-amber-500 text-white'
+                  : 'bg-emerald-600 text-white',
+            };
 
             return (
               <div className="p-3 rounded-[12px] bg-emerald-500/5 border border-emerald-500/20 text-[12px] space-y-2.5">
@@ -1666,6 +1775,7 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
                       <CertificatePanel
                         qa={{ ...(floorPlan.qa || {}), validation_gate: gate } as any}
                         relaxationsCount={relaxations.length}
+                        planVerdict={planVerdict}
                       />
                     </div>
                   );
@@ -1745,6 +1855,7 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
               storeys={activeFloors}
               isStale={isPlanStale}
               requestedTypology={activeTypology}
+              planVerdict={planVerdict}
             />
           ) : (
             <Skeleton

@@ -32,6 +32,45 @@ export function isCriticalPlanWarning(w: string): boolean {
   return CRITICAL_PLAN_WARNING_PATTERN.test(String(w ?? ''));
 }
 
+/**
+ * Split a plan's solver log into the page-1 disclosures and resolver noise.
+ *
+ * The card banner used to print its total line count under a "Proportion /
+ * programme non-compliance" headline, so 15 lines of which 6 were plan
+ * disclosures read as 15 failures.  Both surfaces list the same
+ * facts; only the count changes to match the label.
+ */
+export function splitPlanWarnings(
+  warnings?: readonly (string | null | undefined)[] | null,
+): { planWarnings: string[]; resolverNotes: string[] } {
+  const planWarnings = page1PlanWarnings(warnings);
+  const seen = new Set(planWarnings);
+  const resolverNotes = (warnings ?? [])
+    .map((w) => String(w ?? '').trim())
+    .filter((w) => w.length > 0 && !seen.has(w));
+  return { planWarnings, resolverNotes };
+}
+
+/** Headline text for the card banner, so the label and the count agree. */
+export function planWarningsHeadline(planCount: number, resolverCount: number): string {
+  if (planCount > 0) return `Plan warnings (${planCount})`;
+  if (resolverCount > 0) return `Resolver notes (${resolverCount})`;
+  return 'Plan warnings (0)';
+}
+
+/**
+ * The badge above the mathematical certificate follows the PLAN verdict, not
+ * the gate alone. A certified geometry with named programme
+ * deficits must not read "CERTIFIED" anywhere on the card.
+ */
+export function planVerdictBadge(
+  verdict?: string | null,
+): { text: string; tone: 'red' | 'amber' | 'green' } {
+  if (verdict === 'NOT-CERTIFIED-FAIL-STAMP') return { text: 'PLAN NOT CERTIFIED', tone: 'red' };
+  if (verdict === 'ADVISORY') return { text: 'CERTIFIED · ADVISORIES', tone: 'amber' };
+  return { text: 'VERIFIED & CERTIFIED', tone: 'green' };
+}
+
 /** The banner payload: analysis warnings first, then the same plan list the PDF prints. */
 export function bannerWarnings<T extends { warnings?: string[] } | null | undefined>(
   analysis: T,

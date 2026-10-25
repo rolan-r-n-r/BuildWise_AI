@@ -13,6 +13,7 @@ import {
   generatedTypologyMatches,
   getTypologyProfile,
   summariseFloorProgramme,
+  resolveProgrammeFloor,
   unitCountForFloor,
 } from '../services/typologyProgramme';
 
@@ -29,6 +30,8 @@ interface BlueprintViewerProps {
   storeys?: number;
   isStale?: boolean;
   requestedTypology?: string;
+  /** Server-computed plan verdict, rendered verbatim. */
+  planVerdict?: string | null;
 }
 
 type SheetGestureState = {
@@ -208,6 +211,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   storeys,
   isStale = false,
   requestedTypology,
+  planVerdict,
 }) => {
   const { pushToast } = useDesign();
   const [mode, setMode] = useState<'cad' | 'paper'>('cad');
@@ -393,9 +397,13 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
     () => getTypologyProfile(multiStorey?.building_typology),
     [multiStorey?.building_typology]
   );
+  const programmeFloor = useMemo(
+    () => resolveProgrammeFloor(currentFloor, multiStorey?.floors),
+    [currentFloor, multiStorey?.floors]
+  );
   const programmeCounts = useMemo(
-    () => summariseFloorProgramme(currentFloor),
-    [currentFloor]
+    () => summariseFloorProgramme(programmeFloor),
+    [programmeFloor]
   );
   const programmeText = useMemo(
     () => formatProgrammeCounts(programmeCounts),
@@ -403,7 +411,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   );
   const storeyCount = multiStorey?.total_storeys || storeys || 1;
   const generatedGfa = multiStorey?.total_built_up_area_sqm || 0;
-  const generatedUnitCount = unitCountForFloor(currentFloor);
+  const generatedUnitCount = unitCountForFloor(programmeFloor);
   const typologyMismatch = Boolean(
     multiStorey && requestedTypology && !generatedTypologyMatches(multiStorey, requestedTypology)
   );
@@ -800,6 +808,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
               buried in the QA panel.  The plan is still drawn and exported;
               the chip makes sure it is never mistaken for certified. */}
           <PlanVerdictChip
+            verdict={planVerdict}
             isValid={multiStorey?.mathematical_certificate?.is_valid}
             gateStatus={multiStorey?.validation_gate?.overall_status}
           />
@@ -924,6 +933,8 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
           {isMultiStorey && multiStorey!.floors.length > 1 && (
             <button
               type="button"
+              data-testid="ghost-overlay-toggle"
+              aria-pressed={showGhostOverlay}
               onClick={() => setShowGhostOverlay((v) => !v)}
               disabled={activeFloorIndex === 0}
               title={

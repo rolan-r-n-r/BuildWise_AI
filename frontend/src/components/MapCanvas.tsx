@@ -1443,7 +1443,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const handleContextLost = (e: Event) => {
-      e.preventDefault();
+      // MapLibre hands its own event object to this listener, not the DOM
+      // WebGLContextEvent: it has no preventDefault. Calling it unconditionally
+      // threw `TypeError: e.preventDefault is not a function` on every context
+      // loss; cancel only when the event really supports it.
+      if (typeof e.preventDefault === 'function') e.preventDefault();
       console.warn('Map WebGL context lost.');
     };
     const handleContextRestored = () => {

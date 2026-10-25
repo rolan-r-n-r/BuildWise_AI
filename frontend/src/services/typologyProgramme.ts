@@ -119,6 +119,22 @@ export function summariseFloorProgramme(floor: SingleFloorPlanModel | null | und
   return buckets;
 }
 
+/**
+ * Which plate supplies the header's programme summary.
+ *
+ * `currentFloor` is null for every single-storey plan (the floor switcher is
+ * gated on `floors.length > 1`), which made the header claim "no rooms on this
+ * floor" beside the room chips it had just listed.  The summary
+ * therefore falls back to the first floor without enabling the switcher.
+ */
+export function resolveProgrammeFloor(
+  currentFloor: SingleFloorPlanModel | null | undefined,
+  floors: readonly SingleFloorPlanModel[] | null | undefined,
+): SingleFloorPlanModel | null {
+  if (currentFloor) return currentFloor;
+  return floors && floors.length > 0 ? floors[0] : null;
+}
+
 export function formatProgrammeCounts(counts: ProgrammeCount[]): string {
   return counts
     .map(({ label, count }) => `${count} ${label}${count === 1 ? '' : 's'}`)

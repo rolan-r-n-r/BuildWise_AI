@@ -932,6 +932,7 @@ const AppShell: React.FC = () => {
         latitude={siteLocation?.latitude ?? null}
         longitude={siteLocation?.longitude ?? null}
         formattedAddress={analysisData?.formatted_address}
+        hasCapturedPlot={boundary !== null}
         onCoordinatesChange={handleLocationSelect}
         onClear={handleClearLocation}
       />
@@ -947,6 +948,7 @@ const AppShell: React.FC = () => {
         onSubmit={handleRunAnalysis}
         onRequestCapture={() => openCapture('locate')}
         providerAvailability={serverStatus}
+        engineOnline={backendConnected}
         boundaryAreaSqm={boundaryAreaSqm}
       />
     </>

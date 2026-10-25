@@ -274,13 +274,18 @@ export interface AnalysisResponse {
     generation_time_ms?: string;
     fallback_reason?: string;
     parameter_reflection?: string;
+    /** Never rendered as a report value; stripped server-side. */
     feasibility_score?: string;
+    narrative_class?: string;
+    narrative_redactions?: string;
   };
   degraded_mode: boolean;
   warnings: string[];
   /** Per-source fetch provenance: real server ISO8601 fetch timestamps; null
    *  means the upstream degraded to its disclosed fallback model. */
   data_sources?: Record<string, DataSourceProvenance>;
+  /** Generated methodology disclosures keyed by factor id. */
+  methodology?: Record<string, string>;
   /** Server-validated echo of the captured boundary. */
   boundary_summary?: BoundarySummary | null;
 }
@@ -1141,6 +1146,13 @@ export interface FloorPlanResponse {
   scheme_alternatives?: SchemeAlternative[];
   scheme_portfolio?: SchemePortfolio;
   selected_scheme_id?: string;
+  /**
+   * The ONE server-computed plan verdict. Card, certificate
+   * panel and PDF render this string verbatim; the UI never re-derives a
+   * severity of its own.
+   */
+  plan_verdict?: 'CERTIFIED' | 'ADVISORY' | 'NOT-CERTIFIED-FAIL-STAMP';
+  plan_verdict_reasons?: string[];
 }
 
 export interface ReportRequestPayload {

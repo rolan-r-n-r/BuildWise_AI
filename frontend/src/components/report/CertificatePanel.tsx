@@ -30,6 +30,12 @@ interface CertificatePanelProps {
    * Omitted => nothing is claimed. Never infer this from the gate status.
    */
   relaxationsCount?: number;
+  /**
+   * The server-computed plan verdict. Rendered verbatim so this panel, the
+   * plan card and the exported PDF can never state different verdicts
+   *. Omitted => the row is not claimed.
+   */
+  planVerdict?: string | null;
 }
 
 type GateStatus = 'PASS' | 'WARN' | 'FAIL' | 'N/A';
@@ -45,6 +51,7 @@ export const CertificatePanel: React.FC<CertificatePanelProps> = ({
   qa,
   variant = 'card',
   relaxationsCount,
+  planVerdict,
 }) => {
   const gate = qa?.validation_gate as
     | {
@@ -97,6 +104,22 @@ export const CertificatePanel: React.FC<CertificatePanelProps> = ({
           {overall}
         </span>
       </div>
+
+      {planVerdict && (
+        <div
+          data-testid="certificate-plan-verdict"
+          className={`flex items-center gap-1.5 text-[11px] font-semibold ${
+            planVerdict === 'NOT-CERTIFIED-FAIL-STAMP'
+              ? 'text-[var(--semantic-red-ink)]'
+              : planVerdict === 'ADVISORY'
+              ? 'text-[var(--semantic-amber-ink)]'
+              : 'text-[var(--semantic-green-ink)]'
+          }`}
+        >
+          <span>Plan verdict:</span>
+          <span className="font-mono">{planVerdict}</span>
+        </div>
+      )}
 
       <div className="divide-y divide-[var(--hairline)]" data-testid="validation-gate-layer-table">
         {gate.layers.map((layer) => (
