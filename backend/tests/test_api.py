@@ -154,6 +154,10 @@ def test_analyze_endpoint(mock_external_http):
     assert data["cost_estimate"]["total_estimated_cost_inr"] > 0
     assert len(data["detailed_recommendations"]) > 0
     assert data["ai_metadata"]["provider_used"] == "mock"
+    # The popover text is generated from the slope band table and served
+    # with the analysis, so the report never re-states a hand-copied formula.
+    assert data["methodology"]["slope"].startswith("Piecewise linear score:")
+    assert "3.5 × (grade − 8)" in data["methodology"]["slope"]
 
     # New modules verification
     assert "hazard_profile" in data

@@ -1,10 +1,13 @@
 import asyncio
+import math
 import uuid
 import time
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from typing import Any, Dict, List, Optional
@@ -48,7 +51,8 @@ from app.services import (
 )
 
 from app.ai import get_ai_adapter, generate_room_program
-from app.services.geocode_service import geocode_search
+from app.services.geocode_service import geocode_search, reverse_geocode_probe
+from app.services.methodology import methodology_notes
 from app.services.external_data_service import fetch_elevation_samples
 from app.services.road_service import fetch_nearest_road
 from app.schemas.site_intelligence import (
@@ -69,6 +73,31 @@ app = FastAPI(
     description="Geo-based intelligent construction feasibility, orientation, cost estimation, hazard, land value, and Vastu advisory engine.",
     version="1.1.0"
 )
+
+
+def _json_safe_validation_detail(value: Any) -> Any:
+    """Replace non-finite floats in a validation detail tree.
+
+    Starlette's JSONResponse refuses ``NaN``/``Infinity``.  FastAPI's default
+    422 handler echoes the rejected input, so a raw ``NaN`` vertex made the
+    handler itself raise and the client saw a 500 with a traceback instead of a
+    field-named 422.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else repr(value)
+    if isinstance(value, dict):
+        return {key: _json_safe_validation_detail(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_validation_detail(item) for item in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": _json_safe_validation_detail(jsonable_encoder(exc.errors()))},
+    )
 
 # CORS configuration with exact origin matching for Vite dev server (Crucial for Local Dev)
 ALLOWED_ORIGINS = [
@@ -209,6 +238,18 @@ async def geocode_endpoint(q: str = Query(..., min_length=1, description="Free-t
     """
     result = await geocode_search(q.strip())
     return result
+
+@app.get("/api/geocode/reverse")
+async def reverse_geocode_endpoint(
+    request: Request,
+    lat: float = Query(..., ge=-90.0, le=90.0, description="Latitude to probe"),
+    lon: float = Query(..., ge=-180.0, le=180.0, description="Longitude to probe"),
+):
+    """Reverse-geocode one manual coordinate so the client can warn when it
+    falls on open water (the classic lat/lon swap).  Shares the map-proxy rate
+    limit; never raises and reports ``is_fallback`` when it could not answer."""
+    check_proxy_rate_limit(_client_ip(request))
+    return await reverse_geocode_probe(lat, lon)
 
 @app.get("/api/nearest-road", response_model=NearestRoadResponse)
 async def nearest_road_endpoint(request: Request, lat: float = Query(..., ge=-90.0, le=90.0), lon: float = Query(..., ge=-180.0, le=180.0)):
@@ -552,6 +593,27 @@ async def analyze_site(req: AnalysisRequest, request: Request):
     # NEVER sourced from LLM metadata - feasibility_score always mirrors the
     # deterministic MCDA result, and cost/vastu blocks always come from the
     # deterministic engines (base_adapter contract in app/ai/base_adapter.py).
+    # LLM boundary: the narrative may describe the site, but any
+    # score / rate / total / seismic zone it asserts is removed before it is
+    # returned.  Those values exist only in the deterministic fields above, so
+    # no reader can mistake a model guess for a certified number.
+    from app.services.ai_narrative import sanitize_narrative
+
+    _narrative_redactions: List[str] = []
+    if ai_meta.get("parameter_reflection"):
+        _clean_narrative, _redactions = sanitize_narrative(str(ai_meta.get("parameter_reflection")))
+        ai_meta = {**ai_meta, "parameter_reflection": _clean_narrative}
+        _narrative_redactions.extend(_redactions)
+    if summary:
+        _clean_summary, _summary_redactions = sanitize_narrative(str(summary))
+        summary = _clean_summary
+        _narrative_redactions.extend(r for r in _summary_redactions if r not in _narrative_redactions)
+    # The model's self-reported score is not a report value and must not travel
+    # beside one; the certified score is `feasibility_score` (deterministic).
+    ai_meta.pop("feasibility_score", None)
+    ai_meta["narrative_class"] = "advisory_non_certified"
+    ai_meta["narrative_redactions"] = ",".join(dict.fromkeys(_narrative_redactions))
+
     param_reflection = ai_meta.get("parameter_reflection") or (
         f"Site analysis reflects {req.built_up_area_sqft:,.0f} sq ft built-up area with {req.quality_grade.capitalize()} "
         f"specification grade and {f'G+{req.floors-1}' if req.floors > 1 else 'G'} storeys."
@@ -582,11 +644,14 @@ async def analyze_site(req: AnalysisRequest, request: Request):
             degraded_mode=is_degraded,
             warnings=warnings,
             parameter_reflection=param_reflection,
+            methodology=methodology_notes(),
             feasibility_score=feasibility_score_val,
             structural_recommendations=ai_recs,
             cost_breakdown=cost_breakdown_val,
             vastu_compliance=vastu_compliance_val,
             boundary_summary=boundary_summary,
+            storeys=int(req.floors),
+            building_typology=req.building_typology,
             data_sources=data_sources
         )
     except ValidationError as val_err:
@@ -619,11 +684,14 @@ async def analyze_site(req: AnalysisRequest, request: Request):
             degraded_mode=True,
             warnings=warnings,
             parameter_reflection=mock_meta.get("parameter_reflection", param_reflection),
+            methodology=methodology_notes(),
             boundary_summary=boundary_summary,
             feasibility_score=int(round(overall_score)),
             structural_recommendations=mock_recs,
             cost_breakdown=cost_estimate.model_dump(),
             vastu_compliance=vastu_advisory.model_dump(),
+            storeys=int(req.floors),
+            building_typology=req.building_typology,
             data_sources=data_sources
         )
 
@@ -716,6 +784,8 @@ async def create_generative_floorplan(
     Returns 2D matrix, placements, metrics, and production-grade SVG blueprint (JSON),
     or streams a multi-page PDF architectural dossier when format='pdf'.
     """
+    from app.services.plan_verdict import compute_plan_verdict, plan_verdict_reasons
+
     try:
         if format == "pdf" and req.multi_storey is not None:
             # Direct export of pre-generated multi-storey model (skips solver re-run)
@@ -751,6 +821,10 @@ async def create_generative_floorplan(
                 if isinstance(_f.get("plumbing_stack_alignment_pct"), (int, float))
             ]
             fp_payload = {
+                "plan_verdict": compute_plan_verdict({
+                    "multi_storey": ms_dict,
+                    "mathematical_certificate": ms_dict.get("mathematical_certificate"),
+                }),
                 "multi_storey": ms_dict,
                 "plot_width_m": req.plot_width_m or (req.multi_storey.plot_width_m if req.multi_storey else None),
                 "plot_depth_m": req.plot_depth_m or (req.multi_storey.plot_depth_m if req.multi_storey else None),
@@ -880,6 +954,17 @@ async def create_generative_floorplan(
         # request cannot freeze the analysis, site-vision or report endpoints
         # that the same page fires concurrently.
         response = await asyncio.to_thread(generate_floor_plan, req)
+
+        # ONE verdict for this generation, computed from the certificate, the
+        # gate and the page-1 plan warnings.  Card, certificate panel and PDF
+        # all render this string verbatim.
+        _verdict_payload = response.model_dump()
+        response = response.model_copy(
+            update={
+                "plan_verdict": compute_plan_verdict(_verdict_payload),
+                "plan_verdict_reasons": plan_verdict_reasons(_verdict_payload),
+            }
+        )
 
         if format == "pdf":
             # Stream architectural multi-page PDF dossier directly

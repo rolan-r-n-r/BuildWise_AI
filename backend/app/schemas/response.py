@@ -263,6 +263,10 @@ class AnalysisResponse(BaseModel):
     # real server fetch time, never a client-side placeholder.
     data_sources: Dict[str, DataSourceProvenance] = {}
     parameter_reflection: Optional[str] = None
+    # Generated methodology disclosures keyed by factor id ("slope" today).
+    # Served with the analysis so the report's popover renders the SAME band
+    # table the engine evaluated, not a hand-copied string.
+    methodology: Dict[str, str] = Field(default_factory=dict)
     feasibility_score: Optional[int] = None
     structural_recommendations: Optional[List[str]] = None
     cost_breakdown: Optional[Dict[str, Any]] = None
@@ -270,6 +274,11 @@ class AnalysisResponse(BaseModel):
     # Map-first capture: read-only echo of the captured boundary,
     # validated server-side (shoelace area, perimeter, winding, statutory minima).
     boundary_summary: Optional[BoundarySummaryResponse] = None
+    # The analysed building's storey count, echoed from the request. The report
+    # must print the project the user actually configured: it used to default
+    # to 2 because this field did not exist.
+    storeys: Optional[int] = Field(default=None, ge=1, le=10, description="Above-ground storeys analysed")
+    building_typology: Optional[str] = Field(default=None, description="Typology analysed (echoed from the request)")
 
 class HealthResponse(BaseModel):
     status: str

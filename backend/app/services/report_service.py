@@ -1682,10 +1682,20 @@ def generate_pdf_report(
             # Some API payloads carry warnings only on the analysis object; the
             # page-1 verdict must still name the squeezed rooms.
             _deficit_lines = page1_plan_warnings(pdf_warnings)
-        # A withheld certificate or a FAIL gate is the trigger.  A plain
-        # ROOM-MAX advisory on a certified plan is not a "plan not certified"
-        # banner; the amber warnings section already carries it.
-        if _plan_cert.get("is_valid") is False or str(_plan_gate.get("overall_status")).upper() == "FAIL":
+        # ONE verdict, published by the API and rendered verbatim here.  The
+        # PDF must never pick a severity of its own: that is how a card came to
+        # promise a FAIL stamp the export did not carry.
+        from app.services.plan_verdict import (
+            ADVISORY as _VERDICT_ADVISORY,
+            CERTIFIED as _VERDICT_CERTIFIED,
+            FAIL_STAMP as _VERDICT_FAIL,
+            compute_plan_verdict,
+        )
+
+        _plan_verdict = _plan_payload.get("plan_verdict") or compute_plan_verdict(_plan_payload)
+        _verdict_line = f"<b>Plan verdict:</b> {_plan_verdict}"
+
+        if _plan_verdict == _VERDICT_FAIL:
             _verdict_bits: List[str] = []
             if _plan_cert.get("is_valid") is False:
                 _verdict_bits.append("mathematical certificate WITHHELD")
@@ -1700,7 +1710,7 @@ def generate_pdf_report(
             _verdict_tbl = _plan_banner_table(
                 title_html='<font color="#B42318"><b>PLAN NOT CERTIFIED - DRAWN WITH A FAIL STAMP</b></font>',
                 lead_html=(
-                    f'<br/>{"; ".join(_verdict_bits)}. The plan is still exported; '
+                    f'<br/>{_verdict_line}<br/>{"; ".join(_verdict_bits)}. The plan is still exported; '
                     'refusal is reserved for statutory, egress and stacking violations.'
                 ),
                 lines=_deficit_lines,
@@ -1712,7 +1722,7 @@ def generate_pdf_report(
             )
             story.append(_verdict_tbl)
             story.append(Spacer(1, 8))
-        elif _deficit_lines:
+        elif _plan_verdict == _VERDICT_ADVISORY:
             # A passing/advised plan still publishes its page-1 evidence.  The
             # in-app print banner shows these rows on every plan; printing them
             # only when the certificate fails made the two page-1 lists differ.
@@ -1725,7 +1735,7 @@ def generate_pdf_report(
                     f'<font color="{COLOR_AMBER_TEXT.hexval()}"><b>'
                     'PLAN ADVISORIES — DISCLOSED ON THE DRAWING</b></font>'
                 ),
-                lead_html="",
+                lead_html=f'<br/>{_verdict_line}',
                 lines=_deficit_lines,
                 style=_adv_p,
                 background=COLOR_AMBER_TINT,
@@ -1734,6 +1744,28 @@ def generate_pdf_report(
                 rule_width=2.0,
             )
             story.append(_adv_tbl)
+            story.append(Spacer(1, 8))
+        elif _plan_verdict == _VERDICT_CERTIFIED:
+            # A certified plan says so on page 1 too: the verdict is a fact the
+            # reader should not have to infer from the absence of a warning.
+            _cert_p = ParagraphStyle(
+                'PlanCertifiedBanner', fontName=FONT_REGULAR, fontSize=8.2, leading=11.8,
+                textColor=COLOR_TEXT_PRIMARY, alignment=0,
+            )
+            _cert_tbl = _plan_banner_table(
+                title_html=(
+                    f'<font color="{COLOR_GREEN_TEXT.hexval()}"><b>'
+                    'PLAN CERTIFIED — NO OUTSTANDING PLAN ADVISORY</b></font>'
+                ),
+                lead_html=f'<br/>{_verdict_line}',
+                lines=[],
+                style=_cert_p,
+                background=COLOR_GREEN_TINT,
+                border=COLOR_GREEN_BORDER,
+                rule_color=COLOR_GREEN_BORDER,
+                rule_width=2.0,
+            )
+            story.append(_cert_tbl)
             story.append(Spacer(1, 8))
 
     if not is_dossier_only:
@@ -1783,18 +1815,38 @@ def generate_pdf_report(
         built_area = base_cost / max(base_rate, 1.0) if base_cost > 0 else _safe_float(data.get("built_up_area_sqft"), 2000.0)
 
         quality_grade = str(data.get("quality_grade") or "Standard")
-        floors_count = _safe_int(data.get("floors"), 2)
+        # The analysed storey count comes from the request.  `floors` was never
+        # part of the analysis payload, so this cell defaulted to 2 and every
+        # single-storey dossier claimed "G+1".  Order of truth:
+        # echoed storeys -> legacy floors -> generated plan -> 1.
+        _plan_params = _get(floor_plan, "params_snapshot") or _get(data, "params_snapshot") or {}
+        floors_count = _safe_int(
+            data.get("storeys", data.get("floors", _plan_params.get("floors") if isinstance(_plan_params, dict) else None)),
+            1,
+        )
+        floors_count = max(1, min(10, floors_count))
         storeys_str = f"G+{floors_count-1} Storeys" if floors_count > 1 else "Ground Floor"
 
         slope_val = next((f.get('raw_value') for f in (data.get('factors') or []) if f.get('factor_id') == 'slope' and f.get('raw_value') is not None), 0)
-        slope_str = f"{_safe_float(slope_val):.1f}% Slope" if slope_val is not None else "0% Slope"
+        slope_str = f"{_safe_float(slope_val):.1f}%" if slope_val is not None else "0%"
 
         c_area = Paragraph(f'<font color="{COLOR_TEXT_SECONDARY.hexval()}" size="7.5">Built-up Area</font><br/><font color="{COLOR_TEXT_PRIMARY.hexval()}" size="10"><b>{built_area:,.0f} sq ft</b></font>', kv_style)
         c_grade = Paragraph(f'<font color="{COLOR_TEXT_SECONDARY.hexval()}" size="7.5">Specification Grade</font><br/><font color="{COLOR_TEXT_PRIMARY.hexval()}" size="10"><b>{html.escape(quality_grade.capitalize())} Grade</b></font>', kv_style)
         c_storeys = Paragraph(f'<font color="{COLOR_TEXT_SECONDARY.hexval()}" size="7.5">Storeys</font><br/><font color="{COLOR_TEXT_PRIMARY.hexval()}" size="10"><b>{html.escape(storeys_str)}</b></font>', kv_style)
-        c_cov = Paragraph(f'<font color="{COLOR_TEXT_SECONDARY.hexval()}" size="7.5">Ground Coverage</font><br/><font color="{COLOR_TEXT_PRIMARY.hexval()}" size="10"><b>60.0% ({slope_str})</b></font>', kv_style)
+        c_cov = Paragraph(f'<font color="{COLOR_TEXT_SECONDARY.hexval()}" size="7.5">Ground Coverage</font><br/><font color="{COLOR_TEXT_PRIMARY.hexval()}" size="10"><b>60.0%</b></font>', kv_style)
+        # Terrain slope is its own labelled cell, not a parenthetical attached
+        # to the coverage value.  Two measurements, two labels.
+        c_slope = Paragraph(
+            f'<font color="{COLOR_TEXT_SECONDARY.hexval()}" size="7.5">Terrain Slope</font><br/>'
+            f'<font color="{COLOR_TEXT_PRIMARY.hexval()}" size="10"><b>{html.escape(slope_str)}</b></font>',
+            kv_style,
+        )
+        c_spare = Paragraph("", kv_style)
 
-        spec_grid = Table([[c_area, c_grade], [c_storeys, c_cov]], colWidths=[130, 130])
+        spec_grid = Table(
+            [[c_area, c_grade], [c_storeys, c_cov], [c_slope, c_spare]],
+            colWidths=[130, 130],
+        )
         spec_grid.setStyle(TableStyle([
             ('TOPPADDING', (0, 0), (-1, -1), 2.0),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 2.0),

@@ -171,16 +171,46 @@ def test_print_page1_plan_warnings_equal_pdf_banner_verbatim():
         assert line in text, f"page-1 plan warning missing from PDF: {line}"
 
 
-def test_plan_advisories_page1_list_survives_a_non_failed_gate():
+def test_plan_verdict_survives_a_valid_certificate_with_named_deficits():
+    """A valid certificate does not neutralise named deficits.
+
+    This fixture carries ROOM-MIN / PROP-HARD / GATE-FAIL rows.  It used to
+    render the amber "PLAN ADVISORIES" banner because the certificate was
+    valid, while the plan card rendered a red FAIL stamp.  One verdict now
+    governs: named deficits mean NOT-CERTIFIED-FAIL-STAMP on every surface,
+    and the page-1 rows are still printed in full and verbatim.
+    """
     plan = _plan_payload()
     plan["validation_gate"] = {"overall_status": "WARN"}
     plan["mathematical_certificate"] = {"is_valid": True}
     buf = generate_pdf_report(_base_data(), floor_plan=plan)
     raw = "".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(buf.getvalue())).pages)
     text = " ".join(raw.split())
-    assert "PLAN ADVISORIES" in text
+    assert "PLAN NOT CERTIFIED - DRAWN WITH A FAIL STAMP" in text
+    assert "Plan verdict: NOT-CERTIFIED-FAIL-STAMP" in text
     expected = page1_plan_warnings(PLAN_PAGE1_WARNINGS)
     assert " ".join(f"• {line}" for line in expected) in text, (
+        "the deficit banner is not the print banner list verbatim"
+    )
+
+
+def test_plan_advisories_page1_list_survives_a_certified_plan():
+    """Only listed relaxations: amber banner, same verbatim page-1 list."""
+    advisory_rows = [
+        "PROP-CEILING: puja is 9.6 m² against its 6.0 m² declared ceiling.",
+        "PLINTH: the built-up target (78.2 m²) exceeds the programme need (63.0 m²).",
+    ]
+    plan = {
+        "warnings": advisory_rows,
+        "validation_gate": {"overall_status": "WARN"},
+        "mathematical_certificate": {"is_valid": True},
+    }
+    buf = generate_pdf_report(_base_data(), floor_plan=plan)
+    raw = "".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(buf.getvalue())).pages)
+    text = " ".join(raw.split())
+    assert "PLAN ADVISORIES" in text
+    assert "Plan verdict: ADVISORY" in text
+    assert " ".join(f"• {line}" for line in page1_plan_warnings(advisory_rows)) in text, (
         "the advisory banner is not the print banner list verbatim"
     )
 

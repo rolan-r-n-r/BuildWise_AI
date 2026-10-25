@@ -6,6 +6,7 @@ from app.schemas.site_plan import PlotPolygonModel, SitePlanModel
 from app.schemas.scheme import SchemeAlternative, SchemePortfolio
 from app.schemas.land_economics import LandEconomicsReport
 from app.schemas.space_identity import SpaceIdentity
+from app.schemas.typology import BuildingTypology
 
 class TerraceBandSpec(BaseModel):
     """
@@ -36,21 +37,21 @@ class FloorPlanRequest(BaseModel):
         default="high",
         description="Weight of Vastu Shastra rules vs. plumbing & circulation efficiency"
     )
-    building_typology: Optional[str] = Field(default="residential_single", description="Typology identifier")
+    building_typology: Optional[BuildingTypology] = Field(default="residential_single", description="Typology identifier")
     seed: Optional[str] = Field(
         default=None,
         max_length=32,
         description="Optional deterministic generation seed; numeric values drive the GEN/CERT token, others fall back to the historical default",
     )
-    quality_grade: Optional[str] = Field(default="standard", description="Specification grade: basic, standard, premium")
+    quality_grade: Optional[Literal["basic", "standard", "premium"]] = Field(default="standard", description="Specification grade: basic, standard, premium")
     floors: Optional[int] = Field(default=1, ge=1, le=10, description="Number of storeys/levels")
-    built_up_area_sqft: Optional[float] = Field(default=None, description="Total plinth/built-up area in sq ft")
-    ground_coverage_ratio: Optional[float] = Field(default=0.60, description="Ground coverage ratio applied")
+    built_up_area_sqft: Optional[float] = Field(default=None, allow_inf_nan=False, description="Total plinth/built-up area in sq ft")
+    ground_coverage_ratio: Optional[float] = Field(default=0.60, allow_inf_nan=False, description="Ground coverage ratio applied")
     client_notes: Optional[str] = Field(default=None, max_length=240, description="Optional client notes / design requirements")
-    ai_provider: Optional[str] = Field(default="mock", description="AI provider for LLM room program synthesis")
+    ai_provider: Optional[Literal["mock", "groq", "gemini", "ollama"]] = Field(default="mock", description="AI provider for LLM room program synthesis")
     room_program: Optional[RoomProgram] = Field(default=None, description="Explicit LLM or caller-provided room program")
-    solar_axis_degrees: Optional[float] = Field(default=None, description="Optimal solar axis in degrees")
-    prevailing_wind_direction_degrees: Optional[float] = Field(default=None, description="Prevailing wind azimuth in degrees")
+    solar_axis_degrees: Optional[float] = Field(default=None, allow_inf_nan=False, description="Optimal solar axis in degrees")
+    prevailing_wind_direction_degrees: Optional[float] = Field(default=None, allow_inf_nan=False, description="Prevailing wind azimuth in degrees")
     top_vastu_entrances: Optional[List[str]] = Field(default=None, description="Top ranked auspicious entrance orientations")
     program_source: Optional[str] = Field(default=None, description="Pre-computed program source: llm, cache, or fallback")
     bypass_cache: Optional[bool] = Field(default=False, description="Whether to bypass room program cache for fresh generation")
@@ -382,6 +383,18 @@ class FloorPlanResponse(BaseModel):
     land_economics: Optional[LandEconomicsReport] = Field(
         default=None,
         description="Land-economics report and SPACE-EFFICIENCY certificate"
+    )
+    plan_verdict: Optional[Literal["CERTIFIED", "ADVISORY", "NOT-CERTIFIED-FAIL-STAMP"]] = Field(
+        default=None,
+        description=(
+            "The ONE plan verdict, computed server-side from the certificate, the "
+            "validation gate and the page-1 plan warnings. Card, certificate panel "
+            "and PDF render this string verbatim; none re-derives a severity."
+        ),
+    )
+    plan_verdict_reasons: Optional[List[str]] = Field(
+        default=None,
+        description="Named facts behind plan_verdict, in the order they were checked",
     )
 
 
