@@ -75,7 +75,7 @@ React 19 + MapLibre GL UI (Apple Vibrancy / Glassmorphism)
 | [Blueprint Engine](docs/blueprint-engine.md) | Spatial CSP solver, room placement knowledge base, topological invariants, and PDF drawings. |
 | [Space Engine](docs/space-engine.md) | Deterministic solver architecture, L1–L15 gate, independent invariant sweep, and how to audit a certificate. |
 | [Map & Data Providers](docs/map-and-data.md) | MapLibre styles, hybrid layers, OpenStreetMap/Esri/USGS attribution, and data licensing. |
-| [Testing & QA](docs/testing.md) | 1,159-test backend suite, placement regression and PDF tests, plus the 9-viewport Puppeteer UI audit. |
+| [Testing & QA](docs/testing.md) | 1,352-test backend suite, placement regression and PDF tests, plus the 9-viewport Puppeteer UI audit. |
 | [Deployment](docs/deployment.md) | Production setup, server-side API key isolation, Nginx/Uvicorn configuration, and health probes. |
 
 ## Development
@@ -87,7 +87,7 @@ npm run lint          # Fast static analysis via Oxlint
 npm run build         # TypeScript type check (tsc) + Vite production bundle
 npm run audit:ui      # Puppeteer DOM integrity audit across 9 viewports
 
-# Backend test suite (1,159 tests)
+# Backend test suite (1,352 tests, plus the QA gate set)
 cd ../backend
 python -m pytest tests/
 ```

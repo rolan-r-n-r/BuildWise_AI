@@ -34,7 +34,7 @@ BuildWise AI employs a multi-tiered verification hierarchy ensuring that zero in
 │                        Continuous Quality Gates                        │
 ├──────────────────────────────────┬─────────────────────────────────────┤
 │        Backend Verification      │        Frontend Verification        │
-│  • 1,159 Automated Pytest Cases  │  • Oxlint Fast Static Analysis      │
+│  • 1,352 Automated Pytest Cases  │  • Oxlint Fast Static Analysis      │
 │  • 145 Placement Regression Test │  • TypeScript Strict Typing (tsc)   │
 │  • Vastu / Topological Invariant │  • Vite Production Bundling         │
 │  • CPWD Mathematical Accuracy    │  • Puppeteer 9-Viewport Audit       │
@@ -184,6 +184,9 @@ python scripts/qa_invariant_sweep.py --quick
 
 # Re-freeze the landing hero geometry the 3D massing extrudes from
 python scripts/capture_landing_generation.py
+
+# Rebuild the canonical NOT-CERTIFIED warning fixture the frontend pins read
+python scripts/capture_warning_fixture.py
 ```
 `qa_invariant_sweep.py` runs every typology × plot × storey × strictness combination through the real solver and writes a violation register; `--only`, `--typology`, `--suffix` narrow or label a run. `capture_landing_generation.py` calls the same function as `POST /api/generate-floorplan` with `ai_provider="mock"` and a fixed seed, so re-running reproduces the landing asset byte-for-byte (timestamps excluded from the provenance hash).
 
@@ -252,6 +255,10 @@ built tree (`vite preview` on port 4173 for `audit:landing`) or the dev servers 
 | `npm run assert:bundle` | Route-level bundle split is intact |
 | `npm run test:e2e` *(dev servers required)* | Full funnel in Chromium: capture → analysis → blueprint, including land economics, the scheme picker re-solving the plate, the 390 px report section-nav fade, the frontage vertex pair and float-free numeric inputs |
 | `node scripts/audit_sidebar_wiring.cjs` *(dev servers required)* | Every sidebar control moves a visible output, light + dark proofs, dropdown/menu keyboard behaviour |
+| `node scripts/e2e_certificate_truth.cjs` *(dev servers required)* | Certificate truth labels in the browser: the CERTIFIED and the FAIL-stamp case each render their own group counts, the definition legend verbatim, and the PDF page-1 rows |
+| `node scripts/e2e_certification_search.cjs` *(dev servers required)* | The T2 certification-search case: strategy chip, grouped rows, and applying the named alternative through the real API |
+| `node scripts/e2e_warning_surface.cjs` *(dev servers required)* | The 55-message warning surface at 1280 and 390 with zero horizontal spill, then a real engine remediation whose certificate matches the card's dry-run |
+| `node scripts/e2e_plan_advisor.cjs` *(dev servers required)* | Advisor offline vs live renders the same cards, order and measured numbers; writes the parity table and screenshots |
 | `npm run audit:landing` *(preview build on 4173)* | Landing console, axe, overflow, CLS and LCP across viewports, 44 px tap targets and the fixed porcelain palette under an OS `prefers-color-scheme: dark` preference. The landing is intentionally light-only (see `index.css`); the dark pass asserts it stays porcelain rather than inverting. Exits non-zero on console/page errors, axe violations, undersized targets, document overflow or an inverted palette |
 
 ---

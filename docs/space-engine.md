@@ -20,6 +20,7 @@ frontage — is rejected by the ontology's own HYG-02 law and never emitted.
 - [Pipeline](#pipeline)
 - [Engine subsystems and contracts](#engine-subsystems-and-contracts)
 - [Two independent judges: gate layers and sweep invariants](#two-independent-judges-gate-layers-and-sweep-invariants)
+- [Certification, declines and remediation](#certification-declines-and-remediation)
 - [Verifying it yourself](#verifying-it-yourself)
 - [Current status](#current-status)
 - [Navigation](#navigation)
@@ -101,6 +102,105 @@ evaluators, so agreement between the two means something.
 | I9 typology | returned rooms carry the requested typology's programme |
 | I10 refusal | a refused brief is refused honestly, with a FAIL gate and no invented rooms |
 
+## Certification, declines and remediation
+
+A plan is one of three things, and the vocabulary is single-sourced in
+`services/plan_verdict.py` so the screen, the print view and the PDF cannot
+answer differently:
+
+- **CERTIFIED** — statutory and safety layers PASS, zero unlisted breaches, and
+every quality deviation sits inside its declared cap *and* is listed. Listed
+within-cap relaxations are still printed on page 1 and in the UI ledger; they do
+not withhold the certificate.
+- **NOT-CERTIFIED-FAIL-STAMP** — a statutory FAIL, an unlisted breach, or a
+deviation beyond its cap.
+- **DECLINED** — the brief is not plausible or the gate withheld the certificate;
+no plan is invented to fill the gap.
+
+The `CERTIFIED_DEFINITION` string is the legend the UI and the PDF print verbatim
+(pinned by `tests/test_plan_verdict_parity.py`), and the same suite pins the three
+truth-label headings and their counts across `plan_verdict.py` and
+`frontend/src/services/warningReport.ts`.
+
+### The escalation ladder (S0–S5)
+
+When the as-requested plan fails, `floorplan/strategy_escalation.py` tries an
+ordered ladder on the same request — at most six solves including S0 — and
+returns the first **fully certified** plan, or the best measured attempt when
+none certifies. A strategy only succeeds when its own verdict is CERTIFIED with
+a valid certificate, zero certificate failures and a PASS/WARN gate under the
+calibrated verdict definition; the ladder never weakens a gate.
+
+| Step | Lever |
+|:--|:--|
+| S0 | as requested |
+| S1 | T2 service-row depth variant, kitchens moved into the service strip |
+| S2 | count-preserving two-storey dwellings (V3): four floor-level units per plate, paired across storeys so an eight-household brief stays eight households |
+| S3 | coverage-headroom trial; the feasible plate is re-measured and no growth is claimed when setbacks bind |
+| S4 | storey addition inside the 4-storey engine cap |
+| S5 | **not implemented for T2**; the chain reports it skipped and removes no room |
+
+Every tried strategy stays public: the chain is attached to the plan, written as
+a `STRATEGY-CHAIN` line in the warning ledger (therefore on page 1 of the PDF) and
+rendered as a chip in the UI. A tried-and-failed step remains in the chain as
+evidence rather than being erased. Dry-runs are memoised on the complete
+canonical request (including units per floor and response-affecting options),
+so a cached attempt is the same deterministic plan for the same effective
+request, and the solve budget stays bounded.
+
+`partition_variant` accepts `service_row`, `single_unit` and `duplex`; omitting it
+keeps the default side-by-side two-unit plate. `duplex` requires an even number of
+storeys and four floor-level units per plate (omitted or `4`); a three-unit T2
+request is still refused with its named 422. `single_unit` remains the separate,
+confirmation-gated dwelling-deficit remediation (`S2_deficit`), not the ladder's
+S2.
+
+### V3 duplex layout and plate policy
+
+The V3 partitioner has two deterministic layouts. The **core-band** row layout
+puts two units north and two south of a central 3.59 m core band; every unit gets
+a full-depth service strip (bath, private stair, kitchen) and a 3.69–3.73 m main
+room. Its minimum legal plate is about 9.7 × 17.6 m. The **compact** quadrant
+layout is the guarded quadrant fallback: it is retained for sites that cannot hold the
+row plate, and it fails its own room minima rather than being relabelled.
+
+When the request is explicitly `duplex` (or the ladder's S2 patches it), the
+engine may grow the plate only inside the same setback buildable and coverage
+ceiling. The growth is disclosed as `DUPLEX-PLATE` with the old and new rectangle,
+area delta, coverage/depth/width headroom, why it is feasible, and the binding
+constraints. A site whose legal ceiling is below the row minimum keeps the
+compact plan and reports the shortfall; no coverage ratio, setback or catalogue
+minimum is relaxed to manufacture a plate.
+
+V3 is **single-entry**: the lower level owns the common-corridor door and the
+upper level is reached only through the aligned internal stair pair. The upper
+stair enters the reachability certificate as a vertical portal seeded from the
+lower stair's measured travel distance, so it is not a sealed box and not a
+second corridor-accessible flat. The internal stair is validated as an aligned
+1.20 × 3.31 m envelope against the `unit_stair` catalogue; tread, riser, landing,
+headroom, flight continuity and handrail geometry are **not modelled**, and the
+`UNIT-STAIR-02` warning states that partial scope rather than claiming stair-code
+compliance.
+
+A certified row plate measures its compliance from the wall-deducted room
+schedule, not the nominal rectangles: on the 18 × 24 m case the eight households
+retain sixteen level-units, the living face is 5.31 × 3.44 m clear, the bath is
+1.24 m clear and the kitchen is 9.50 m². The compact 12 × 18 m target still fails
+NBC-01 with the same named bath/living shortfalls it has always disclosed.
+
+### Declines and remediation
+
+`floorplan/plausibility.py` classifies site/programme plausibility against the
+typology's minimum site area. An implausible brief is declined with named reasons
+and options instead of a certificate, and every declined case in the honesty
+matrix names its blocker.
+
+Remediation cards (`floorplan/remediation.py`) carry measured numbers from the
+same cached dry-runs, label the already-selected strategy as `current` rather than
+offering it, and never imply certification. An S2 plan that reduces the dwelling
+count is drawn only after an explicit confirmation of the deficit; until then it
+stays a card and never becomes the active generation.
+
 ## Verifying it yourself
 
 ```bash
@@ -127,21 +227,27 @@ register, which is why they are counted individually rather than collapsed into 
 
 Stated plainly, because a certificate nobody audits is decoration:
 
-- The backend suite is green (**1,159 tests**), including the standing sweep tests.
-- On the canonical 12 × 15 T2 plate the compact pocket plan now puts every unit room
-  at or above its catalogue **gross** minimum (living 21.98 / 17.20 m², bedroom
-  10.77 / 11.53 m², kitchen 8.08 / 8.04 m², bathroom 6.70 / 6.82 m²) and the
-  mathematical certificate is valid. Previously those units published living
-  rooms of 11.73 / 14.48 m² with `min_dimensions_satisfied = False`.
-- The sweep still finds real shortfalls on constrained plates. On the same compact
-  case the targeted register drops from 11 violations to 5: the two gross living
-  failures are gone and three **clear-dimension** I2 entries remain, which a
-  9.60 × 11.25 m plate cannot recover without pushing another room below its floor.
-  These are disclosed as `ROOM-MIN` / `ROOM-MAX` warnings in the payload rather than
-  hidden.
-- The stricter grid catalogue (bath 8.0 m², kitchen 9.0 m², living 18.0 m² for two
-  units on 108 m²) and the land programme deficit still keep the report status at
-  `compromise` with an L1/L10 WARN; the certificate itself is valid.
+- The backend suite is green (**1,352 passed, 1 skipped**), including the standing
+  sweep tests and the cross-process determinism matrix.
+- The 56-case market-mix matrix (rect and near-rect plates, 12 × 15 to 40 × 60 m,
+  typology-default programmes, 1–3 storeys) certifies **30 of 49 plausible cases
+  (61.2%)**: T1 14/14, T2 10/14, T3 2/13, T4 4/8. All 7 implausible briefs are
+  declined with named reasons, and no implausible brief is certified.
+- The invariant sweep reports **0 true failures**; its 2,000 disclosed entries are
+  occurrence-level relaxations carried in the payload, not gate failures.
+- On the canonical 12 × 15 T2 plate the compact pocket plan puts every unit room at
+  or above its catalogue **gross** minimum (living 21.98 / 17.20 m², bedroom
+  10.77 / 11.53 m², kitchen 8.08 / 8.04 m², bathroom 6.70 / 6.82 m²), and the
+  mathematical certificate is valid with **0 failures**.
+- That plate cannot hold the full programme: 108.0 m² of buildable plate against
+  122.7 m² demanded leaves six rooms below minimum, so the plan is drawn with a
+  **NOT-CERTIFIED-FAIL-STAMP** verdict and an L1 WARN. The two reasons name the
+  blocker and carry the options — `PLATE-SHORT` (12.0% short; service rooms bind)
+  and `PROGRAMME-DEFICIT` (add a storey, reduce the programme, or enlarge the plate
+  where the site allows). The five remaining sweep entries on this case are
+  **clear-dimension** I2 items the 9.60 × 11.25 m plate cannot recover without
+  pushing another room below its floor; they are disclosed as `ROOM-MIN` /
+  `ROOM-MAX` warnings rather than hidden.
 - Aspect-ratio and minima overruns produced by a legal but tight plate remain a
   known open item, not a passing check.
 
