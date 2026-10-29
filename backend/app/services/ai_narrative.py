@@ -23,7 +23,9 @@ import re
 from typing import List, Tuple
 
 CURRENCY_CLAIM = re.compile(
-    r"(?:₹|INR|Rs\.?)\s?[\d,]+(?:\.\d+)?"
+    # The token needs a word boundary and at least one digit: without both, the
+    # "rs" inside "layers," matched and the sanitizer corrupted ordinary prose.
+    r"(?<![A-Za-z])(?:₹|INR|Rs\.?)\s?\d[\d,]*(?:\.\d+)?"
     r"(?:\s*(?:lakh|lakhs|crore|crores|cr|bn|billion|million|m))?",
     re.IGNORECASE,
 )
