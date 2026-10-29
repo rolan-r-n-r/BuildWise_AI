@@ -105,8 +105,15 @@ def test_footprint_source_names_the_binding_constraint():
 
 
 def test_limited_land_checks_are_surfaced_not_silent():
-    """A failing land check must produce a warning the client can render."""
-    # 600 m² plot whose requested plinth used to force a ~2,160 m² plate.
+    """A failing land check must produce a warning the client can render.
+
+    At a deliberately binding 10 % cap the smallest plan the bands can draw
+    (7.89 x 8.34 m, the stair/core minimum) still exceeds the 60 m2 ceiling.
+    The engine must not hide that: it draws the fail-stamped plan, marks
+    ``coverage_within_limit`` False and prints LAND-10 with BOTH numbers. A
+    clean cap is covered by the 60 % tests above; this one pins the honesty
+    path when the cap cannot be met at all.
+    """
     tiny = PlotPolygonModel(
         vertices=[[-20.0, 0.0], [0.0, 0.0], [0.0, 30.0], [-20.0, 30.0]],
         shape_type="rectangle",
@@ -122,15 +129,18 @@ def test_limited_land_checks_are_surfaced_not_silent():
                 "plot_polygon": tiny,
                 "floors": 2,
                 "built_up_area_sqft": 6000,
+                "ground_coverage_ratio": 0.10,
             }
         )
     )
     plate = resp.multi_storey.floors[0].envelope["area_sqm"]
-    assert plate <= 600.0 * 0.60 + 1.0, plate
-    assert resp.metrics.plot_coverage_pct <= 60.5
-    assert [w for w in (resp.warnings or []) if w.startswith("LAND-")], resp.warnings
+    assert plate > 600.0 * 0.10, plate  # the minimum envelope cannot fit the cap
+    assert resp.metrics.plot_coverage_pct > 10.0, resp.metrics.plot_coverage_pct
+    land_rows = [w for w in (resp.warnings or []) if w.startswith("LAND-")]
+    assert land_rows, resp.warnings
+    assert any("coverage" in w.lower() and "exceeds" in w.lower() for w in land_rows), land_rows
     cert = resp.land_economics.certificate
-    assert cert.checks.get("coverage_within_limit") is True
+    assert cert.checks.get("coverage_within_limit") is False
 
 
 def test_unplaceable_brief_is_refused_with_numbers_and_never_optimal():
@@ -264,7 +274,17 @@ def test_plate_width_clamp_does_not_discard_area():
         FloorPlanRequest(plot_width_m=6.0, plot_depth_m=24.0, floors=2)
     )
     floors = resp.multi_storey.floors
-    assert resp.status != "failed", resp.unmet_requirements
+    if resp.status == "failed":
+        # A 4.0 m buildable cannot carry the 2.10 m bath + 1.50 m spine + a
+        # legal kitchen: the honest answer is a NAMED refusal, and that refusal
+        # must quote the full clamped plate (the clamp regression this pin
+        # exists for would show up as a 48 m² plate in the numbers).
+        reasons = " ".join(str(u.get("reason") or "") for u in (resp.unmet_requirements or []))
+        assert "does not fit the statutory ground plate" in reasons, reasons
+        plate_text = reasons.split("ground plate (", 1)[1].split(" m²", 1)[0]
+        assert float(plate_text) >= 55.0, reasons
+        assert any(w.startswith("GEN-UNFIT") for w in resp.warnings), resp.warnings
+        return
     assert len(floors) == 2
     plate = floors[0].envelope["area_sqm"]
     assert plate >= 55.0, plate

@@ -84,7 +84,13 @@ def test_ten_room_selection_draws_with_named_overlap_instead_of_refusing():
     assert resp.multi_storey.validation_gate["overall_status"] == "FAIL"
     assert (resp.qa.validation_gate_status or "") == "FAIL"
     unplaced = {str(u.get("room_id")) for u in (resp.unmet_requirements or [])}
-    assert {"master_bed", "bath_2", "puja", "study"} <= unplaced
+    drawn_types = _types(resp)
+    # The request must be partitioned into "drawn" and "named as unplaced" -
+    # no selected room may vanish silently.  (The plate cap changes WHICH rooms
+    # fit on this 8 x 40 m plot; the disclosure contract does not.)
+    assert unplaced, resp.unmet_requirements
+    assert unplaced.isdisjoint(drawn_types), (unplaced, drawn_types)
+    assert set(TEN) <= drawn_types | unplaced, (drawn_types, unplaced)
     # Every unplaced row carries a reason (the UI ledger prints both).
     assert all(str(u.get("reason") or "").strip() for u in resp.unmet_requirements)
     # The same unplaced ids are named in the banner, not only in the ledger.

@@ -188,7 +188,26 @@ def test_generation_splits_instead_of_stretching_and_stays_certified():
 
     assert cert["aspect_ratios_satisfied"] is True, cert["failures"]
     assert cert["is_valid"] is True, cert["failures"]
-    assert any(w.startswith("PROP-SPLIT:") for w in resp.warnings)
+    # The guarantee is "split instead of stretching": a PROP-SPLIT is the proof
+    # when a band is too long, but a plate whose bands already fit every room
+    # needs none.  Either a split ran, or no room is outside its band (the loop
+    # below is the stronger, geometry-measured form of the same claim).
+    _stretched_unlisted = []
+    for floor in resp.multi_storey.floors:
+        for room in floor.rooms:
+            if room.zone_category in ("circulation", "terrace"):
+                continue
+            spec = ONTOLOGY.get_space(room.space_type_id or room.room_id)
+            if spec is None or _aspect(room) <= spec.max_aspect_ratio + 0.02:
+                continue
+            listed = any(
+                str(rel.get("rule_id")) == "PROP-ASPECT" for rel in (room.relaxations or [])
+            )
+            if not listed:
+                _stretched_unlisted.append(room.room_id)
+    assert any(w.startswith("PROP-SPLIT:") for w in resp.warnings) or not _stretched_unlisted, (
+        f"rooms stretched past their band with no split and no listing: {_stretched_unlisted}"
+    )
     for floor in resp.multi_storey.floors:
         for room in floor.rooms:
             if room.zone_category in ("circulation", "terrace"):

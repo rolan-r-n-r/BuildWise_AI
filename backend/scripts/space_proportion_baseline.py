@@ -75,8 +75,8 @@ from app.services.floorplan.furniture import furniture_set_for, layout_room
 from app.services.floorplan.ontology import ONTOLOGY
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "docs_ignore" / "space-engine"
-# Output slug: the Phase-A baseline keeps its own files so a later stage can be
-# measured against them without overwriting the reference run.
+# Output slug: the baseline keeps its own files so a re-baseline cannot
+# overwrite the reference run it is meant to be compared against.
 SLUG = "proportion-baseline"
 
 # ---------------------------------------------------------------------------

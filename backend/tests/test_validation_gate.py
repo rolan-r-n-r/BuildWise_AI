@@ -422,6 +422,64 @@ def test_l14_travel_distance_failure_forces_fail():
     assert any("Travel distance" in f for f in fire["findings"])
 
 
+def test_l14_capacity_shortfall_is_a_named_hard_fail():
+    """A stair too narrow for the storeys it serves is a hard FAIL, not a WARN.
+
+    Release-closure pin: the protected stair is sized for the population of the
+    storeys above grade (the ground floor discharges through the main entry).
+    A shortfall on either exit must be named and must fail L14 so no certified
+    verdict can carry it.
+    """
+    from types import SimpleNamespace
+
+    def floor(door_id: str, stair: str) -> Any:
+        return SimpleNamespace(
+            floor_index=0,
+            envelope={"width": 12.0, "depth": 18.0, "area_sqm": 216.0},
+            rooms=[],
+            windows=[],
+            doors=[SimpleNamespace(door_id=door_id, width_m=1.0)],
+            stair_schedule=[{"flight_width_m": stair}],
+        )
+
+    floors = [floor("main_entry_F0", "1.00 m") for _ in range(4)]
+    fire = compute_fire_egress_audit(floors, "T2_FAMILY_APARTMENT", True, occupant_load=80)
+
+    protection = fire["protection"]
+    assert protection["building_occupant_load"] == 80
+    assert protection["main_entry_load_served"] == 20
+    assert protection["stair_load_served"] == 60
+    assert protection["stair_occupants_served"] == 50
+    assert protection["capacity_satisfied"] is False
+    stair_row = next(r for r in fire["exit_width_table"] if r["exit"] == "Protected Stair")
+    assert stair_row["capacity_satisfied"] is False
+    assert fire["status"] == "fail"
+    assert any("stair load 60" in f for f in fire["findings"])
+
+
+def test_l14_capacity_shortfall_disappears_only_when_the_width_grows():
+    """The same load on a compliant stair passes; nothing else changed."""
+    from types import SimpleNamespace
+
+    def floor(door_id: str, stair: str) -> Any:
+        return SimpleNamespace(
+            floor_index=0,
+            envelope={"width": 12.0, "depth": 18.0, "area_sqm": 216.0},
+            rooms=[],
+            windows=[],
+            doors=[SimpleNamespace(door_id=door_id, width_m=1.0)],
+            stair_schedule=[{"flight_width_m": stair}],
+        )
+
+    floors = [floor("main_entry_F0", "1.30 m") for _ in range(4)]
+    fire = compute_fire_egress_audit(floors, "T2_FAMILY_APARTMENT", True, occupant_load=80)
+    protection = fire["protection"]
+    assert protection["stair_load_served"] == 60
+    assert protection["stair_occupants_served"] == 65
+    assert protection["capacity_satisfied"] is True
+    assert fire["status"] == "pass"
+
+
 # =============================================================================
 # 3. LLM BOUNDARY INVARIANT
 # =============================================================================

@@ -12,7 +12,40 @@ import sys
 sys.path.insert(0, ".")
 from pypdf import PdfReader
 
+from app.services.plan_verdict import plan_truth_labels
 from app.services.report_service import generate_pdf_report, page1_plan_warnings
+
+
+def _assert_banner_groups(text: str, plan: dict) -> None:
+    """The grouped page-1 banner: same rows, under the canonical headings.
+
+    Every page-1 row still survives into the PDF verbatim and in order; what
+    changed is that the rows are now printed under CERTIFICATE FAILURES (n),
+    LISTED DEVIATIONS (n) and UNRESOLVED BREACHES (n), each counted from the
+    certificate-owned grouping rather than from one merged warning list.
+    """
+    labels = plan_truth_labels(plan)
+    for key in ("certificate_failures", "listed_deviations", "unresolved_breaches"):
+        assert labels["headings"][key] in text, f"heading missing from the PDF banner: {key}"
+    assert labels["summary_line"] in text, "the banner must state its counts separately"
+    # Certificate failures print verbatim, in order.
+    positions = [text.find(f) for f in labels["certificate_failures"]]
+    assert all(p >= 0 for p in positions), "a certificate failure row is missing"
+    assert positions == sorted(positions), "certificate failure rows printed out of order"
+    # Every page-1 row survives verbatim: as its own bullet (breach / advisory)
+    # or as the quoted disclosure inside its listed-deviation row.
+    page1 = page1_plan_warnings(plan.get("warnings"))
+    for row in page1:
+        assert row in text, f"page-1 row dropped from the PDF banner: {row[:90]}"
+    # And the listed deviation rows keep their relative order.
+    listed = [d["page1_row"] for d in labels["listed_deviations"] if d.get("page1_row")]
+    listed_positions = [text.find(row) for row in listed]
+    assert listed_positions == sorted(listed_positions), (
+        "listed deviation rows printed out of order"
+    )
+    breaches = labels["unresolved_breaches"]
+    breach_positions = [text.find(row) for row in breaches]
+    assert breach_positions == sorted(breach_positions), "unresolved breach rows printed out of order"
 
 
 def _base_data() -> dict:
@@ -155,20 +188,14 @@ def test_print_page1_plan_warnings_equal_pdf_banner_verbatim():
     expected = page1_plan_warnings(PLAN_PAGE1_WARNINGS)
     assert expected == PLAN_PAGE1_WARNINGS
 
-    buf = generate_pdf_report(data, floor_plan=_plan_payload())
+    plan = _plan_payload()
+    buf = generate_pdf_report(data, floor_plan=plan)
     raw = "".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(buf.getvalue())).pages)
     text = " ".join(raw.split())
     assert "PLAN NOT CERTIFIED - DRAWN WITH A FAIL STAMP" in text
-    # The print banner renders the merged list as bullet rows, in order.  The
-    # PDF must carry that SAME block, contiguously and verbatim: nothing added,
-    # nothing dropped, nothing reworded between the two surfaces.
-    print_block = " ".join(f"• {line}" for line in expected)
-    assert print_block in text, (
-        "the PDF banner is not the print banner list verbatim:\n"
-        f"print: {print_block}"
-    )
-    for line in expected:
-        assert line in text, f"page-1 plan warning missing from PDF: {line}"
+    # The print banner and the PDF carry the same rows under the same headings:
+    # nothing added, nothing dropped, nothing reworded between the two surfaces.
+    _assert_banner_groups(text, plan)
 
 
 def test_plan_verdict_survives_a_valid_certificate_with_named_deficits():
@@ -188,14 +215,17 @@ def test_plan_verdict_survives_a_valid_certificate_with_named_deficits():
     text = " ".join(raw.split())
     assert "PLAN NOT CERTIFIED - DRAWN WITH A FAIL STAMP" in text
     assert "Plan verdict: NOT-CERTIFIED-FAIL-STAMP" in text
-    expected = page1_plan_warnings(PLAN_PAGE1_WARNINGS)
-    assert " ".join(f"• {line}" for line in expected) in text, (
-        "the deficit banner is not the print banner list verbatim"
-    )
+    # The certificate records no failure rows here: the FAIL stamp rests on the
+    # unresolved breaches, and the banner must say so in those terms.
+    labels = plan_truth_labels(plan)
+    assert labels["counts"]["certificate_failures"] == 0
+    assert "CERTIFICATE FAILURES (0)" in text
+    assert labels["counts"]["unresolved_breaches"] > 0
+    _assert_banner_groups(text, plan)
 
 
 def test_plan_advisories_page1_list_survives_a_certified_plan():
-    """Only listed relaxations: amber banner, same verbatim page-1 list."""
+    """Only listed, within-cap deviations: certified, same verbatim page-1 list."""
     advisory_rows = [
         "PROP-CEILING: puja is 9.6 m² against its 6.0 m² declared ceiling.",
         "PLINTH: the built-up target (78.2 m²) exceeds the programme need (63.0 m²).",
@@ -208,11 +238,15 @@ def test_plan_advisories_page1_list_survives_a_certified_plan():
     buf = generate_pdf_report(_base_data(), floor_plan=plan)
     raw = "".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(buf.getvalue())).pages)
     text = " ".join(raw.split())
-    assert "PLAN ADVISORIES" in text
-    assert "Plan verdict: ADVISORY" in text
-    assert " ".join(f"• {line}" for line in page1_plan_warnings(advisory_rows)) in text, (
-        "the advisory banner is not the print banner list verbatim"
-    )
+    assert "PLAN CERTIFIED — LISTED DEVIATIONS PRINTED" in text
+    assert "Plan verdict: CERTIFIED" in text
+    # A certified plan prints CERTIFICATE FAILURES (0) and its two listed,
+    # within-cap deviations under LISTED DEVIATIONS — never under failures.
+    labels = plan_truth_labels(plan)
+    assert labels["counts"]["certificate_failures"] == 0
+    assert labels["counts"]["listed_deviations"] == 2
+    assert labels["counts"]["unresolved_breaches"] == 0
+    _assert_banner_groups(text, plan)
 
 
 def test_assessed_zone_renders_normally():

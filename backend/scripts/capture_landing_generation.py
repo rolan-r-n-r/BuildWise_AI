@@ -607,8 +607,8 @@ def main() -> None:
     )
 
     # 2) PROOF OF IRREGULAR CADASTRAL SUPPORT — a six-vertex, non-rectilinear plot.
-    #    Same engine, different geometry; the Phase C honesty story and the
-    #    irregular-plot proof both read this capture.
+    #    Same engine, different geometry; the irregular-plot proof and the
+    #    landing honesty checks both read this capture.
     capture(
         "generated-plan-irregular",
         FloorPlanRequest(

@@ -223,3 +223,71 @@ def test_floorplan_request_accepts_the_existing_typology_vocabulary(typology):
 def test_floorplan_request_rejects_enum_and_non_finite_scalars(kwargs):
     with pytest.raises(ValidationError):
         FloorPlanRequest(**kwargs)
+
+
+# --------------------------------------------------------------------------- #
+#  Unit-count contract: the declared range is refused, never silently clamped
+# --------------------------------------------------------------------------- #
+
+def _floorplan_payload(typology: str, units: int, floors: int = 3) -> dict:
+    return {
+        "plot_width_m": 18.0,
+        "plot_depth_m": 24.0,
+        "building_typology": typology,
+        "floors": floors,
+        "ground_coverage_ratio": 0.60,
+        "seed": "v1-closure-api",
+        "ai_provider": "mock",
+        "bypass_cache": True,
+        "units_per_floor": units,
+    }
+
+
+@pytest.mark.parametrize(
+    "typology,units",
+    [
+        ("residential_single", 1),
+        ("commercial", 1),
+        ("commercial", 2),
+        ("industrial", 1),
+    ],
+)
+def test_supported_unit_counts_pass_through_the_api(typology, units):
+    """A supported count keeps its named programme all the way to the token."""
+    response = client.post("/api/generate-floorplan", json=_floorplan_payload(typology, units))
+    assert response.status_code == 200, response.text[:400]
+    body = response.json()
+    assert body["multi_storey"]["units_per_floor"] == units
+    assert body["generation_id"].endswith(f"-U{units}")
+
+
+@pytest.mark.parametrize(
+    "typology,units,declared",
+    [
+        ("residential_single", 2, "(1)"),
+        ("commercial", 3, "(1-2)"),
+        ("industrial", 2, "(1)"),
+    ],
+)
+def test_unsupported_unit_counts_are_refused_with_the_declared_range(
+    typology, units, declared
+):
+    """Release-closure P0-02: never draw a smaller plan under the requested name."""
+    response = client.post("/api/generate-floorplan", json=_floorplan_payload(typology, units))
+    assert response.status_code == 422, response.text[:400]
+    detail = str(response.json().get("detail"))
+    assert "units_per_floor" in detail
+    assert "outside the implemented range" in detail
+    assert declared in detail
+
+
+def test_t2_unit_count_boundary_keeps_its_named_refusal():
+    two = client.post("/api/generate-floorplan", json=_floorplan_payload("residential_multi", 2, floors=4))
+    assert two.status_code == 200, two.text[:400]
+    assert two.json()["multi_storey"]["units_per_floor"] == 2
+
+    three = client.post("/api/generate-floorplan", json=_floorplan_payload("residential_multi", 3, floors=4))
+    assert three.status_code == 422, three.text[:400]
+    detail = str(three.json().get("detail"))
+    assert "not implemented for T2_FAMILY_APARTMENT" in detail
+    assert "Implemented values are 1" in detail

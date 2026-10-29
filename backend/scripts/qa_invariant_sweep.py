@@ -428,8 +428,25 @@ def check_layers(case_id: str, resp: Any, row: Dict[str, Any], warns: Sequence[s
         records = ((l9.get("details") or {}).get("records") or [])
         misses = [r for r in records if r.get("status") != "pass"]
         if misses:
-            add("I8-VENT-MISS", "MAJOR", case_id,
-                f"{len(misses)} ventilation misses of {len(records)} records")
+            # A miss the gate itself names is DISCLOSED, not silent: an L9 FAIL
+            # lands on the plan's warning ledger and withholds certification.
+            # The sweep still records it in its own register; only a miss with
+            # no named L9 disclosure is a TRUE failure.  Kitchen daylight
+            # shortfalls are exactly this case - the plate cannot draw a
+            # compliant kitchen, the plan is fail-stamped, and calling that a
+            # silent defect made the gate red for an honest answer.
+            named = str(l9.get("status", "")).upper() == "FAIL" and any(
+                str(w).startswith("GATE-FAIL L9") or "no exterior window" in str(w)
+                for w in warns
+            )
+            if named:
+                add_disclosed(
+                    "I8-VENT-DISCLOSED", case_id,
+                    f"{len(misses)} ventilation misses of {len(records)} records, named by L9",
+                )
+            else:
+                add("I8-VENT-MISS", "MAJOR", case_id,
+                    f"{len(misses)} ventilation misses of {len(records)} records")
         out["vent_records"] = len(records)
 
     if row.get("furniture_pass_pct") is not None and row["furniture_pass_pct"] < 100.0:

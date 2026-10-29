@@ -241,10 +241,14 @@ def test_client_requirements_are_appended_to_the_llm_user_prompt():
 # =============================================================================
 
 def _ground_envelope_area(coverage: float) -> float:
+    # A 12 x 15 m plot: at 40 % the coverage ceiling (72 m2) is BELOW the
+    # programme need, so the cap binds; at 75 % it is not. On a 20 x 25 m plot
+    # the plate is programme-sized at both settings, which is the correct
+    # ceiling-not-target behaviour but cannot demonstrate a cap.
     res = generate_floor_plan(
         FloorPlanRequest(
-            plot_width_m=20.0,
-            plot_depth_m=25.0,
+            plot_width_m=12.0,
+            plot_depth_m=15.0,
             building_typology="residential_single",
             ground_coverage_ratio=coverage,
             floors=1,
@@ -258,7 +262,7 @@ def _ground_envelope_area(coverage: float) -> float:
 def test_ground_coverage_ratio_caps_the_footprint():
     sparse = _ground_envelope_area(0.40)
     dense = _ground_envelope_area(0.75)
-    assert dense > sparse, "increasing the coverage limit must permit a larger footprint"
+    assert dense > sparse, "a binding coverage limit must cap the footprint"
 
 
 def test_storeys_change_the_floor_count():

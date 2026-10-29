@@ -302,6 +302,44 @@ def test_l5_does_not_mistake_an_ensuite_bath_for_a_master_suite():
     assert bath.naming_threshold_used is None
 
 
+def test_terrace_band_and_wing_ids_resolve_to_the_terrace_identity():
+    """SPACE-IDENTITY fallback pin: solver-emitted outdoor ids are scheduled.
+
+    `terrace_band_F2` / `terrace_wing_b_F1` are created by the solver, not by a
+    typology programme.  They used to strip their floor suffix to an id the
+    ontology did not know and stamp `unresolved:*` on every terrace, emitting
+    a SPACE-IDENTITY fallback warning on a correctly-drawn plan.
+    """
+    req = FloorPlanRequest(
+        plot_width_m=18.0,
+        plot_depth_m=18.0,
+        floors=3,
+        building_typology="residential_single",
+        terrace_bands={2: {"edge": "N", "depth_m": 3.0}},
+    )
+    building = SoleGeometryEngine(req).solve()
+    terrace_rooms = [
+        r for fl in building.floors for r in fl.rooms if r.zone_category == "terrace"
+    ]
+    assert any(r.room_id.startswith("terrace_band_") for r in terrace_rooms)
+    for room in terrace_rooms:
+        assert room.identity is not None
+        assert room.identity.source == "ontology", (room.room_id, room.identity.space_type_id)
+        assert room.identity.space_type_id == "terrace"
+        assert room.identity.name == room.room_name
+        assert ONTOLOGY.get_space(room.identity.space_type_id) is not None
+
+    # The dropped-wing terrace id resolves too (same outdoor schedule entry).
+    for rid in ("terrace_wing_b_F1", "terrace_band_F2"):
+        resolved = ONTOLOGY.resolve_space_id(rid, "T1_SINGLE_FAMILY")
+        assert resolved == "terrace", rid
+
+    assert not [w for w in building.warnings if w.startswith("SPACE-IDENTITY")]
+    summary = building.global_metrics["space_identity"]
+    assert summary["fallback"] == []
+    assert summary["coverage_pct"] == 100.0
+
+
 def test_unknown_room_gets_an_explicit_fallback_identity():
     identity = resolve_space_identity(
         "mystery_room_F0",
