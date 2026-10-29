@@ -202,11 +202,41 @@ def page1_plan_warnings(warnings: Any) -> List[str]:
     return out
 
 
+def _truth_label_sections(labels: Dict[str, Any]) -> List[tuple]:
+    """The three page-1 groups under their canonical headings.
+
+    Group rows are printed in full and in order: certificate failures verbatim
+    from the certificate, listed deviations with the verbatim page-1 disclosure
+    row (plus the room and rule the certificate lists), and the unresolved
+    breaches a FAIL stamp actually rests on.
+    """
+
+    def deviation_line(d: Dict[str, Any]) -> str:
+        room = str(d.get("room_id") or "").strip()
+        rule = str(d.get("rule_id") or "").strip()
+        chip = " · ".join(part for part in (room, rule) if part)
+        row = str(d.get("page1_row") or "").strip()
+        if row:
+            return f"{row} [{chip}]" if chip else row
+        reason = str(d.get("reason") or "").strip()
+        return f"{chip} · {reason}" if chip else reason
+
+    return [
+        (labels["headings"]["certificate_failures"], list(labels["certificate_failures"])),
+        (
+            labels["headings"]["listed_deviations"],
+            [deviation_line(d) for d in labels["listed_deviations"]],
+        ),
+        (labels["headings"]["unresolved_breaches"], list(labels["unresolved_breaches"])),
+    ]
+
+
 def _plan_banner_table(
     *,
     title_html: str,
     lead_html: str,
-    lines: List[str],
+    lines: Optional[List[str]] = None,
+    sections: Optional[List[tuple]] = None,
     style: ParagraphStyle,
     background: Any,
     border: Any,
@@ -218,9 +248,25 @@ def _plan_banner_table(
     A single cell holding every bullet is an unsplittable flowable: a plate with
     84 named rows produced a 1937 pt cell and LayoutError killed the whole
     export (HTTP 500).  Rows split cleanly and keep every line verbatim.
+
+    With ``sections`` each group prints under its own heading (the same heading
+    string the screen prints), so "certificate failures" and "listed
+    deviations" cannot be read as one list.
     """
     rows: List[List[Any]] = [[Paragraph(f"{title_html}{lead_html}", style)]]
-    rows.extend([Paragraph(f"• {html.escape(w)}", style)] for w in lines)
+    if sections:
+        section_style = ParagraphStyle(
+            "PlanTruthSection", parent=style, fontName=FONT_BOLD,
+            fontSize=max(7.4, float(getattr(style, 'fontSize', 8.2)) - 0.4),
+            spaceBefore=5.0, spaceAfter=1.0,
+        )
+        for heading, section_rows in sections:
+            rows.append([Paragraph(f"<b>{html.escape(heading)}</b>", section_style)])
+            rows.extend(
+                [Paragraph(f"• {html.escape(w)}", style)] for w in (section_rows or [])
+            )
+    else:
+        rows.extend([Paragraph(f"• {html.escape(w)}", style)] for w in (lines or []))
     tbl = Table(rows, colWidths=[CONTENT_WIDTH_PT], repeatRows=1)
     tbl.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), background),
@@ -1659,6 +1705,33 @@ def generate_pdf_report(
         story.append(Spacer(1, 8))
 
     # -------------------------------------------------------------------------
+    # STRATEGY CHAIN: what the engine tried before this verdict.  It is printed
+    # BEFORE the verdict banner because that banner can carry a long page-1
+    # warning list; placing the chain after it pushed the chain onto page 2 on
+    # the T2 129.6 m² case.  The chain belongs on page 1 with the verdict, and
+    # the full warning list still prints in full below it.
+    # -------------------------------------------------------------------------
+    _chain_line = None
+    for _src in (
+        floor_plan if isinstance(floor_plan, dict) else {},
+        (floor_plan.get("multi_storey") if isinstance(floor_plan, dict) else {}) or {},
+        data.get("multi_storey") if isinstance(data.get("multi_storey"), dict) else {},
+        data,
+    ):
+        if not isinstance(_src, dict):
+            continue
+        _chain_line = _src.get("strategy_chain_line") or _chain_line
+    if _chain_line:
+        story.append(Paragraph(
+            f"<b>Strategy chain:</b> {_chain_line}",
+            ParagraphStyle(
+                'PlanStrategyChain', fontName=FONT_REGULAR, fontSize=8.0,
+                leading=11.0, textColor=COLOR_TEXT_PRIMARY,
+            ),
+        ))
+        story.append(Spacer(1, 6))
+
+    # -------------------------------------------------------------------------
     # PLAN VERDICT BANNER: a withheld certificate or a named
     # programme deficit is a PAGE-1 fact.  The plan is still drawn and exported;
     # it must never leave the printer looking certified.  The squeezed rooms are
@@ -1688,12 +1761,20 @@ def generate_pdf_report(
         from app.services.plan_verdict import (
             ADVISORY as _VERDICT_ADVISORY,
             CERTIFIED as _VERDICT_CERTIFIED,
+            CERTIFIED_DEFINITION as _CERT_DEF,
             FAIL_STAMP as _VERDICT_FAIL,
             compute_plan_verdict,
+            plan_truth_labels,
         )
 
         _plan_verdict = _plan_payload.get("plan_verdict") or compute_plan_verdict(_plan_payload)
         _verdict_line = f"<b>Plan verdict:</b> {_plan_verdict}"
+        # ONE grouping for the screen, the print view and this page: the
+        # certificate's own failure rows, the listed deviations, and the rows
+        # the FAIL stamp rests on - counted separately, never conflated.
+        _truth = plan_truth_labels(_plan_payload)
+        _truth_sections = _truth_label_sections(_truth)
+        _truth_summary = f"<i>{_truth['summary_line']}</i>"
 
         if _plan_verdict == _VERDICT_FAIL:
             _verdict_bits: List[str] = []
@@ -1712,8 +1793,10 @@ def generate_pdf_report(
                 lead_html=(
                     f'<br/>{_verdict_line}<br/>{"; ".join(_verdict_bits)}. The plan is still exported; '
                     'refusal is reserved for statutory, egress and stacking violations.'
+                    f'<br/>{_truth_summary}'
+                    f'<br/><i>{_CERT_DEF}</i>'
                 ),
-                lines=_deficit_lines,
+                sections=_truth_sections,
                 style=_verdict_p,
                 background=colors.HexColor("#FEF2F2"),
                 border=colors.HexColor("#E5A9A9"),
@@ -1735,8 +1818,8 @@ def generate_pdf_report(
                     f'<font color="{COLOR_AMBER_TEXT.hexval()}"><b>'
                     'PLAN ADVISORIES — DISCLOSED ON THE DRAWING</b></font>'
                 ),
-                lead_html=f'<br/>{_verdict_line}',
-                lines=_deficit_lines,
+                lead_html=f'<br/>{_verdict_line}<br/>{_truth_summary}<br/><i>{_CERT_DEF}</i>',
+                sections=_truth_sections,
                 style=_adv_p,
                 background=COLOR_AMBER_TINT,
                 border=COLOR_AMBER_BORDER,
@@ -1755,10 +1838,15 @@ def generate_pdf_report(
             _cert_tbl = _plan_banner_table(
                 title_html=(
                     f'<font color="{COLOR_GREEN_TEXT.hexval()}"><b>'
-                    'PLAN CERTIFIED — NO OUTSTANDING PLAN ADVISORY</b></font>'
+                    'PLAN CERTIFIED — LISTED DEVIATIONS PRINTED</b></font>'
                 ),
-                lead_html=f'<br/>{_verdict_line}',
-                lines=[],
+                lead_html=(
+                    f'<br/>{_verdict_line}<br/>'
+                    'Listed, within-cap deviations do not withhold the certificate; '
+                    f'every row is printed in this report.<br/>{_truth_summary}'
+                    f'<br/><i>{_CERT_DEF}</i>'
+                ),
+                sections=_truth_sections,
                 style=_cert_p,
                 background=COLOR_GREEN_TINT,
                 border=COLOR_GREEN_BORDER,

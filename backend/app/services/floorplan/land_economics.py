@@ -78,10 +78,16 @@ def _interior_dead_area(
 ) -> float:
     """Ground-floor footprint area not covered by any placed room, >= 1 m².
 
+    A placed terrace is assigned space.  The check measures whether a parcel
+    of the footprint is accounted for, not whether it is enclosed; excluding
+    terraces made every ground-floor sit-out read as a dead corner (a 3.3 x
+    4.7 m balcony became 15.5 m² of "dead" plate on the T2 V2 variant).
+    Terraces remain excluded from programme/GFA totals elsewhere.
+
     Room coordinates are plate-local; the site footprint is setback-anchored.
     Translate before measuring, exactly as the baseline harness does.
     """
-    rooms = [r for r in getattr(ground_floor, "rooms", []) or [] if r.zone_category != "terrace"]
+    rooms = list(getattr(ground_floor, "rooms", []) or [])
     if not rooms:
         return 0.0
     off_x = float(site_plan.footprint.x)
