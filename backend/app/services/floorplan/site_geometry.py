@@ -40,6 +40,19 @@ MIN_STATUTORY_AREA_M2 = 36.0
 MIN_HABITABLE_FOOTPRINT_M2 = 28.0
 
 
+def _stable_q2(value: float) -> float:
+    """Round a label coordinate to centimetres with a deterministic tie-break.
+
+    GEOS intersections are not perfectly translation-invariant, so the same
+    fragment measured at a captured (pin-centred) origin can land on the far
+    side of a half-centimetre boundary from its rebased twin. Python's round()
+    then splits the tie (14.215 -> 14.21 at the origin, 14.22 after rebasing),
+    which moved a site-sheet label by 0.3 px. Nudging by a nanometre resolves
+    the tie the same way in both frames without changing any other reading.
+    """
+    return round(float(value) + 1e-9, 2)
+
+
 # =============================================================================
 # 1. LOCAL TANGENT PLANE PROJECTION (E/N EQUIRECTANGULAR)
 # =============================================================================
@@ -455,7 +468,34 @@ def decompose_buildable_into_wings(
     # a 9,661 m2 site is 5,796 m2 for a 122 m2 brief). A solver that has already
     # sized the plate to the programme passes that rectangle here; honour it
     # rather than decomposing the buildable back to its maximum.
-    if inscribed_override and not is_courtyard and not is_l_shape and not is_extreme_aspect:
+    # A caller-supplied plate is honoured on an L/near-rect boundary too when
+    # the rectangle physically sits inside the buildable polygon: the building
+    # is then a single rectangle on an L-shaped plot, and decomposing it into
+    # wings would only re-stretch the rooms the caller sized the plate for
+    # (a 15 x 18 m near-rect T1 brief needs a 10.36 m deep band stack, which
+    # fits the un-notched part of the buildable). Rejected rectangles still
+    # fall through to the wing decomposition below.
+    _override_fits = False
+    _t1_band_override = bool(inscribed_override) and str(typology).upper().startswith("T1")
+    if _t1_band_override and (is_l_shape or is_extreme_aspect):
+        try:
+            _ov = box(
+                float(inscribed_override["x"]),
+                float(inscribed_override["y"]),
+                float(inscribed_override["x"]) + float(inscribed_override["width"]),
+                float(inscribed_override["y"]) + float(inscribed_override["depth"]),
+            )
+            _override_fits = bool(buildable_poly.buffer(-0.01).covers(_ov))
+        except (KeyError, TypeError, ValueError):
+            _override_fits = False
+    if (
+        inscribed_override
+        and not is_courtyard
+        and (
+            (not is_l_shape and not is_extreme_aspect)
+            or (_t1_band_override and _override_fits)
+        )
+    ):
         env_w = round(float(inscribed_override["width"]), 2)
         env_d = round(float(inscribed_override["depth"]), 2)
         env_area = round(float(inscribed_override.get("area_sqm", env_w * env_d)), 2)
@@ -893,7 +933,17 @@ def _outdoor_fragments_from_residual(
     for g in geoms:
         if not isinstance(g, Polygon) or g.area < 0.1:
             continue
-        gx, gy = g.centroid.x, g.centroid.y
+        # Measure the polygon the sheet actually draws.  Rounding the stored
+        # coordinates AFTER taking the centroid left the label at a
+        # pin-dependent sub-centimetre offset: the same plot dropped at a
+        # negative origin rendered "Garden 1" 0.3 px to the right.  Deriving
+        # area, centroid and compass side from the rounded ring makes every
+        # stored quantity a function of the drawn geometry.
+        _ring = [(round(x, 2), round(y, 2)) for x, y in g.exterior.coords]
+        _g_drawn = Polygon(_ring)
+        if _g_drawn.is_empty or not _g_drawn.is_valid:
+            _g_drawn = g
+        gx, gy = _g_drawn.centroid.x, _g_drawn.centroid.y
         dx = gx - fx
         dy = gy - fy
         angle = (math.degrees(math.atan2(dx, dy)) + 360.0) % 360.0
@@ -910,9 +960,9 @@ def _outdoor_fragments_from_residual(
         fragments.append(OutdoorFragment(
             fragment_id=f"OUT-{idx:02d}",
             name=name,
-            area_sqm=round(g.area, 2),
-            centroid=(round(gx, 2), round(gy, 2)),
-            polygon_coords=[(round(x, 2), round(y, 2)) for x, y in g.exterior.coords]
+            area_sqm=round(_g_drawn.area, 2),
+            centroid=(_stable_q2(gx), _stable_q2(gy)),
+            polygon_coords=_ring
         ))
         idx += 1
 
@@ -1054,12 +1104,19 @@ def _subdivide_outdoor_fragments(
                 if isinstance(g, Polygon) and g.area >= 1.0:
                     pieces.append(g)
         for idx, g in enumerate(pieces, start=1):
+            # Measure the rounded ring, not the raw intersection: see
+            # _outdoor_fragments_from_residual.  A strip measured before
+            # rounding put its label at a pin-dependent offset.
+            _ring = [(round(x, 2), round(y, 2)) for x, y in g.exterior.coords]
+            _drawn = Polygon(_ring)
+            if _drawn.is_empty or not _drawn.is_valid:
+                _drawn = g
             out.append(OutdoorFragment(
                 fragment_id=f"{frag.fragment_id}-{idx}",
                 name=frag.name,
-                area_sqm=round(g.area, 2),
-                centroid=(round(g.centroid.x, 2), round(g.centroid.y, 2)),
-                polygon_coords=[(round(x, 2), round(y, 2)) for x, y in g.exterior.coords],
+                area_sqm=round(_drawn.area, 2),
+                centroid=(_stable_q2(_drawn.centroid.x), _stable_q2(_drawn.centroid.y)),
+                polygon_coords=_ring,
                 route_kind=frag.route_kind,
                 route_label=frag.route_label,
                 ecs=frag.ecs,
@@ -1123,7 +1180,15 @@ def extract_wedge_and_outdoor_zones(
             bd = maxy - miny
             min_dim = min(bw, bd)
             max_dim = max(bw, bd)
-            area_sqm = round(g.area, 2)
+            # Every stored measure describes the polygon the sheet draws.  Raw
+            # intersection centroids put a fragment label at a pin-dependent
+            # sub-centimetre offset (0.3 px) when a captured plot was rebased.
+            _ring = [(round(x, 2), round(y, 2)) for x, y in g.exterior.coords]
+            _g_drawn = Polygon(_ring)
+            if _g_drawn.is_empty or not _g_drawn.is_valid:
+                _g_drawn = g
+            _cent = (_stable_q2(_g_drawn.centroid.x), _stable_q2(_g_drawn.centroid.y))
+            area_sqm = round(_g_drawn.area, 2)
 
             if area_sqm >= 3.0 and min_dim >= 0.6:
                 shares_wall = footprint_poly.distance(g) < 0.05
@@ -1155,8 +1220,8 @@ def extract_wedge_and_outdoor_zones(
                     classification=cls,
                     name=name,
                     area_sqm=area_sqm,
-                    centroid=(round(g.centroid.x, 2), round(g.centroid.y, 2)),
-                    polygon_coords=[(round(x, 2), round(y, 2)) for x, y in g.exterior.coords],
+                    centroid=_cent,
+                    polygon_coords=_ring,
                     is_enclosed_storage=enc,
                     is_interior_side=shares_wall,
                     width_m=round(min_dim, 2),
@@ -1172,8 +1237,8 @@ def extract_wedge_and_outdoor_zones(
                     fragment_id=f"OUT-{o_idx:02d}",
                     name=f"Boundary Planter Pocket {o_idx}",
                     area_sqm=area_sqm,
-                    centroid=(round(g.centroid.x, 2), round(g.centroid.y, 2)),
-                    polygon_coords=[(round(x, 2), round(y, 2)) for x, y in g.exterior.coords],
+                    centroid=_cent,
+                    polygon_coords=_ring,
                 ))
                 o_idx += 1
 

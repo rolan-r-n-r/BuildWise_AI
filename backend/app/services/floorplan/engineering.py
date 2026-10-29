@@ -248,11 +248,32 @@ def compute_ventilation_registry(floors: List[Any], duct_shafts: List[Any]) -> D
             # (a) Real windows on this room
             wins = windows_by_room.get(rid, [])
             open_area = 0.0
+            window_area = 0.0
             if wins:
                 h = VENT_WINDOW_HEIGHT_SANITARY_M if sanitary else VENT_WINDOW_HEIGHT_HABITABLE_M
                 for w in wins:
                     ww = float(getattr(w, "width_m", 0.0) or (w.get("width_m", 0.0) if isinstance(w, dict) else 0.0))
                     open_area += max(0.0, ww) * h
+                window_area = open_area
+
+            # DAYLIGHT / EXTERIOR-OPENING RULE (habitable kitchens).
+            # A shaft is a mechanical exhaust path, not daylight: NBC 2016
+            # Part 3 Cl 12.2.3 (and this repository's own unit_kitchen spec:
+            # daylight_req=True, requires_exterior_wall=True) requires a
+            # kitchen to open onto the outer air.  Only a MODELLED window on an
+            # exterior edge counts; the exterior-edge heuristic below is a
+            # planning aid for other wet rooms and cannot prove a kitchen
+            # window that was never drawn.
+            space_id = str(getattr(r, "space_type_id", None) or "").lower()
+            room_name = str(getattr(r, "room_name", "") or "").lower()
+            is_kitchen = space_id == "unit_kitchen" or "kitchen" in space_id or "kitchen" in room_name
+            daylight_required = bool(is_kitchen)
+            daylight_ok = (not daylight_required) or (window_area + _EG_EPS >= req_area)
+            daylight_mode = (
+                None
+                if not daylight_required
+                else ("external_window" if daylight_ok else "no_daylight")
+            )
 
             # (b) Exterior-edge heuristic when no modeled window exists
             ext_edge = None
@@ -275,7 +296,9 @@ def compute_ventilation_registry(floors: List[Any], duct_shafts: List[Any]) -> D
             open_area = max(open_area, 0.0)
 
             shaft = next((s for s in (duct_shafts or []) if _shaft_serves(rid, s)), None)
-            if open_area >= req_area - 1e-6:
+            if not daylight_ok:
+                mode, status = "no_daylight", "fail"
+            elif open_area >= req_area - 1e-6:
                 mode, status = "external_opening", "pass"
             elif shaft is not None:
                 mode, status = "shaft_vent", "pass"
@@ -292,19 +315,40 @@ def compute_ventilation_registry(floors: List[Any], duct_shafts: List[Any]) -> D
                 "ratio_required": req_ratio,
                 "external_edge": ext_edge,
                 "shaft_id": (getattr(shaft, "shaft_id", None) or (shaft or {}).get("shaft_id") if shaft else None),
+                "daylight_required": daylight_required,
+                "daylight_mode": daylight_mode,
+                "modelled_window_area_sqm": round(window_area, 3),
+                "daylight_ok": bool(daylight_ok),
                 "mode": mode,
                 "status": status,
                 "citation": VENT_CITATION,
             })
 
     warn_count = sum(1 for rec in records if rec["status"] == "warn")
+    daylight_rooms = [rec for rec in records if rec.get("daylight_required")]
+    daylight_failures = [rec for rec in daylight_rooms if not rec.get("daylight_ok")]
+    daylight_findings = [
+        f"{rec['room_id']} (F{rec['floor_index']}): kitchen has no exterior window "
+        f"({rec['modelled_window_area_sqm']:.2f} m2 of the {rec['required_vent_area_sqm']:.2f} m2 "
+        "daylight opening required); a shaft is not daylight (NBC 2016 Part 3 Cl 12.2.3)"
+        for rec in daylight_failures
+    ]
+    if daylight_failures:
+        status = "fail"
+    elif warn_count:
+        status = "warn"
+    else:
+        status = "pass"
     return {
         "records": records,
         "total_rooms": len(records),
         "external_opening_count": sum(1 for rec in records if rec["mode"] == "external_opening"),
         "shaft_vent_count": sum(1 for rec in records if rec["mode"] == "shaft_vent"),
         "mechanical_flagged_count": warn_count,
-        "status": "pass" if warn_count == 0 else "warn",
+        "daylight_required_count": len(daylight_rooms),
+        "daylight_failure_count": len(daylight_failures),
+        "daylight_findings": daylight_findings,
+        "status": status,
         "citation": VENT_CITATION,
     }
 
@@ -703,6 +747,16 @@ def compute_fire_egress_audit(floors: List[Any], typology: str,
                 findings.append(f"F{f_idx} {rid}: no escape window - note required on safety plan")
 
     # Exit width table (ground floor)
+    #
+    # EXIT CAPACITY IS SIZED BY THE POPULATION EACH EXIT SERVES (NBC 2016 Part 4
+    # Table 4A).  Ground-floor occupants discharge directly through the main
+    # entry; the protected stair carries the storeys above it.  Charging the
+    # whole building's population to a single stair double-counts the ground
+    # floor, and - because a wider stair enlarges the plate and therefore the
+    # load - makes a compliant width unattainable by construction.  The
+    # BUILDING occupant load is unchanged and still reported here; only its
+    # attribution to the two exits is measured.  A shortfall on either exit is
+    # a hard capacity FAIL, never a warning.
     exit_rows: List[Dict[str, Any]] = []
     ground = floors[0] if floors else None
     main_width = 0.0
@@ -720,22 +774,54 @@ def compute_fire_egress_audit(floors: List[Any], typology: str,
                 stair_width = float(str(ss[0].get("flight_width_m", "1.00")).split()[0])
             except (ValueError, IndexError):
                 stair_width = 1.00
+
+    def _floor_area(fl: Any) -> float:
+        env = getattr(fl, "envelope", None) or {}
+        area = float(env.get("area_sqm", 0.0) or 0.0)
+        if area <= 0.0:
+            area = sum(
+                float(getattr(r, "area_sqm", 0.0) or 0.0)
+                for r in (getattr(fl, "rooms", None) or [])
+            )
+        return max(0.0, area)
+
+    ground_area = _floor_area(ground) if ground is not None else 0.0
+    total_area = sum(_floor_area(fl) for fl in floors)
+    ground_load = 0
+    if occupant_load > 0 and total_area > 0.0:
+        ground_load = int(round(occupant_load * (ground_area / total_area)))
+    ground_load = max(0, min(int(occupant_load), ground_load))
+    stair_load = max(0, int(occupant_load) - ground_load)
+
     served_main = main_width * FIRE_OCCUPANT_PER_M_EXIT
     served_stair = stair_width * FIRE_OCCUPANT_PER_M_EXIT
-    if occupant_load > 0 and served_stair < occupant_load:
+    main_capacity_ok = served_main + 1e-9 >= ground_load
+    stair_capacity_ok = served_stair + 1e-9 >= stair_load
+    capacity_satisfied = bool(main_capacity_ok and stair_capacity_ok)
+    if not stair_capacity_ok:
         findings.append(
-            f"Stair exit width {stair_width:.2f}m serves ~{served_stair:.0f} occupants < load {occupant_load}"
+            f"Stair exit width {stair_width:.2f}m serves ~{served_stair:.0f} occupants "
+            f"< stair load {stair_load} (upper storeys; building load {occupant_load})"
+        )
+    if not main_capacity_ok:
+        findings.append(
+            f"Main entry width {main_width:.2f}m serves ~{served_main:.0f} occupants "
+            f"< ground-floor load {ground_load}"
         )
     exit_rows.append({
         "exit": "Main Entry Door",
         "clear_width_m": round(main_width, 2),
         "occupants_served": round(served_main, 0),
+        "load_served": ground_load,
+        "capacity_satisfied": bool(main_capacity_ok),
         "code": "NBC 2016 Part 4 Table 4A (~50 persons per 1.0m)",
     })
     exit_rows.append({
         "exit": "Protected Stair",
         "clear_width_m": round(stair_width, 2),
         "occupants_served": round(served_stair, 0),
+        "load_served": stair_load,
+        "capacity_satisfied": bool(stair_capacity_ok),
         "code": "NBC 2016 Part 3 Cl 12.18 / Part 4",
     })
 
@@ -743,12 +829,32 @@ def compute_fire_egress_audit(floors: List[Any], typology: str,
     if not egress_distances_satisfied:
         status = "fail"
         findings.append("Travel distance exceeds profile maximum (non-sprinklered) - see L1 egress check")
+    elif not capacity_satisfied:
+        status = "fail"
     elif findings:
         status = "warn"
     return {
         "bedroom_egress": bedroom_egress,
         "exit_width_table": exit_rows,
         "occupant_load": occupant_load,
+        "protection": {
+            "stair_clear_width_m": round(stair_width, 2),
+            "stair_occupants_served": round(served_stair, 0),
+            "stair_load_served": stair_load,
+            "main_entry_clear_width_m": round(main_width, 2),
+            "main_entry_occupants_served": round(served_main, 0),
+            "main_entry_load_served": ground_load,
+            "building_occupant_load": occupant_load,
+            "governing_occupant_load": stair_load,
+            "capacity_satisfied": bool(capacity_satisfied),
+            "load_basis": (
+                "NBC 2016 Part 4 Table 4A - each exit is sized for the population "
+                "it serves (ground floor exits at grade; the protected stair "
+                "carries the storeys above). The building total is unchanged."
+            ),
+            "persons_per_metre": FIRE_OCCUPANT_PER_M_EXIT,
+            "code": "NBC 2016 Part 4 Table 4A exit capacity / Part 3 Cl 12.18",
+        },
         "findings": findings,
         "status": status,
         "citation": FIRE_EGRESS_CITATION,

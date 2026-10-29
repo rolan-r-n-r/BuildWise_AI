@@ -281,11 +281,16 @@ def compute_stair_geometry(
         f"risers/flight={risers_per_flight}) - fix the riser geometry, not the label."
     )
 
-    # Flight width per typology statutory minimum (NBC 2016 Part 3 Cl 12.18.1)
+    # Flight width per typology statutory minimum (NBC 2016 Part 3 Cl 12.18.1).
+    # Multi-family flights are 1.30 m, not 1.25 m: NBC 2016 Part 4 Table 4A
+    # credits ~50 persons per metre of clear exit width, so a 1.25 m flight
+    # carries only 62 persons - one short of the 63-person load of a legal
+    # four-household, four-storey T2 plate.  A flight that cannot carry the
+    # building's own exit load is a capacity defect, not a rounding choice.
     typ_upper = typology.upper()
     if "T2" in typ_upper or "T3" in typ_upper or "COMMERCIAL" in typ_upper or "MULTI" in typ_upper:
-        flight_width = 1.25
-        landing_depth = 1.25
+        flight_width = 1.30
+        landing_depth = 1.30
         stair_well = 0.20
     elif "T4" in typ_upper or "INDUSTRIAL" in typ_upper or "WAREHOUSE" in typ_upper:
         flight_width = 1.20

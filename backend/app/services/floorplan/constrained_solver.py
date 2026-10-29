@@ -24,7 +24,7 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from app.schemas.floorplan import FloorPlanRequest
 from app.schemas.multi_floor_plan import (
@@ -42,7 +42,6 @@ from app.services.floorplan.furniture import (
 from app.services.floorplan.living_quality import place_and_audit_furniture_catalog
 from app.services.floorplan.ontology import (
     FunctionType,
-    HygieneClass,
     ONTOLOGY,
     RelationType,
     SpaceTypeSpec,

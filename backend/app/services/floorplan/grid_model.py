@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 
 @dataclass(frozen=True)
 class RoomBox:
@@ -85,6 +85,18 @@ ROOM_CATALOG: Dict[str, Dict[str, Any]] = {
         "canonical_zone": "Center",
         "allowed_secondary": ["N", "E"],
         "prohibited": [],
+        "wet": False
+    },
+    "foyer": {
+        "name": "Entry Foyer",
+        "functional_zone": "PUBLIC",
+        "catalog_min_m2": 3.0,
+        "catalog_max_m2": 10.0,
+        "area_cells": 4,
+        "shapes": [(2, 2), (3, 2), (2, 3)],
+        "canonical_zone": "N",
+        "allowed_secondary": ["Center", "NE", "E"],
+        "prohibited": ["SW"],
         "wet": False
     },
     "kitchen": {
@@ -218,7 +230,118 @@ ROOM_CATALOG: Dict[str, Dict[str, Any]] = {
         "allowed_secondary": ["N", "S", "E", "W"],
         "prohibited": [],
         "wet": False
-    }
+    },
+    # T3 office/commercial cells.  Without these the fragment fallback (16 m2)
+    # stamped a 25 m2 reception and a 27 m2 conference room as catalogue
+    # maxima on every market-mix plate.  The ranges are the typology's own
+    # front-of-house/technical bands, not residential bedroom limits.
+    "reception": {
+        "name": "Reception Lobby", "functional_zone": "PUBLIC",
+        "catalog_min_m2": 12.0, "catalog_max_m2": 40.0,
+        "area_cells": 12, "shapes": [(4, 3), (3, 4), (5, 3)],
+        "canonical_zone": "NW", "allowed_secondary": ["N", "W"],
+        "prohibited": [], "wet": False,
+    },
+    "visitor_lounge": {
+        "name": "Visitor Lounge", "functional_zone": "PUBLIC",
+        "catalog_min_m2": 10.0, "catalog_max_m2": 36.0,
+        "area_cells": 10, "shapes": [(4, 3), (3, 4)],
+        "canonical_zone": "NW", "allowed_secondary": ["N", "E"],
+        "prohibited": [], "wet": False,
+    },
+    "conference_room": {
+        "name": "Conference Room", "functional_zone": "PUBLIC",
+        "catalog_min_m2": 12.0, "catalog_max_m2": 60.0,
+        "area_cells": 12, "shapes": [(5, 3), (4, 4), (6, 3)],
+        "canonical_zone": "E", "allowed_secondary": ["N", "S"],
+        "prohibited": [], "wet": False,
+    },
+    "conference_suite": {
+        "name": "Conference Suite", "functional_zone": "PUBLIC",
+        "catalog_min_m2": 12.0, "catalog_max_m2": 60.0,
+        "area_cells": 12, "shapes": [(5, 3), (4, 4)],
+        "canonical_zone": "E", "allowed_secondary": ["N", "S"],
+        "prohibited": [], "wet": False,
+    },
+    "electrical_room": {
+        "name": "Electrical Room", "functional_zone": "SERVICE",
+        "catalog_min_m2": 4.0, "catalog_max_m2": 22.0,
+        "area_cells": 4, "shapes": [(3, 2), (2, 3)],
+        "canonical_zone": "SE", "allowed_secondary": ["S", "E"],
+        "prohibited": ["NE"], "wet": False,
+    },
+    "server_room": {
+        "name": "Server Room", "functional_zone": "SERVICE",
+        "catalog_min_m2": 6.0, "catalog_max_m2": 28.0,
+        "area_cells": 6, "shapes": [(3, 2), (2, 3)],
+        "canonical_zone": "E", "allowed_secondary": ["N", "S"],
+        "prohibited": [], "wet": False,
+    },
+    "mep_room": {
+        "name": "MEP Plant Room", "functional_zone": "SERVICE",
+        "catalog_min_m2": 6.0, "catalog_max_m2": 30.0,
+        "area_cells": 6, "shapes": [(3, 2), (2, 3)],
+        "canonical_zone": "NE", "allowed_secondary": ["N", "E"],
+        "prohibited": [], "wet": False,
+    },
+    # T4 industrial bays.  A 16 m2 loading dock is not a room catalogue row;
+    # the fallback made every warehouse case fail ROOM-MAX by 4x.
+    "t4_dock_bay": {
+        "name": "Loading Dock Bay", "functional_zone": "INDUSTRIAL",
+        "catalog_min_m2": 40.0, "catalog_max_m2": 180.0,
+        "area_cells": 40, "shapes": [(8, 5), (10, 4)],
+        "canonical_zone": "N", "allowed_secondary": ["E", "W"],
+        "prohibited": [], "wet": False,
+    },
+    "t4_dispatch": {
+        "name": "Dispatch & Staging", "functional_zone": "INDUSTRIAL",
+        "catalog_min_m2": 20.0, "catalog_max_m2": 100.0,
+        "area_cells": 20, "shapes": [(6, 4), (5, 4)],
+        "canonical_zone": "NE", "allowed_secondary": ["N", "E"],
+        "prohibited": [], "wet": False,
+    },
+    "t4_storage_bay": {
+        "name": "Storage Bay", "functional_zone": "INDUSTRIAL",
+        "catalog_min_m2": 40.0, "catalog_max_m2": 260.0,
+        "area_cells": 40, "shapes": [(10, 6), (8, 8)],
+        "canonical_zone": "S", "allowed_secondary": ["SW", "SE"],
+        "prohibited": [], "wet": False,
+    },
+    "worker_amenity": {
+        "name": "Worker Amenity", "functional_zone": "SERVICE",
+        "catalog_min_m2": 8.0, "catalog_max_m2": 30.0,
+        "area_cells": 8, "shapes": [(4, 2), (3, 3)],
+        "canonical_zone": "W", "allowed_secondary": ["SW", "NW"],
+        "prohibited": [], "wet": True,
+    },
+    "washdown_point": {
+        "name": "Washdown Point", "functional_zone": "SERVICE",
+        "catalog_min_m2": 4.0, "catalog_max_m2": 20.0,
+        "area_cells": 4, "shapes": [(3, 2), (2, 3)],
+        "canonical_zone": "SW", "allowed_secondary": ["W", "S"],
+        "prohibited": [], "wet": True,
+    },
+    "admin_office": {
+        "name": "Admin Office", "functional_zone": "PUBLIC",
+        "catalog_min_m2": 10.0, "catalog_max_m2": 45.0,
+        "area_cells": 10, "shapes": [(4, 3), (3, 4)],
+        "canonical_zone": "NW", "allowed_secondary": ["N", "W"],
+        "prohibited": [], "wet": False,
+    },
+    "upper_store": {
+        "name": "Upper Floor Store", "functional_zone": "SERVICE",
+        "catalog_min_m2": 4.0, "catalog_max_m2": 24.0,
+        "area_cells": 4, "shapes": [(3, 2), (2, 3)],
+        "canonical_zone": "SE", "allowed_secondary": ["S", "E"],
+        "prohibited": [], "wet": False,
+    },
+    "t4_util_west": {
+        "name": "Utility West", "functional_zone": "SERVICE",
+        "catalog_min_m2": 4.0, "catalog_max_m2": 20.0,
+        "area_cells": 4, "shapes": [(3, 2), (2, 3)],
+        "canonical_zone": "W", "allowed_secondary": ["SW", "NW"],
+        "prohibited": [], "wet": True,
+    },
 }
 
 
@@ -227,7 +350,7 @@ def normalize_room_identifier(room_id: str) -> str:
     r = room_id.lower().strip().replace(" ", "_")
     # Strip the per-level suffix used on solved floor plates (living_F0 -> living).
     r = re.sub(r"_f\d+$", "", r)
-    if r in ("hall", "foyer", "living_room", "family_living"):
+    if r in ("hall", "living_room", "family_living"):
         return "living"
     if r in ("pooja", "puja_room", "mandir", "prayer"):
         return "puja"
@@ -250,14 +373,27 @@ def normalize_room_identifier(room_id: str) -> str:
     return r
 
 
-def get_room_catalog_entry(room_id: str) -> Dict[str, Any]:
+def get_explicit_room_catalog_entry(room_id: str) -> Optional[Dict[str, Any]]:
+    """The catalogue row for this room id, or None when only the generic fallback applies.
+
+    Plate sizing needs to know whether a row is real: a foyer/landing has no
+    catalogue maximum, and applying the generic 8 m2 fallback to it inflated
+    the programme by rooms the catalogue never described.
+    """
     norm = normalize_room_identifier(room_id)
     if norm in ROOM_CATALOG:
         return ROOM_CATALOG[norm]
-    # Check prefixes
     for k, v in ROOM_CATALOG.items():
         if norm.startswith(k) or k in norm:
             return v
+    return None
+
+
+def get_room_catalog_entry(room_id: str) -> Dict[str, Any]:
+    explicit = get_explicit_room_catalog_entry(room_id)
+    if explicit is not None:
+        return explicit
+    norm = normalize_room_identifier(room_id)
     # Fallback generic room
     return {
         "name": norm.replace("_", " ").title(),
