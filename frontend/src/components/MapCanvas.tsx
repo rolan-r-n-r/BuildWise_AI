@@ -12,6 +12,7 @@ import {
   setMapRenderGateReassert,
 } from '../services/mapRenderGate';
 import type { GeoJsonFeatureCollection } from '../services/types';
+import { DEFAULT_SITE_ZOOM } from '../services/sessionReset';
 
 interface MapCanvasProps {
   latitude: number | null;
@@ -48,6 +49,12 @@ interface MapCanvasProps {
   hideSiteEstimate?: boolean;
   /** Invoked once the MapLibre instance is created (and with null on teardown). */
   onMapReady?: (map: maplibregl.Map | null) => void;
+  /**
+   * Reset-contract token: every new value returns the camera to its first-run
+   * view (the current site, zoom 16, flat). The first token is the mount state
+   * and is skipped — the map was created at that view.
+   */
+  viewResetToken?: number;
 }
 
 const CUSTOM_LAYER_IDS = new Set([
@@ -145,6 +152,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   maxZoom = 18,
   hideSiteEstimate = false,
   onMapReady,
+  viewResetToken = 0,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<maplibregl.Map | null>(null);
@@ -1961,6 +1969,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
     }
   }, [latitude, longitude, orientationDegrees, plinthAreaSqFt, entranceDirection, theme, hideSiteEstimate]);
+
+  /**
+   * RESET CONTRACT: a reset is a view reset too. The token changes only when
+   * the app resets, so ordinary site moves (which have their own flyTo) are
+   * untouched. `jumpTo` rather than `flyTo`: the reset is a state, not an
+   * animation the reader should wait through.
+   */
+  const viewResetTokenRef = useRef<number>(viewResetToken);
+  useEffect(() => {
+    if (viewResetToken === viewResetTokenRef.current) return;
+    viewResetTokenRef.current = viewResetToken;
+    const map = mapInstanceRef.current;
+    if (!map || map._removed) return;
+    const hasSite = latitude !== null && longitude !== null;
+    map.stop();
+    map.jumpTo({
+      center: hasSite ? [longitude as number, latitude as number] : [defaultLon, defaultLat],
+      zoom: hasSite ? DEFAULT_SITE_ZOOM : defaultZoom,
+      pitch: 0,
+      bearing: 0,
+    });
+    popupRef.current?.remove();
+  }, [viewResetToken, latitude, longitude]);
 
   // Synchronize Ecological GeoJSON Layers
   useEffect(() => {

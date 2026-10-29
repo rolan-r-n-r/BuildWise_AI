@@ -1,6 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { FloorPlanRequest, FloorPlanResponse, AnalysisParams, FloorPlanParamsSnapshot, PlotPolygon } from '../services/types';
-import { isCriticalPlanWarning, planVerdictBadge, splitPlanWarnings, planWarningsHeadline } from '../services/planWarnings';
+import { planVerdictBadge } from '../services/planWarnings';
+import { WarningReportView } from './report/WarningReportView';
+import { PlanAdvisorPanel } from './report/PlanAdvisorPanel';
+import {
+  buildWarningReport,
+  collectRelaxations,
+  truthInputForPlan,
+} from '../services/warningReport';
+import type { RemediationOption } from '../services/types';
 import { generateFloorPlan } from '../services/api';
 import { BlueprintViewer } from './BlueprintViewer';
 import { Icon } from './Icon';
@@ -68,6 +76,8 @@ interface FloorPlanGeneratorCardProps {
   topVastuEntrances?: string[];
   /** Shared single-source boundary (map capture). Overrides the legacy local vertex editor. */
   sharedBoundary?: SharedBoundaryState | null;
+  /** Applies an applied remediation's validated parameters to the shared request. */
+  onRequestPatch?: (patch: Partial<AnalysisParams>) => void;
 }
 
 export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
@@ -87,6 +97,7 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
   prevailingWindDirectionDegrees,
   topVastuEntrances,
   sharedBoundary,
+  onRequestPatch,
 }) => {
   // Inherit parameters directly from shared request (single source of truth)
   // Delete card's local copies of storeys/typology/coverage so disagreement is impossible.
@@ -160,6 +171,12 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
       .filter((r) => r.required || (activeFloors >= 2 && r.isCore))
       .map((r) => r.id);
   });
+  // Strategy selection applied by a remediation card. These are validated
+  // request inputs, not geometry: the engine still draws and certifies.
+  const [partitionVariant, setPartitionVariant] = useState<
+    'service_row' | 'single_unit' | 'duplex' | null
+  >(null);
+  const [unitsPerFloor, setUnitsPerFloor] = useState<number | null>(null);
 
   const prevTypologyRef = useRef<string>(canonicalTypology);
   const prevFloorsRef = useRef<number>(activeFloors);
@@ -250,6 +267,11 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
   const [schemeProfile, setSchemeProfile] = useState<string | null>(null);
   const [pendingSchemeProfile, setPendingSchemeProfile] = useState<string | null>(null);
   const [localFloorPlan, setLocalFloorPlan] = useState<FloorPlanResponse | null>(null);
+  // Last request actually sent. The advisor's dry-runs reuse it verbatim.
+  const [lastRequest, setLastRequest] = useState<FloorPlanRequest | null>(null);
+  // An accepted rotation is a validated plot geometry for this session; it is
+  // cleared with the card (reset remounts it) and keeps the stale guard honest.
+  const [rotationPolygon, setRotationPolygon] = useState<PlotPolygon | null>(null);
   // Canonical single source of truth: parent-managed activeFloorPlan if provided, falling back to local state
   const floorPlan = activeFloorPlan !== undefined ? activeFloorPlan : localFloorPlan;
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -338,14 +360,18 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
           solar_axis_degrees: solarAxisDegrees,
           prevailing_wind_direction_degrees: prevailingWindDirectionDegrees,
           shape_type: siteMode === 'irregular' ? polyMetrics.shapeType : 'rectangle',
-          plot_polygon: siteMode === 'irregular' ? {
-            vertices: irregularVertices,
-            shape_type: polyMetrics.shapeType as any,
-            area_sqm: polyMetrics.area,
-            perimeter_m: polyMetrics.perimeter,
-            bounding_box: polyMetrics.bbox,
-            is_regular_rectangle: false,
-          } : undefined,
+          plot_polygon:
+            rotationPolygon ??
+            (siteMode === 'irregular'
+              ? {
+                  vertices: irregularVertices,
+                  shape_type: polyMetrics.shapeType as any,
+                  area_sqm: polyMetrics.area,
+                  perimeter_m: polyMetrics.perimeter,
+                  bounding_box: polyMetrics.bbox,
+                  is_regular_rectangle: false,
+                }
+              : undefined),
           terrace_bands: activeBandsPayload,
           floor_plate_masks: siteMode === 'irregular' ? floorPlateMasks : undefined,
           design_intent: designIntent,
@@ -370,36 +396,20 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
   const gateFailCount = Array.isArray(gateReport?.layers)
     ? gateReport.layers.filter((l: any) => l.status === 'FAIL').length
     : 0;
-  // Refusal and disclosure: a drawn proportion or programme failure must read as
-  // a FAIL on the plan card itself, not as one more amber advisory. The list is
-  // never collapsed: every ROOM-MIN / PROP-* line is named underneath.
-  const planWarningsCritical = Boolean((floorPlan?.warnings ?? []).some((w) =>
-    isCriticalPlanWarning(String(w)),
-  ));
-
-  // The verdict is the SERVER's. The local scan above is only a
-  // fallback for payloads generated before `plan_verdict` existed; the card,
-  // the certificate panel and the exported PDF all render this one string.
+  // The verdict is the SERVER's, rendered verbatim by the card, the
+  // certificate panel and the PDF.  A legacy payload without the field may
+  // only be read from its certificate/gate; the browser never re-classifies a
+  // warning as a FAIL of its own (that is how the card and the export drifted).
   const planVerdict: 'CERTIFIED' | 'ADVISORY' | 'NOT-CERTIFIED-FAIL-STAMP' =
     floorPlan?.plan_verdict ??
     ((floorPlan?.mathematical_certificate as any)?.is_valid === false ||
-    String(gateStatus || '').toUpperCase() === 'FAIL' ||
-    planWarningsCritical
+    String(gateStatus || '').toUpperCase() === 'FAIL'
       ? 'NOT-CERTIFIED-FAIL-STAMP'
-      : (floorPlan?.warnings ?? []).some((w) =>
-          /^(PROP-|PROGRAMME-|PLINTH:|ROOM-MIN|ROOM-MAX|ROOM-OVERLAP|SELECTION-FALLBACK|GATE-FAIL|PLATE-SHORT)/.test(
-            String(w),
-          ),
-        )
-      ? 'ADVISORY'
       : 'CERTIFIED');
-  const planVerdictCritical = planVerdict === 'NOT-CERTIFIED-FAIL-STAMP';
-  // The banner used to count every solver line under a
-  // "Proportion / programme non-compliance" headline, so 15 lines of which 6
-  // were plan disclosures read as 15 proportion failures.  Count what the
-  // headline names (the page-1 list), and keep the resolver noise in its own
-  // labelled block.
-  const { planWarnings: planPageWarnings, resolverNotes } = splitPlanWarnings(floorPlan?.warnings);
+  // One relaxation inventory (structured room data), used by the tiered
+  // warning report and the certificate's count. The old list printed every
+  // rationale twice and let a 200-char chip overflow the card.
+  const relaxations = React.useMemo(() => collectRelaxations(floorPlan), [floorPlan]);
 
   // Scheme portfolio + what the backend did with the selection.
   // Read from the response, never inferred from the presence of a profile.
@@ -450,7 +460,10 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
     );
   };
 
-  const handleGenerate = async (profileOverride?: string | null) => {
+  const handleGenerate = async (
+    profileOverride?: string | null,
+    requestPatch?: Partial<FloorPlanRequest>,
+  ) => {
     if (selectedRooms.length < 3) {
       setErrorMessage('Please select at least 3 rooms to generate an architectural floor plan.');
       return;
@@ -474,8 +487,8 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
     const currentDepth = Math.max(4.0, Number(plotDepth) || 12.0);
 
     // THE single-source funnel: identical model as map trace / presets / import.
-    let plotPoly: PlotPolygon | undefined = undefined;
-    if (sharedBoundary && sharedBoundary.vertices.length >= 3) {
+    let plotPoly: PlotPolygon | undefined = rotationPolygon ?? undefined;
+    if (!plotPoly && sharedBoundary && sharedBoundary.vertices.length >= 3) {
       const payload = buildPlotPolygonPayload({
         vertices: sharedBoundary.vertices,
         origin: sharedBoundary.origin,
@@ -524,7 +537,13 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
       // profiles would have produced; the geometry itself follows the selection.
       include_scheme_alternatives: true,
       selected_scheme_id: activeSchemeProfile || undefined,
+      partition_variant: requestPatch?.partition_variant ?? partitionVariant ?? undefined,
+      units_per_floor: requestPatch?.units_per_floor ?? unitsPerFloor ?? undefined,
     };
+    // A remediation applies ONLY validated inputs, on top of the request the
+    // controls produced. No coordinate, area or verdict is written here.
+    const finalReq: FloorPlanRequest = requestPatch ? { ...req, ...requestPatch } : req;
+    setLastRequest(finalReq);
 
     const controller = new AbortController();
     const timeoutMs = generationTimeoutMs();
@@ -535,34 +554,36 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
     }, timeoutMs);
 
     try {
-      const resp = await generateFloorPlan(req, controller.signal);
+      const resp = await generateFloorPlan(finalReq, controller.signal);
       // Plumbing: the card owns the freshness snapshot and therefore REPLACES
       // the server's `params_snapshot`. The backend's selection provenance has
       // to ride across that replacement - dropping it here is exactly what made
-      // a fallback plan read like the requested layout (W4).
+      // a fallback plan read like the requested layout.
       const backendSnapshot = (resp.params_snapshot ?? {}) as Record<string, any>;
       const snapshot: FloorPlanParamsSnapshot = {
-        building_typology: activeTypology,
-        floors: activeFloors,
-        ground_coverage_ratio: activeCoverage,
+        building_typology: finalReq.building_typology ?? activeTypology,
+        floors: finalReq.floors ?? activeFloors,
+        ground_coverage_ratio: finalReq.ground_coverage_ratio ?? activeCoverage,
         plot_width_m: currentWidth,
         plot_depth_m: currentDepth,
-        required_rooms: [...selectedRooms].sort(),
-        vastu_strictness: strictness,
-        built_up_area_sqft: activeAreaSqft,
+        required_rooms: [...(finalReq.required_rooms ?? selectedRooms)].sort(),
+        vastu_strictness: finalReq.vastu_strictness ?? strictness,
+        built_up_area_sqft: finalReq.built_up_area_sqft ?? activeAreaSqft,
         client_notes: (activeNotes || '').trim(),
         ai_provider: activeProvider,
-        shape_type: siteMode === 'irregular' ? polyMetrics.shapeType : 'rectangle',
-        plot_polygon: plotPoly,
+        shape_type: siteMode === 'irregular' || finalReq.plot_polygon ? polyMetrics.shapeType : 'rectangle',
+        plot_polygon: finalReq.plot_polygon ?? plotPoly,
         quality_grade: activeGrade,
         solar_axis_degrees: solarAxisDegrees,
         prevailing_wind_direction_degrees: prevailingWindDirectionDegrees,
-        terrace_bands: req.terrace_bands,
-        floor_plate_masks: req.floor_plate_masks,
-        design_intent: req.design_intent,
-        include_service_layer: req.include_service_layer,
-        include_structural_sheet: req.include_structural_sheet,
-        selected_scheme_id: req.selected_scheme_id,
+        terrace_bands: finalReq.terrace_bands,
+        floor_plate_masks: finalReq.floor_plate_masks,
+        design_intent: finalReq.design_intent,
+        partition_variant: finalReq.partition_variant,
+        units_per_floor: finalReq.units_per_floor,
+        include_service_layer: finalReq.include_service_layer,
+        include_structural_sheet: finalReq.include_structural_sheet,
+        selected_scheme_id: finalReq.selected_scheme_id,
         scheme_selection_status: backendSnapshot.scheme_selection_status,
         scheme_profile: backendSnapshot.scheme_profile,
         ...(backendSnapshot.selection_path
@@ -612,6 +633,80 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
     if (isGenerating || schemeId === schemeProfile) return;
     setSchemeProfile(schemeId);
     void handleGenerate(schemeId);
+  };
+
+  // ONE warning report for the surface AND the advisor: their counts cannot
+  // drift because they read the same object.
+  const warningReport = React.useMemo(
+    () => buildWarningReport(floorPlan?.warnings ?? [], relaxations, truthInputForPlan(floorPlan)),
+    [floorPlan, relaxations],
+  );
+
+  // The advisor's dry-runs need the request that produced the plan. A live
+  // Generate carries it directly; a restored plan carries only the params
+  // snapshot, which is the same inputs in a looser shape. Normalise it here so
+  // the panel always receives validated request fields, never a raw snapshot.
+  const remediationRequest = React.useMemo<Partial<FloorPlanRequest> | null>(() => {
+    if (lastRequest) return lastRequest;
+    const snapshot = floorPlan?.params_snapshot;
+    if (!snapshot) return null;
+    return {
+      plot_width_m: snapshot.plot_width_m,
+      plot_depth_m: snapshot.plot_depth_m,
+      required_rooms: snapshot.required_rooms,
+      floors: snapshot.floors,
+      ground_coverage_ratio: snapshot.ground_coverage_ratio,
+      building_typology: snapshot.building_typology as FloorPlanRequest['building_typology'],
+      vastu_strictness: snapshot.vastu_strictness as FloorPlanRequest['vastu_strictness'],
+      built_up_area_sqft: snapshot.built_up_area_sqft,
+      client_notes: snapshot.client_notes,
+      ai_provider: snapshot.ai_provider,
+      plot_polygon: snapshot.plot_polygon,
+      solar_axis_degrees: snapshot.solar_axis_degrees,
+      prevailing_wind_direction_degrees: snapshot.prevailing_wind_direction_degrees,
+      terrace_bands: snapshot.terrace_bands,
+      floor_plate_masks: snapshot.floor_plate_masks,
+      design_intent: snapshot.design_intent,
+      include_service_layer: snapshot.include_service_layer,
+      include_structural_sheet: snapshot.include_structural_sheet,
+      include_scheme_alternatives: true,
+      selected_scheme_id: snapshot.selected_scheme_id,
+      partition_variant: snapshot.partition_variant,
+      units_per_floor: snapshot.units_per_floor,
+    };
+  }, [lastRequest, floorPlan?.params_snapshot]);
+
+  /**
+   * Apply a remediation through the existing validated inputs and re-solve.
+   * Nothing is written from an AI response: the patch comes from the engine's
+   * own option, and the regenerated plan re-certifies.
+   */
+  const handleApplyRemediation = (option: RemediationOption) => {
+    const patch = (option.patch ?? {}) as Partial<FloorPlanRequest>;
+    if (patch.partition_variant) {
+      setPartitionVariant(patch.partition_variant as 'service_row' | 'single_unit' | 'duplex');
+    }
+    if (typeof patch.units_per_floor === 'number') {
+      setUnitsPerFloor(patch.units_per_floor);
+    }
+    let nextProfile = schemeProfile;
+    if (typeof patch.floors === 'number') {
+      onRequestPatch?.({ floors: patch.floors });
+    }
+    if (typeof patch.ground_coverage_ratio === 'number') {
+      onRequestPatch?.({ ground_coverage_ratio: patch.ground_coverage_ratio });
+    }
+    if (Array.isArray(patch.required_rooms)) {
+      setSelectedRooms(patch.required_rooms);
+    }
+    if (patch.plot_polygon) {
+      setRotationPolygon(patch.plot_polygon as PlotPolygon);
+    }
+    if (patch.selected_scheme_id) {
+      nextProfile = String(patch.selected_scheme_id);
+      setSchemeProfile(nextProfile);
+    }
+    void handleGenerate(nextProfile, patch);
   };
 
   return (
@@ -1442,89 +1537,27 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
               </div>
             )}
 
-            {/* ONE plan verdict, identical to the certificate panel and the
-                exported PDF. */}
-            <div
-              data-testid="plan-verdict"
-              data-verdict={planVerdict}
-              className={`mt-2.5 flex items-center gap-2 text-[11px] font-semibold ${
-                planVerdictCritical
-                  ? 'text-rose-700 dark:text-rose-300'
-                  : planVerdict === 'ADVISORY'
-                  ? 'text-amber-700 dark:text-amber-300'
-                  : 'text-[var(--semantic-green-ink)]'
-              }`}
-            >
-              <Icon name={planVerdictCritical ? 'alert-triangle' : 'shield-check'} size={12} className="shrink-0" />
-              <span>Plan verdict:</span>
-              <span className="font-mono">{planVerdict}</span>
-            </div>
+            {/* ONE warning surface: verdict → failures → relaxations →
+                advisories → engine log. T4 operations never inflate the warning
+                counts; the full verbatim list stays one click away. */}
+            <WarningReportView
+              warnings={floorPlan.warnings ?? []}
+              relaxations={relaxations}
+              planVerdict={planVerdict}
+              certificateFailures={floorPlan.mathematical_certificate?.failures ?? []}
+              prebuiltReport={warningReport}
+            />
 
-            {/* Solver Warnings Banner (Refusal: red + FAIL stamp when critical) */}
-            {floorPlan.warnings && floorPlan.warnings.length > 0 && (
-              <div
-                data-testid="plan-warnings-banner"
-                data-critical={planVerdictCritical ? 'true' : 'false'}
-                className={`mt-2.5 p-3 rounded-[10px] border space-y-1 ${
-                  planVerdictCritical
-                    ? 'bg-rose-500/10 border-rose-500/30 text-rose-800 dark:text-rose-100'
-                    : 'bg-amber-500/10 border-amber-500/25 text-amber-800 dark:text-amber-200'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-semibold text-[12px]">
-                  <Icon name="alert-triangle" size={13} className="shrink-0" />
-                  <span>
-                    {planWarningsHeadline(planPageWarnings.length, resolverNotes.length)}
-                  </span>
-                  {planVerdictCritical && (
-                    <span className="ml-auto inline-flex items-center px-1.5 py-0.5 rounded-full bg-[var(--semantic-red)] text-white text-[9px] font-bold uppercase tracking-wider">
-                      FAIL stamp
-                    </span>
-                  )}
-                </div>
-                {planVerdictCritical && (
-                  <p className="text-[11px] leading-snug pl-4">
-                    The plan is drawn and exported with a FAIL stamp. The squeezed rooms and every
-                    relaxation are named individually below; refusal is reserved for statutory,
-                    egress and stacking failures.
-                  </p>
-                )}
-                {planPageWarnings.length > 0 && (
-                  <>
-                    <p className="text-[11px] leading-snug pl-4 opacity-90">
-                      Proportion, programme, plinth and room-band disclosures — the same lines
-                      page 1 of the exported sheet prints.
-                    </p>
-                    <ul
-                      data-testid="plan-warning-list"
-                      data-count={planPageWarnings.length}
-                      className="text-[11px] space-y-0.5 pl-4 list-disc opacity-90"
-                    >
-                      {planPageWarnings.map((w, idx) => (
-                        <li key={idx} className="leading-snug">{w}</li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-                {resolverNotes.length > 0 && (
-                  <details
-                    data-testid="resolver-notes"
-                    data-count={resolverNotes.length}
-                    className="pl-4 text-[11px] opacity-90"
-                  >
-                    <summary className="cursor-pointer select-none font-medium leading-snug">
-                      Resolver notes ({resolverNotes.length}) — door swings, circulation repairs and
-                      inapplicable rules
-                    </summary>
-                    <ul className="mt-1 space-y-0.5 list-disc pl-4">
-                      {resolverNotes.map((w, idx) => (
-                        <li key={idx} className="leading-snug">{w}</li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </div>
-            )}
+            {/* Advisor + remediation: the deterministic summary is instant; the
+                advisory paragraph is optional and never authoritative. */}
+            <PlanAdvisorPanel
+              plan={floorPlan}
+              report={warningReport}
+              request={remediationRequest}
+              planVerdict={planVerdict}
+              isGenerating={isGenerating}
+              onApply={handleApplyRemediation}
+            />
 
             {/* Critic Notes */}
             {floorPlan.qa?.critic_notes && floorPlan.qa.critic_notes.length > 0 && (
@@ -1634,36 +1667,6 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
             if (!cert) return null;
             const certId = cert.certificate_id || 'CERT-MATH-VALID-2026';
             const isValid = Boolean(cert.is_valid);
-
-            // Extract relaxations across floors or placements
-            const relaxations: Array<{ room: string; rule_id: string; rationale: string }> = [];
-            if (floorPlan.multi_storey?.floors) {
-              floorPlan.multi_storey.floors.forEach((fl) => {
-                fl.rooms?.forEach((r: any) => {
-                  if (Array.isArray(r.relaxations)) {
-                    r.relaxations.forEach((rx: any) => {
-                      relaxations.push({
-                        room: r.room_name || r.room_id,
-                        rule_id: rx.rule_id,
-                        rationale: rx.rationale,
-                      });
-                    });
-                  }
-                });
-              });
-            } else if (floorPlan.placements) {
-              floorPlan.placements.forEach((r: any) => {
-                if (Array.isArray(r.relaxations)) {
-                  r.relaxations.forEach((rx: any) => {
-                    relaxations.push({
-                      room: r.room_name || r.room_id,
-                      rule_id: rx.rule_id,
-                      rationale: rx.rationale,
-                    });
-                  });
-                }
-              });
-            }
 
             // A missing flag is NOT a pass: 'undefined' renders as NOT RUN
             // Instead of silently becoming a green check.
@@ -1789,27 +1792,6 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
                   </span>
                 </div>
 
-                {/* Relaxations with Rationale Tags */}
-                {relaxations.length > 0 ? (
-                  <div className="pt-2 border-t border-emerald-500/20 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] font-semibold text-amber-800 dark:text-amber-300">
-                      <span>Applied Relaxations ({relaxations.length})</span>
-                      <span className="font-normal text-[10px] text-[var(--text-3)]">Bounded Deg-1 Pragmatic Adjustments</span>
-                    </div>
-                    <div className="space-y-1">
-                      {relaxations.map((rx, idx) => (
-                        <div key={idx} className="p-1.5 rounded-[6px] bg-amber-500/10 text-[11px] flex items-center justify-between gap-2">
-                          <span className="font-medium text-amber-900 dark:text-amber-200 truncate">
-                            {rx.room}: <code className="font-mono text-[10px] font-semibold">{rx.rule_id}</code>
-                          </span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 shrink-0">
-                            {rx.rationale}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
               </div>
             );
           })()}
