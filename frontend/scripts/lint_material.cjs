@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * lint_material.cjs — the material discipline gate (Phase 1).
+ * lint_material.cjs — the material discipline gate.
  * ==========================================================
  * The dossier states the rule as a rule, not a preference:
  *

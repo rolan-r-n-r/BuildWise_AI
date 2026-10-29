@@ -1,0 +1,362 @@
+{
+ "fixture_id": "plan_noncertified_55",
+ "captured_at": "2026-10-25T19:20:50+00:00",
+ "provenance": {
+  "capture_script": "backend/scripts/capture_warning_fixture.py",
+  "engine_entry": "app.services.floorplan.floorplan_service.generate_floor_plan",
+  "floorplan_package": "C:\\Users\\rolan\\Desktop\\RNR\\Buildwise\\backend\\app\\services\\floorplan\\__init__.py",
+  "note": "Live engine capture; the user's original 55-line payload was not in the repo. Same qualitative shape: withheld certificate, F2 terrace band, wide warning wall, room-level relaxations."
+ },
+ "request": {
+  "plot_width_m": 12.0,
+  "plot_depth_m": 15.0,
+  "building_typology": "residential_single",
+  "floors": 3,
+  "ground_coverage_ratio": 0.46,
+  "vastu_strictness": "high",
+  "bypass_cache": true,
+  "ai_provider": "mock",
+  "terrace_bands": {
+   "2": {
+    "edge": "N",
+    "depth_m": 3.0
+   }
+  }
+ },
+ "status": "compromise",
+ "plan_verdict": "NOT-CERTIFIED-FAIL-STAMP",
+ "plan_verdict_reasons": [
+  "mathematical certificate WITHHELD",
+  "validation gate FAIL",
+  "PROP-PLATE-CAP: living_F0 aspect 1:2.80 beyond the 1.40x cap; justified per room (plate cannot host this room within its band) and still disclosed as a deficit.",
+  "PROP-HARD: floor 0 living_F0 3.00 m clear < 3.60 m minimum; the declared overflow moves cannot resolve it on this plate and the certificate must fail rather than accept a widened band.",
+  "PROP-HARD: floor 0 living_F0 aspect 1:2.80 > 1:1.80 hard band (beyond the 1.40x relaxation cap and cannot split); the declared overflow moves cannot resolve it on this plate and the certificate must fail rather than accept a widened band.",
+  "ROOM-MIN: core_staircase_primary_F0 is 7.2 m\u00b2, below its 8.0 m\u00b2 catalogue minimum on floor 0; the 82.8 m\u00b2 plate (coverage/setback ceiling) cannot hold this programme comfortably.",
+  "ROOM-MIN: lobby_spine_F0 is 6.1 m\u00b2, below its 8.0 m\u00b2 catalogue minimum on floor 0; the 82.8 m\u00b2 plate (coverage/setback ceiling) cannot hold this programme comfortably.",
+  "ROOM-MIN: living_F0 aspect ratio 2.80 exceeds the 1:2.2 clamp on floor 0 at 3.00 m clear; the 82.8 m\u00b2 plate cannot hold this programme comfortably.",
+  "ROOM-MIN: core_staircase_primary_F1 is 7.2 m\u00b2, below its 8.0 m\u00b2 catalogue minimum on floor 1; the 82.8 m\u00b2 plate (coverage/setback ceiling) cannot hold this programme comfortably.",
+  "ROOM-MIN: lobby_spine_F1 is 6.1 m\u00b2, below its 8.0 m\u00b2 catalogue minimum on floor 1; the 82.8 m\u00b2 plate (coverage/setback ceiling) cannot hold this programme comfortably.",
+  "ROOM-MAX: study_F1 is 14.2 m\u00b2, above its 12.0 m\u00b2 catalogue maximum on floor 1; the 82.8 m\u00b2 plate stretched it past its band.",
+  "ROOM-MAX: terrace_band_F2 is 25.2 m\u00b2, above its 16.0 m\u00b2 catalogue maximum on floor 2; the 82.8 m\u00b2 plate stretched it past its band.",
+  "ROOM-MIN: terrace_band_F2 aspect ratio 2.80 exceeds the 1:2.2 clamp on floor 2 at 3.00 m clear; the 82.8 m\u00b2 plate cannot hold this programme comfortably.",
+  "ROOM-MIN: core_staircase_primary_F2 is 7.2 m\u00b2, below its 8.0 m\u00b2 catalogue minimum on floor 2; the 82.8 m\u00b2 plate (coverage/setback ceiling) cannot hold this programme comfortably.",
+  "ROOM-MIN: lobby_spine_F2 is 6.1 m\u00b2, below its 8.0 m\u00b2 catalogue minimum on floor 2; the 82.8 m\u00b2 plate (coverage/setback ceiling) cannot hold this programme comfortably.",
+  "ROOM-MAX: study_F2 is 14.2 m\u00b2, above its 12.0 m\u00b2 catalogue maximum on floor 2; the 82.8 m\u00b2 plate stretched it past its band.",
+  "ROOM-MIN living_F0: clear width 3.00 m is below the catalogue 3.60 m (declared relaxation at 0.80x)",
+  "ROOM-MIN bed_2_F1: clear width 2.71 m is below the catalogue 3.00 m (declared relaxation at 0.80x)",
+  "ROOM-MIN master_bed_F1: clear width 3.21 m is below the catalogue 3.40 m (declared relaxation at 0.80x)",
+  "ROOM-MIN master_bed_F2: clear width 3.21 m is below the catalogue 3.40 m (declared relaxation at 0.80x)",
+  "ROOM-MIN core_staircase_primary_F0: gross area is below the catalogue minimum (declared relaxation - gross area 7.18 is below the catalogue minimum 8.00 (short by 0.82); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "ROOM-MIN lobby_spine_F0: gross area is below the catalogue minimum (declared relaxation - gross area 6.08 is below the catalogue minimum 8.00 (short by 1.92); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "ROOM-MIN living_F0: clear width (wall-deducted) is below the catalogue minimum (declared relaxation - clear width (wall-deducted) 2.71 is below the catalogue minimum 3.60 (short by 0.89); walls eat into a room cut at its gross minimum, so the clear face cannot reach the catalogue figure on this plate; listed and still a certificate failure. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "ROOM-MIN core_staircase_primary_F1: gross area is below the catalogue minimum (declared relaxation - gross area 7.18 is below the catalogue minimum 8.00 (short by 0.82); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "ROOM-MIN lobby_spine_F1: gross area is below the catalogue minimum (declared relaxation - gross area 6.08 is below the catalogue minimum 8.00 (short by 1.92); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "ROOM-MIN core_staircase_primary_F2: gross area is below the catalogue minimum (declared relaxation - gross area 7.18 is below the catalogue minimum 8.00 (short by 0.82); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "ROOM-MIN lobby_spine_F2: gross area is below the catalogue minimum (declared relaxation - gross area 6.08 is below the catalogue minimum 8.00 (short by 1.92); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "PROGRAMME-SQUEEZE: the programme needs 63.0 m\u00b2; the plate provides 82.8 m\u00b2 (8 room(s) below their minimum: core_staircase_primary_F0, lobby_spine_F0, living_F0, core_staircase_primary_F1, lobby_spine_F1, terrace_band_F2, core_staircase_primary_F2, lobby_spine_F2). The plan is drawn with a FAIL stamp. Options: add a storey, reduce the programme, or enlarge the plate where the site allows.",
+  "GATE-FAIL L16 Proportion & Surplus: F0 living_F0: 1:2.80 against a 1:1.80 band (1.56x, cap 1.40x) and no listed relaxation"
+ ],
+ "generation_id": "GEN-T1-3F-42",
+ "room_ids": [
+  "core_staircase_primary_F0",
+  "lobby_spine_F0",
+  "living_F0",
+  "dining_F0",
+  "bath_1_F0",
+  "guest_bed_F0",
+  "kitchen_F0",
+  "core_staircase_primary_F1",
+  "lobby_spine_F1",
+  "bed_2_F1",
+  "balcony_F1",
+  "study_F1",
+  "ensuite_bath_F1",
+  "master_bed_F1",
+  "terrace_band_F2",
+  "core_staircase_primary_F2",
+  "lobby_spine_F2",
+  "study_F2",
+  "ensuite_bath_F2",
+  "master_bed_F2"
+ ],
+ "warnings": [
+  "Furniture frontage rebalanced in row y=6.34m (total 8.41m) to place every catalogue set at solve time.",
+  "PROP-PLATE-CAP: living_F0 aspect 1:2.80 beyond the 1.40x cap; justified per room (plate cannot host this room within its band) and still disclosed as a deficit.",
+  "PROP-IDEAL: bath_1_F0 aspect 1:1.72 is outside the 1:1.50 ideal band but inside the 1:2.00 hard band (WARN).",
+  "PROP-HARD: floor 0 living_F0 3.00 m clear < 3.60 m minimum; the declared overflow moves cannot resolve it on this plate and the certificate must fail rather than accept a widened band.",
+  "PROP-HARD: floor 0 living_F0 aspect 1:2.80 > 1:1.80 hard band (beyond the 1.40x relaxation cap and cannot split); the declared overflow moves cannot resolve it on this plate and the certificate must fail rather than accept a widened band.",
+  "ROOM-MIN: core_staircase_primary_F0 is 7.2 m\u00b2, below its 8.0 m\u00b2 catalogue minimum on floor 0; the 82.8 m\u00b2 plate (coverage/setback ceiling) cannot hold this programme comfortably.",
+  "ROOM-MIN: lobby_spine_F0 is 6.1 m\u00b2, below its 8.0 m\u00b2 catalogue minimum on floor 0; the 82.8 m\u00b2 plate (coverage/setback ceiling) cannot hold this programme comfortably.",
+  "ROOM-MIN: living_F0 aspect ratio 2.80 exceeds the 1:2.2 clamp on floor 0 at 3.00 m clear; the 82.8 m\u00b2 plate cannot hold this programme comfortably.",
+  "Swing resolution: Flipped door 'door_core_lobby_F0' (2.35,3.50,inward_right -> 2.35,3.50,inward_left).",
+  "Swing resolution: Converted door 'door_core_lobby_F0' to sliding buffer (unresolvable arc conflict).",
+  "Swing resolution: Flipped door 'door_kitchen_F0' (5.84,6.34,inward_right -> 5.84,6.34,inward_left).",
+  "Swing resolution: Flipped door 'door_guest_bed_F0' (2.81,6.34,inward_right -> 2.81,6.34,inward_right).",
+  "Swing resolution: Converted door 'door_guest_bed_F0' to sliding buffer (unresolvable arc conflict).",
+  "WET-STACK-ALIGN F1: ensuite_bath_F1 2.15 -> 2.04 m to sit exactly over bath_1_F0; master_bed_F1 absorbed the difference.",
+  "PROP-ASPECT: bed_2_F1 aspect 1:1.82 above the 1:1.80 hard band; accepted at 1.01x as an explicit certificate-listed relaxation (no legal split on this plate).",
+  "PROP-IDEAL: ensuite_bath_F1 aspect 1:1.72 is outside the 1:1.50 ideal band but inside the 1:2.00 hard band (WARN).",
+  "PROP-IDEAL: master_bed_F1 aspect 1:1.82 is outside the 1:1.20 ideal band but inside the 1:1.80 hard band (WARN).",
+  "ROOM-MIN: core_staircase_primary_F1 is 7.2 m\u00b2, below its 8.0 m\u00b2 catalogue minimum on floor 1; the 82.8 m\u00b2 plate (coverage/setback ceiling) cannot hold this programme comfortably.",
+  "ROOM-MIN: lobby_spine_F1 is 6.1 m\u00b2, below its 8.0 m\u00b2 catalogue minimum on floor 1; the 82.8 m\u00b2 plate (coverage/setback ceiling) cannot hold this programme comfortably.",
+  "ROOM-MAX: study_F1 is 14.2 m\u00b2, above its 12.0 m\u00b2 catalogue maximum on floor 1; the 82.8 m\u00b2 plate stretched it past its band.",
+  "Swing resolution: Flipped door 'door_core_lobby_F1' (2.35,3.50,inward_right -> 2.35,3.50,inward_left).",
+  "Swing resolution: Converted door 'door_core_lobby_F1' to sliding buffer (unresolvable arc conflict).",
+  "Swing resolution: Flipped door 'door_balcony_F1' (5.47,1.05,inward_right -> 5.47,1.05,inward_left).",
+  "VENTILATION: dedicated exhaust riser duct_vent_F1_ensuite_bath_F1 added inside 'ensuite_bath_F1' (7.1 m\u00b2) because its opening provides 0.60 m\u00b2 against 0.71 m\u00b2 required.",
+  "Swing resolution: Flipped door 'door_master_bed_F1' (2.81,6.34,inward_right -> 2.81,6.34,inward_right).",
+  "Swing resolution: Converted door 'door_master_bed_F1' to sliding buffer (unresolvable arc conflict).",
+  "Room 'bed_2_F2' fully inside terrace band zone on Floor 2 - removed for terrace.",
+  "Room 'balcony_F2' fully inside terrace band zone on Floor 2 - removed for terrace.",
+  "WET-STACK-ALIGN F2: ensuite_bath_F2 2.15 -> 2.04 m to sit exactly over ensuite_bath_F1; master_bed_F2 absorbed the difference.",
+  "PROP-IDEAL: ensuite_bath_F2 aspect 1:1.72 is outside the 1:1.50 ideal band but inside the 1:2.00 hard band (WARN).",
+  "PROP-IDEAL: master_bed_F2 aspect 1:1.82 is outside the 1:1.20 ideal band but inside the 1:1.80 hard band (WARN).",
+  "ROOM-MAX: terrace_band_F2 is 25.2 m\u00b2, above its 16.0 m\u00b2 catalogue maximum on floor 2; the 82.8 m\u00b2 plate stretched it past its band.",
+  "ROOM-MIN: terrace_band_F2 aspect ratio 2.80 exceeds the 1:2.2 clamp on floor 2 at 3.00 m clear; the 82.8 m\u00b2 plate cannot hold this programme comfortably.",
+  "ROOM-MIN: core_staircase_primary_F2 is 7.2 m\u00b2, below its 8.0 m\u00b2 catalogue minimum on floor 2; the 82.8 m\u00b2 plate (coverage/setback ceiling) cannot hold this programme comfortably.",
+  "ROOM-MIN: lobby_spine_F2 is 6.1 m\u00b2, below its 8.0 m\u00b2 catalogue minimum on floor 2; the 82.8 m\u00b2 plate (coverage/setback ceiling) cannot hold this programme comfortably.",
+  "ROOM-MAX: study_F2 is 14.2 m\u00b2, above its 12.0 m\u00b2 catalogue maximum on floor 2; the 82.8 m\u00b2 plate stretched it past its band.",
+  "Swing resolution: Flipped door 'door_core_lobby_F2' (2.35,3.50,inward_right -> 2.35,3.50,inward_left).",
+  "Swing resolution: Converted door 'door_core_lobby_F2' to sliding buffer (unresolvable arc conflict).",
+  "VENTILATION: dedicated exhaust riser duct_vent_F2_ensuite_bath_F2 added inside 'ensuite_bath_F2' (7.1 m\u00b2) because its opening provides 0.60 m\u00b2 against 0.71 m\u00b2 required.",
+  "Swing resolution: Flipped door 'door_master_bed_F2' (2.81,6.34,inward_right -> 2.81,6.34,inward_right).",
+  "Swing resolution: Converted door 'door_master_bed_F2' to sliding buffer (unresolvable arc conflict).",
+  "ROOM-MIN living_F0: clear width 3.00 m is below the catalogue 3.60 m (declared relaxation at 0.80x)",
+  "ROOM-MIN bed_2_F1: clear width 2.71 m is below the catalogue 3.00 m (declared relaxation at 0.80x)",
+  "ROOM-MIN master_bed_F1: clear width 3.21 m is below the catalogue 3.40 m (declared relaxation at 0.80x)",
+  "ROOM-MIN master_bed_F2: clear width 3.21 m is below the catalogue 3.40 m (declared relaxation at 0.80x)",
+  "PROP-ASPECT bed_2_F1: aspect 1:1.82 exceeds the 1:1.80 hard band and is accepted at 1.01x as a declared certificate relaxation; no legal split or adjunct fits this plate.",
+  "ROOM-MIN core_staircase_primary_F0: gross area is below the catalogue minimum (declared relaxation - gross area 7.18 is below the catalogue minimum 8.00 (short by 0.82); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "ROOM-MIN lobby_spine_F0: gross area is below the catalogue minimum (declared relaxation - gross area 6.08 is below the catalogue minimum 8.00 (short by 1.92); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "ROOM-MIN living_F0: clear width (wall-deducted) is below the catalogue minimum (declared relaxation - clear width (wall-deducted) 2.71 is below the catalogue minimum 3.60 (short by 0.89); walls eat into a room cut at its gross minimum, so the clear face cannot reach the catalogue figure on this plate; listed and still a certificate failure. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "ROOM-MIN core_staircase_primary_F1: gross area is below the catalogue minimum (declared relaxation - gross area 7.18 is below the catalogue minimum 8.00 (short by 0.82); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "ROOM-MIN lobby_spine_F1: gross area is below the catalogue minimum (declared relaxation - gross area 6.08 is below the catalogue minimum 8.00 (short by 1.92); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "ROOM-MIN core_staircase_primary_F2: gross area is below the catalogue minimum (declared relaxation - gross area 7.18 is below the catalogue minimum 8.00 (short by 0.82); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "ROOM-MIN lobby_spine_F2: gross area is below the catalogue minimum (declared relaxation - gross area 6.08 is below the catalogue minimum 8.00 (short by 1.92); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.)",
+  "PROGRAMME-SQUEEZE: the programme needs 63.0 m\u00b2; the plate provides 82.8 m\u00b2 (8 room(s) below their minimum: core_staircase_primary_F0, lobby_spine_F0, living_F0, core_staircase_primary_F1, lobby_spine_F1, terrace_band_F2, core_staircase_primary_F2, lobby_spine_F2). The plan is drawn with a FAIL stamp. Options: add a storey, reduce the programme, or enlarge the plate where the site allows.",
+  "GATE-FAIL L16 Proportion & Surplus: F0 living_F0: 1:2.80 against a 1:1.80 band (1.56x, cap 1.40x) and no listed relaxation"
+ ],
+ "relaxations": [
+  {
+   "room": "core_staircase_primary_F0",
+   "room_name": "Dogleg Staircase Core",
+   "rule_id": "NBC-01",
+   "rationale": "gross area 7.18 is below the catalogue minimum 8.00 (short by 0.82); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.",
+   "measure": "gross area",
+   "factor": null
+  },
+  {
+   "room": "lobby_spine_F0",
+   "room_name": "Circulation Lobby",
+   "rule_id": "NBC-01",
+   "rationale": "gross area 6.08 is below the catalogue minimum 8.00 (short by 1.92); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.",
+   "measure": "gross area",
+   "factor": null
+  },
+  {
+   "room": "living_F0",
+   "room_name": "Living Room",
+   "rule_id": "PROP-PLATE-CAP",
+   "rationale": "aspect 1:2.80 is 1.56x the 1:1.80 band, beyond the 1.40x cap, and the room is below its catalogue minimum: the plate cannot give it a wider band or a legal split. Disclosed as a programme deficit, not accepted as compliant.",
+   "measure": null,
+   "factor": null
+  },
+  {
+   "room": "living_F0",
+   "room_name": "Living Room",
+   "rule_id": "NBC-01",
+   "rationale": "clear width 3.00 m is below the catalogue minimum 3.60 m; accepted at 0.80x on this plate",
+   "measure": null,
+   "factor": null
+  },
+  {
+   "room": "living_F0",
+   "room_name": "Living Room",
+   "rule_id": "NBC-01",
+   "rationale": "clear width (wall-deducted) 2.71 is below the catalogue minimum 3.60 (short by 0.89); walls eat into a room cut at its gross minimum, so the clear face cannot reach the catalogue figure on this plate; listed and still a certificate failure. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.",
+   "measure": "clear width (wall-deducted)",
+   "factor": null
+  },
+  {
+   "room": "core_staircase_primary_F1",
+   "room_name": "Dogleg Staircase Core",
+   "rule_id": "NBC-01",
+   "rationale": "gross area 7.18 is below the catalogue minimum 8.00 (short by 0.82); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.",
+   "measure": "gross area",
+   "factor": null
+  },
+  {
+   "room": "lobby_spine_F1",
+   "room_name": "Circulation Lobby",
+   "rule_id": "NBC-01",
+   "rationale": "gross area 6.08 is below the catalogue minimum 8.00 (short by 1.92); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.",
+   "measure": "gross area",
+   "factor": null
+  },
+  {
+   "room": "bed_2_F1",
+   "room_name": "Bedroom 2",
+   "rule_id": "PROP-ASPECT",
+   "rationale": "aspect 1:1.82 exceeds the 1:1.80 hard band; accepted at 1.01x as a listed certificate relaxation because the plate cannot give this room a wider band or a legal split",
+   "measure": null,
+   "factor": null
+  },
+  {
+   "room": "bed_2_F1",
+   "room_name": "Bedroom 2",
+   "rule_id": "NBC-01",
+   "rationale": "clear width 2.71 m is below the catalogue minimum 3.00 m; accepted at 0.80x on this plate",
+   "measure": null,
+   "factor": null
+  },
+  {
+   "room": "master_bed_F1",
+   "room_name": "Master Bedroom",
+   "rule_id": "NBC-01",
+   "rationale": "clear width 3.21 m is below the catalogue minimum 3.40 m; accepted at 0.80x on this plate",
+   "measure": null,
+   "factor": null
+  },
+  {
+   "room": "core_staircase_primary_F2",
+   "room_name": "Dogleg Staircase Core",
+   "rule_id": "NBC-01",
+   "rationale": "gross area 7.18 is below the catalogue minimum 8.00 (short by 0.82); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.",
+   "measure": "gross area",
+   "factor": null
+  },
+  {
+   "room": "lobby_spine_F2",
+   "room_name": "Circulation Lobby",
+   "rule_id": "NBC-01",
+   "rationale": "gross area 6.08 is below the catalogue minimum 8.00 (short by 1.92); the 82.8 m\u00b2 plate cannot hold the requested programme within its catalogue minimum. Listed as a relaxation on this room and reported by the ROOM-MIN warning; the certificate still fails the dimension layer, so the plan is never claimed compliant.",
+   "measure": "gross area",
+   "factor": null
+  },
+  {
+   "room": "master_bed_F2",
+   "room_name": "Master Bedroom",
+   "rule_id": "NBC-01",
+   "rationale": "clear width 3.21 m is below the catalogue minimum 3.40 m; accepted at 0.80x on this plate",
+   "measure": null,
+   "factor": null
+  }
+ ],
+ "certificate": {
+  "is_valid": false,
+  "failures": [
+   "NBC-01 Room minimums: living_F0: 2.71 m clear < 3.60 m",
+   "NBC-02 Aspect ratios: living_F0: 1:2.80 > 1:1.80",
+   "GATE-L16 Proportion & Surplus: F0 living_F0: 1:2.80 against a 1:1.80 band (1.56x, cap 1.40x) and no listed relaxation"
+  ],
+  "certified_rules": [
+   "NBC-03",
+   "REL-01",
+   "REL-02",
+   "VERT-01",
+   "VERT-02",
+   "CIRC-01",
+   "DIM-01",
+   "VASTU-01",
+   "SAN-01",
+   "RULE-FP-01",
+   "RULE-FP-03",
+   "RULE-FP-06",
+   "RULE-FP-07",
+   "LQ-L2-SWINGS",
+   "LQ-L3-FIXTURES",
+   "LQ-L4-FURNITURE",
+   "LQ-L8-INTENT"
+  ]
+ },
+ "gate": {
+  "status": "FAIL",
+  "layers": [
+   {
+    "layer_id": "L1",
+    "status": "WARN",
+    "summary": "NBC minimum dimensions met under bounded degradation tolerance; 18 dimension chains verified within 1mm"
+   },
+   {
+    "layer_id": "L2",
+    "status": "PASS",
+    "summary": "Zero door-swing collisions after resolution"
+   },
+   {
+    "layer_id": "L3",
+    "status": "PASS",
+    "summary": "All bathroom fixtures meet coded clearances"
+   },
+   {
+    "layer_id": "L4",
+    "status": "PASS",
+    "summary": "Furniture sets placed with circulation envelopes"
+   },
+   {
+    "layer_id": "L5",
+    "status": "PASS",
+    "summary": "Room names match ontological thresholds (demote-only)"
+   },
+   {
+    "layer_id": "L6",
+    "status": "PASS",
+    "summary": "Stair verified as computed object (T/R/width/headroom)"
+   },
+   {
+    "layer_id": "L7",
+    "status": "PASS",
+    "summary": "Vastu scoring recorded (advisory layer)"
+   },
+   {
+    "layer_id": "L8",
+    "status": "PASS",
+    "summary": "Program intent satisfied (bedrooms upstairs, zoning, terrace ratio)"
+   },
+   {
+    "layer_id": "L9",
+    "status": "PASS",
+    "summary": "1 external, 3 shaft, 0 mechanical-flagged"
+   },
+   {
+    "layer_id": "L10",
+    "status": "WARN",
+    "summary": "4/4 wet rooms shaft-grouped, 1 dry-room crossings"
+   },
+   {
+    "layer_id": "L11",
+    "status": "PASS",
+    "summary": "1 terrace(s): slope 1:100 to drain, downpipe -> SO-01"
+   },
+   {
+    "layer_id": "L12",
+    "status": "WARN",
+    "summary": "27 columns (span <= 4.5m), load-path gaps flagged: 2 transfer beam(s) required"
+   },
+   {
+    "layer_id": "L13",
+    "status": "PASS",
+    "summary": "Applicability advisory: 0 corridors, 18 doors, 3 sanitary circles"
+   },
+   {
+    "layer_id": "L14",
+    "status": "PASS",
+    "summary": "Travel distances verified; 4 bedroom egress checks, 2 exit rows"
+   },
+   {
+    "layer_id": "L15",
+    "status": "PASS",
+    "summary": "All essential programme rooms present"
+   },
+   {
+    "layer_id": "L16",
+    "status": "FAIL",
+    "summary": "11/13 rooms inside the hard band; 1 listed relaxation(s); 1 beyond the 1.40x cap; 0 ceiling overage(s); void 0.0% of the plate"
+   }
+  ]
+ },
+ "counts": {
+  "warnings": 55,
+  "relaxations": 13,
+  "relaxation_rooms": 10
+ }
+}

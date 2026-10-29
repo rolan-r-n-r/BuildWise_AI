@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * interaction_probe.cjs — the browser half of Phase 1's acceptance suite.
+ * interaction_probe.cjs — the browser half of the interaction acceptance suite.
  * ======================================================================
  * `scripts/test_interaction_primitives.cjs` proves the PURE cores with plain node
  * arithmetic. What it cannot prove is anything that only exists once the page is

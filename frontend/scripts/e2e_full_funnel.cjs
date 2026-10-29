@@ -370,6 +370,26 @@ async function main() {
 
     // 3. site feasibility
     console.log('- running site feasibility analysis');
+    // Satellite vision: upstream imagery is stubbed so the run is deterministic.
+    // The analysis auto-runs a scan as soon as it starts, so the stub must be in
+    // place BEFORE the analyze click — otherwise a cold model load (~70 s) leaves
+    // the Ecology card in its skeleton past any reasonable wait.
+    let visionRequest = null;
+    const visionHandler = (req) => {
+      if (req.url().includes('/api/site-vision') && req.method() === 'POST') {
+        try { visionRequest = JSON.parse(req.postData() || '{}'); } catch (e) { visionRequest = {}; }
+        req.respond({
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'access-control-allow-origin': '*' },
+          body: JSON.stringify(VISION_FIXTURE),
+        });
+        return;
+      }
+      req.continue();
+    };
+    await page.setRequestInterception(true);
+    page.on('request', visionHandler);
     await clickByLabel(page, 'Run Site Feasibility Analysis');
     await page.waitForFunction(
       () => Array.from(document.querySelectorAll('button'))
@@ -769,25 +789,9 @@ async function main() {
     );
 
     // 5e. Satellite vision (audit surface: UNVERIFIED). Upstream imagery is
-    // stubbed so the run is deterministic; what is exercised is the real card,
-    // the real POST and the real rendering of the measured response.
+    // stubbed (installed before the analysis, above) so what is exercised is the
+    // real card, the real POST and the real rendering of the measured response.
     console.log('- satellite vision scan');
-    let visionRequest = null;
-    const visionHandler = (req) => {
-      if (req.url().includes('/api/site-vision') && req.method() === 'POST') {
-        try { visionRequest = JSON.parse(req.postData() || '{}'); } catch (e) { visionRequest = {}; }
-        req.respond({
-          status: 200,
-          contentType: 'application/json',
-          headers: { 'access-control-allow-origin': '*' },
-          body: JSON.stringify(VISION_FIXTURE),
-        });
-        return;
-      }
-      req.continue();
-    };
-    await page.setRequestInterception(true);
-    page.on('request', visionHandler);
     const ecologyClicked = await page.evaluate(() => {
       const btn = Array.from(document.querySelectorAll('button'))
         .find((b) => (b.textContent || '').trim() === 'Ecology');
@@ -796,8 +800,9 @@ async function main() {
       return true;
     });
     // The analysis auto-runs a scan, so the card may still be in its loading
-    // skeleton when the tab opens (no button at all).  Wait for that skeleton to
-    // clear; the click asserts the steady-state affordance, not a race.
+    // skeleton when the tab opens (no button at all). The stubbed scan settles
+    // immediately; wait for the skeleton to clear — the click asserts the
+    // steady-state affordance, not a race.
     await page.waitForFunction(() => {
       const sec = document.querySelector('[data-report-section="vision"]');
       if (!sec) return false;
@@ -1157,7 +1162,25 @@ async function main() {
     // The REAL intent path: a trusted touch inside the map region. Nothing else.
     await mobilePage.touchscreen.tap(206, 430);
     await mobilePage.waitForFunction(() => Boolean(window.__maplibreMap), { timeout: 30000 });
-    await sleep(1500);
+    // The style and its sources arrive after the engine module mounts; a fixed
+    // sleep here was a known race (a slow style made styleLoaded read
+    // false). Wait on the map's own 'load' event — fired once the style and the
+    // resources it needs are ready — with a hard bound, then assert it.
+    const styleReady = await mobilePage.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const m = window.__maplibreMap;
+          if (!m) return resolve(false);
+          const done = (ok) => {
+            clearTimeout(timer);
+            resolve(ok);
+          };
+          if (m.loaded() && m.isStyleLoaded() && (m.getStyle().layers || []).length > 0) return done(true);
+          const timer = setTimeout(() => done(false), 20000);
+          m.once('load', () => done(true));
+        }),
+      { timeout: 25000 },
+    );
     const mobileAfter = await mobilePage.evaluate(() => {
       const m = window.__maplibreMap;
       const section = document.getElementById('center-map-section');
@@ -1176,9 +1199,9 @@ async function main() {
       `engineRequests=${mobileEngineRequests.length} canvas=${mobileAfter.canvas} placeholder=${mobileAfter.placeholder}`,
     );
     check(
-      mobileAfter.styleLoaded === true && mobileAfter.layers > 0,
+      styleReady === true && mobileAfter.styleLoaded === true && mobileAfter.layers > 0,
       'mobile: the map that came up is a real style',
-      `styleLoaded=${mobileAfter.styleLoaded} layers=${mobileAfter.layers}`,
+      `styleEvent=${styleReady} styleLoaded=${mobileAfter.styleLoaded} layers=${mobileAfter.layers}`,
     );
     check(
       JSON.stringify(mobileBefore.box) === JSON.stringify(mobileAfter.box),

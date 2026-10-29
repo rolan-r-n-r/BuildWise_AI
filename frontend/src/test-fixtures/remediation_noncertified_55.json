@@ -1,0 +1,130 @@
+{
+ "fixture_id": "remediation_noncertified_55",
+ "captured_at": "2026-10-25T19:20:50+00:00",
+ "plan_hash": "d8de2dc21a03e3b15cc4",
+ "engine_ms": 255.0,
+ "options": [
+  {
+   "id": "add_storey",
+   "title": "Add a storey (G+2 \u2192 G+3)",
+   "description": "Move the squeezed programme onto another level instead of compressing it onto this plate.",
+   "patch": {
+    "floors": 4
+   },
+   "effect": {
+    "verdict": "NOT-CERTIFIED-FAIL-STAMP",
+    "certificate_valid": false,
+    "gate_status": "FAIL",
+    "warning_count": 73,
+    "failure_count": 3,
+    "relaxation_count": 18,
+    "plate_area_m2": 82.75,
+    "rooms_placed": 27,
+    "floors": 4,
+    "status": "compromise",
+    "delta_warnings": 18,
+    "delta_failures": 0,
+    "engine_ms": 252.0
+   },
+   "error": null,
+   "details": {
+    "generation_id": "GEN-T1-4F-42",
+    "certificate_id": "CERT-T1-4F-42",
+    "plan_verdict": "NOT-CERTIFIED-FAIL-STAMP"
+   }
+  },
+  {
+   "id": "reduce_programme",
+   "title": "Reduce programme",
+   "description": "Drop the rooms the engine named as below minimum: bed 2, master bed.",
+   "patch": {
+    "required_rooms": [
+     "balcony",
+     "bath_1",
+     "core_staircase_primary",
+     "dining",
+     "ensuite_bath",
+     "guest_bed",
+     "kitchen",
+     "living",
+     "lobby_spine",
+     "study",
+     "terrace_band"
+    ]
+   },
+   "effect": {
+    "verdict": "NOT-CERTIFIED-FAIL-STAMP",
+    "certificate_valid": false,
+    "gate_status": "FAIL",
+    "warning_count": 52,
+    "failure_count": 3,
+    "relaxation_count": 13,
+    "plate_area_m2": 82.75,
+    "rooms_placed": 20,
+    "floors": 3,
+    "status": "compromise",
+    "delta_warnings": -3,
+    "delta_failures": 0,
+    "engine_ms": 206.4
+   },
+   "error": null,
+   "details": {
+    "dropped_rooms": [
+     "bed_2",
+     "master_bed"
+    ],
+    "remaining_rooms": [
+     "balcony",
+     "bath_1",
+     "core_staircase_primary",
+     "dining",
+     "ensuite_bath",
+     "guest_bed",
+     "kitchen",
+     "living",
+     "lobby_spine",
+     "study",
+     "terrace_band"
+    ],
+    "generation_id": "GEN-T1-3F-42",
+    "certificate_id": "CERT-T1-3F-42",
+    "plan_verdict": "NOT-CERTIFIED-FAIL-STAMP"
+   }
+  },
+  {
+   "id": "enlarge_plate",
+   "title": "Enlarge the plate to 97.1 m\u00b2",
+   "description": "Raise ground coverage from 46% to 54% where setbacks and the site allow it.",
+   "patch": {
+    "ground_coverage_ratio": 0.54
+   },
+   "effect": {
+    "verdict": "NOT-CERTIFIED-FAIL-STAMP",
+    "certificate_valid": false,
+    "gate_status": "FAIL",
+    "warning_count": 64,
+    "failure_count": 3,
+    "relaxation_count": 11,
+    "plate_area_m2": 97.11,
+    "rooms_placed": 20,
+    "floors": 3,
+    "status": "compromise",
+    "delta_warnings": 9,
+    "delta_failures": 0,
+    "engine_ms": 169.1
+   },
+   "error": null,
+   "details": {
+    "from_coverage": 0.46,
+    "to_coverage": 0.54,
+    "generation_id": "GEN-T1-3F-42",
+    "certificate_id": "CERT-T1-3F-42",
+    "plan_verdict": "NOT-CERTIFIED-FAIL-STAMP"
+   }
+  }
+ ],
+ "provenance": {
+  "capture_script": "backend/scripts/capture_warning_fixture.py",
+  "note": "Every predicted effect is a live engine re-solve of the canonical plan's request with only that option's validated input changed."
+ }
+}

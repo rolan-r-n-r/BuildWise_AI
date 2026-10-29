@@ -2,8 +2,8 @@
 /**
  * test_interaction_primitives.cjs — the landing's interaction system, unit-tested.
  * ==============================================================================
- * Phase 1's acceptance list (from the Phase-0 dossier §4), one section per
- * primitive. The PURE cores are compiled with the project's own tsc into a temp
+ * The interaction acceptance list, one section per primitive. The PURE cores
+ * are compiled with the project's own tsc into a temp
  * dir and required, which is this repository's established pattern for testing
  * modules (`test_boundary_pipeline.cjs`) — it means the harness loads no React, no
  * framer-motion and no DOM, so every number below is the real response of the real

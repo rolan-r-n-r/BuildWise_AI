@@ -272,7 +272,17 @@ async function main() {
       path.join(ROOT, 'src', 'components', 'FloorPlanGeneratorCard.tsx'),
       'utf8',
     );
-    check(/data-testid="plan-verdict"/.test(cardSrc), 'the plan card renders a plan-verdict token');
+    // The verdict chip moved into the tiered warning report that the card
+    // mounts; the card still owns the decision and passes the server verdict.
+    const reportSrc = fs.readFileSync(
+      path.join(ROOT, 'src', 'components', 'report', 'WarningReportView.tsx'),
+      'utf8',
+    );
+    check(/data-testid="plan-verdict"/.test(reportSrc), 'the plan card renders a plan-verdict token');
+    check(
+      /<WarningReportView[\s\S]*?planVerdict=\{planVerdict\}/.test(cardSrc),
+      'the card mounts the warning report with the server verdict',
+    );
     check(/planVerdict/.test(cardSrc), 'the card consumes the server verdict');
     check(
       /planVerdict=\{planVerdict\}/.test(cardSrc),
