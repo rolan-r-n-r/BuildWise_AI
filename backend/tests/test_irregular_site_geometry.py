@@ -494,7 +494,7 @@ def test_single_storey_irregular_plot_pdf_export():
 
 def test_curvilinear_boundary_approximation():
     """
-    Phase 1 Proof:
+    Curvilinear boundary approximation:
     - Input dense curved arc vertices.
     - Shapely simplify approximates to piecewise-linear polyline.
     - Area retained >= 95% of original shoelace area.
@@ -539,7 +539,7 @@ def test_curvilinear_boundary_approximation():
 
 def test_golden_l_shape_multi_wing():
     """
-    Phase 5 Proof 2: Golden L-Shape Test
+    Golden L-shape test:
     - Input 20x20 L-shaped buildable polygon.
     - Assert solver generates TWO distinct wings connected by a corridor.
     - Rooms placed inside respective wings (Public in Wing A, Private in Wing B).
@@ -623,7 +623,7 @@ def test_golden_l_shape_multi_wing():
 
 def test_golden_courtyard_topology():
     """
-    Phase 5 Proof 3: Golden Courtyard Test
+    Golden courtyard test:
     - Input 25x25 square buildable polygon with 'Courtyard' typology.
     - Assert solver generates an O-shape/U-shape configuration with central void.
     - Central void labeled as 'Central Courtyard' with >= 9 sqm (min 3x3m).

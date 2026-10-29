@@ -164,6 +164,19 @@ def test_graceful_degradation_ec01_narrow_deep_plot():
     # reported; the gate now says FAIL and names the squeezed rooms, which is
     # the honest result, not a fabrication. The previous PASS expectation would
     # have re-hidden the very defect this guard exists to surface.
+    #
+    # A 4.0 m buildable cannot carry bath 2.10 + spine 1.50 + a legal kitchen;
+    # the partitioner used to draw a 0.40 m kitchen sliver.  That is now a NAMED
+    # refusal (GEN-UNFIT with plate, programme and the collapsed room) - drawing
+    # a 0.4 m kitchen was the dishonest answer.
+    if not building.floors:
+        reasons = " ".join(
+            str(getattr(u, "reason", "") or "") for u in (building.unmet_requirements or [])
+        )
+        assert "does not fit the statutory ground plate" in reasons, reasons
+        assert any(w.startswith("GEN-UNFIT") for w in building.warnings), building.warnings
+        assert "m²" in reasons
+        return
     assert building.qa_report["status"] == "fail"
     assert building.validation_gate["overall_status"] == "FAIL"
     l16 = next(

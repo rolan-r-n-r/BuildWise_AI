@@ -320,9 +320,12 @@ def test_golden_rectangular_terrace_band_g2_level2_north_3m():
     assert core2.y == 3.0  # Aligned with terrace band depth!
 
     # 2. Area reduction by exactly band area (RULE-FP-06)
-    env_w = f2.envelope["width"]  # 9.60m
-    band_area = round(env_w * 3.0, 2)  # 28.80 sqm
-    assert band_area == 28.80
+    # The T1 plate follows the band stack (9.59 x 10.54 m) instead of the
+    # site's own proportion, so the band area is derived from the drawn
+    # envelope rather than pinned to the retired 9.60 m width.
+    env_w = f2.envelope["width"]
+    band_area = round(env_w * 3.0, 2)
+    assert band_area == round(9.59 * 3.0, 2)
 
     assert round(f0.built_up_area_sqm - f2.built_up_area_sqm, 2) == band_area
     assert round(model.total_built_up_area_sqm, 2) == round(f0.built_up_area_sqm + f1.built_up_area_sqm + f2.built_up_area_sqm, 2)
@@ -332,9 +335,11 @@ def test_golden_rectangular_terrace_band_g2_level2_north_3m():
     assert len(t_rooms) == 1
     t_room = t_rooms[0]
     assert t_room.room_id == "terrace_band_F2"
-    assert t_room.area_sqm == 28.80
+    assert t_room.area_sqm == band_area
     assert t_room.x == 0.0 and t_room.y == 0.0
-    assert t_room.width_m == 9.60 and t_room.depth_m == 3.0
+    # The band spans the drawn plate (9.59 m), not the retired 9.60 m
+    # site-proportion plate; it must still be the full width of the envelope.
+    assert t_room.width_m == f2.envelope["width"] and t_room.depth_m == 3.0
 
     # 4. Door: Balcony slider door from lobby to terrace (RULE-FP-04)
     terr_doors = [d for d in f2.doors if d.to_room == t_room.room_id or d.from_room == t_room.room_id]
@@ -401,7 +406,8 @@ def test_terrace_band_disabled_cases():
     assert model_w.floors[2].terrace_band is None
     assert any("West edge" in w and "intersects vertical stair core" in w for w in model_w.warnings)
 
-    # Case 3: Depth exceeding 40% (env_d = 10.50m, 40% = 4.20m; requested 5.0m)
+    # Case 3: Depth exceeding 40% of the drawn plate (10.54 m deep, 40 % =
+    # 4.22 m; the clamp follows the plate, not a retired 11.25 m pin)
     req_clamp = FloorPlanRequest(
         plot_width_m=12.0,
         plot_depth_m=15.0,
@@ -414,8 +420,13 @@ def test_terrace_band_disabled_cases():
     eng_clamp = SoleGeometryEngine(req_clamp)
     model_clamp = eng_clamp.solve()
     f2 = model_clamp.floors[2]
-    assert f2.terrace_band["depth_m"] == 4.50
-    assert any("RULE-FP-07" in w and "Clamped to 4.50m" in w for w in model_clamp.warnings)
+    _env_d = round(float(f2.envelope["depth"]), 2)
+    _expected_clamp = round(_env_d * 0.40, 2)
+    assert f2.terrace_band["depth_m"] == _expected_clamp
+    assert any(
+        "RULE-FP-07" in w and f"Clamped to {_expected_clamp:.2f}m" in w
+        for w in model_clamp.warnings
+    )
 
 
 def test_rectangle_equivalence_no_band_identical():

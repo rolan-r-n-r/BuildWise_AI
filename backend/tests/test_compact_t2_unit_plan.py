@@ -173,14 +173,37 @@ def test_compact_t2_is_deterministic_for_the_same_seed():
     assert snapshot(first) == snapshot(second)
 
 
-def test_large_t2_plate_keeps_the_row_plan_untouched():
-    """The pocket plan must not leak onto plates whose rows already fit."""
-    response = _generate(width=20.0, depth=20.0, floors=2)
+def test_row_plan_is_used_whenever_the_plate_rows_fit():
+    """The pocket plan must not leak onto plates whose rows already fit.
+
+    Plate policy: coverage is a ceiling, not a target, so an oversized plot is
+    handed a programme-sized plate (20 x 20 -> 122.75 m2
+    against a 240 m2 coverage cap).  On a plate whose rows genuinely fit, the
+    historical row plan (with its t2_amenity strip) is still the plan; the
+    pocket plan is reserved for plates the row cannot hold.
+    """
+    response = _generate(width=13.0, depth=17.0, floors=2)
     rooms = _floor_rooms(response)
     assert any(r.room_id.startswith("t2_amenity") for r in rooms)
     core = next(r for r in rooms if r.room_id.startswith("core_staircase"))
     bed_a = next(r for r in rooms if r.room_id.startswith("t2_unitA_bed"))
     assert bed_a.y + bed_a.depth_m <= core.y + 0.02
+
+
+def test_oversized_t2_plot_gets_a_programme_sized_plate_not_the_coverage_cap():
+    """Coverage is a ceiling: a 400 m2 plot must not stretch two units.
+
+    Filling the 240 m2 cap with a 122.7 m2 brief stretched every unit past its
+    catalogue band and is what pushed the T2 market-mix plates off the
+    certificate.  The plate now follows the programme; both units stay.
+    """
+    response = _generate(width=20.0, depth=20.0, floors=2)
+    plate = response.site_plan.footprint.area_sqm
+    assert plate is not None
+    assert plate <= 0.60 * 20.0 * 20.0 - 1.0
+    assert plate <= 140.0
+    units = _units(_floor_rooms(response))
+    assert set(units) == {"Unit_A", "Unit_B"}
 
 
 def test_compact_t2_gate_covers_all_layers_and_programme():
