@@ -93,7 +93,7 @@ export const WarningsBanner: React.FC<WarningsBannerProps> = ({ data }) => {
       {degradationWarnings.length > 0 && (
         <div data-testid="banner-degradation-notice" className="pt-1.5 border-t border-[var(--hairline)] space-y-1.5">
           <div className="flex items-center gap-1.5 pl-0.5">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--amber-ink,#b45309)]">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--semantic-amber-ink)]">
               Data degradation notice
             </span>
             <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums min-w-[1.4rem] bg-[var(--fill)] text-[var(--text-2)]">

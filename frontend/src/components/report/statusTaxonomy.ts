@@ -7,6 +7,15 @@ import type { FactorScore } from '../../services/types';
  */
 export type ProvenanceStatus = 'VERIFIED' | 'CALCULATED' | 'ASSUMED' | 'UNKNOWN';
 
+/**
+ * The certification definition, stated verbatim.
+ *
+ * Kept byte-identical to `backend/app/services/plan_verdict.py`
+ * (`CERTIFIED_DEFINITION`); the parity pin in test_plan_verdict_parity reads
+ * both files.  Every surface that shows a verdict shows this sentence too.
+ */
+export const CERTIFIED_DEFINITION = 'CERTIFIED = statutory/safety layers PASS + zero unlisted breaches + every quality deviation listed and inside its declared cap. NOT-CERTIFIED-FAIL-STAMP = statutory FAIL, unlisted breach, or beyond-cap deviation.';
+
 /** Multiple meanings disambiguated per context — never one word, two meanings. */
 export interface LegendRow {
   status: ProvenanceStatus;

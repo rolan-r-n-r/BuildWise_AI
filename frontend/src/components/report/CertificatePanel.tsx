@@ -3,6 +3,7 @@ import type { FloorPlanQA } from '../../services/types';
 import { Icon } from '../Icon';
 import { Tooltip } from '../../design/primitives';
 import { groupGateLayers, qaRowText, type GateLayer } from '../../services/validationGateUI';
+import { CERTIFIED_DEFINITION } from './statusTaxonomy';
 
 /**
  * SINGLE GATE RENDERER.
@@ -120,6 +121,13 @@ export const CertificatePanel: React.FC<CertificatePanelProps> = ({
           <span className="font-mono">{planVerdict}</span>
         </div>
       )}
+
+      <p
+        data-testid="certified-definition"
+        className="text-[10px] leading-snug text-[var(--text-3)]"
+      >
+        {CERTIFIED_DEFINITION}
+      </p>
 
       <div className="divide-y divide-[var(--hairline)]" data-testid="validation-gate-layer-table">
         {gate.layers.map((layer) => (

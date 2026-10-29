@@ -124,6 +124,8 @@ export interface ReportSheetProps {
   analysisData: AnalysisResponse;
   /** Parameters only (no coordinates): the plot owns where this report is. */
   analysisRequest?: AnalysisParams;
+  /** Applies a remediation's validated parameter change to the shared request. */
+  onRequestPatch?: (patch: Partial<AnalysisParams>) => void;
   siteVisionData: SiteVisionResponse | null;
   isSiteVisionLoading: boolean;
   onRunSiteVision: (modeOverride?: 'segformer' | 'index-only') => void;
@@ -242,6 +244,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
   hasLocation,
   floorPlanData,
   onFloorPlanGenerated,
+  onRequestPatch,
   overrideLandRate,
   overridePlotArea,
   onOverrideChange,
@@ -1433,6 +1436,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                         }
                         activeFloorPlan={floorPlanData}
                         onFloorPlanGenerated={onFloorPlanGenerated}
+                        onRequestPatch={onRequestPatch}
                         analysisRequest={analysisRequest}
                         sharedBoundary={sharedBoundary}
                         buildingTypology={analysisRequest?.building_typology}

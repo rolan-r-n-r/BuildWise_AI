@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { Icon } from '../Icon';
-import { StatusBadge } from './StatusBadge';
-import { type ProvenanceStatus, assumedFootnote } from './statusTaxonomy';
+import type { ProvenanceStatus } from './statusTaxonomy';
 
 export interface MethodologyPayload {
   /** The deterministic scoring formula in plain language. */
@@ -15,21 +14,6 @@ export interface MethodologyPayload {
   status: ProvenanceStatus;
   /** Disclosure text for synthesized/modelled values. */
   fallbackNote?: string;
-}
-
-/** Render the real server fetch timestamp; disclose the absence honestly. */
-function formatFetchedAt(iso: string | null | undefined): string {
-  if (!iso) return 'Not fetched this session (derived value)';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
 }
 
 export interface MethodologySection {
@@ -57,6 +41,42 @@ interface MethodologyPopoverProps {
 }
 
 const PANEL_WIDTH = 288;
+
+/**
+ * The panel BODY is a separate, lazily loaded chunk.
+ *
+ * Why it is not in this module: this popover is used by the authoring form,
+ * which paints with the shell, and its body needs the report's provenance
+ * vocabulary (`StatusBadge`, the status taxonomy). Importing those statically
+ * put report-surface code in the /app initial graph — the measured +3 KB gz the
+ * bundle pin reports. A panel body exists only after a reader opens a trigger,
+ * so it loads then. Everything a reader can touch before opening — the trigger,
+ * its label, its layout — stays synchronous here.
+ *
+ * The same import is fired on pointer-over and focus, so the chunk is normally
+ * already in flight (or resolved) by the time a click lands: the click path is
+ * not made to wait for a module the reader has already signalled intent for.
+ */
+const loadPanel = () => import('./MethodologyPopoverPanel');
+const MethodologyPopoverPanel = React.lazy(() =>
+  loadPanel().then((m) => ({ default: m.MethodologyPopoverPanel })),
+);
+
+/** Height of the loading placeholder, so the first measurement is not a zero. */
+const PANEL_FALLBACK_HEIGHT = 120;
+
+const PanelSkeleton: React.FC = () => (
+  <div
+    className="space-y-2.5"
+    style={{ minHeight: PANEL_FALLBACK_HEIGHT }}
+    aria-hidden="true"
+    data-testid="methodology-popover-loading"
+  >
+    <div className="h-3 w-24 rounded bg-[var(--fill)]" />
+    <div className="h-2.5 w-full rounded bg-[var(--fill)]" />
+    <div className="h-2.5 w-5/6 rounded bg-[var(--fill)]" />
+  </div>
+);
 
 /**
  * Disclosure popover pinned to a small "i" trigger. Keyboard contract:
@@ -88,7 +108,9 @@ export const MethodologyPopover: React.FC<MethodologyPopoverProps> = ({
   }, []);
 
   // Measure the trigger + the rendered panel height so the panel can flip above
-  // the trigger when the viewport bottom would clip it.
+  // the trigger when the viewport bottom would clip it. `updateCoords` is also
+  // handed to the lazily loaded body, which calls it once it has mounted: the
+  // skeleton's height is a placeholder, the body's is the real one.
   const updateCoords = useCallback(() => {
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -149,73 +171,15 @@ export const MethodologyPopover: React.FC<MethodologyPopoverProps> = ({
             className="animate-popover-open fixed z-[var(--z-popover,1050)] rounded-[12px] border border-[var(--panel-border-color)] bg-[var(--sheet-bg)] shadow-xl p-3.5 space-y-2.5 text-left"
             style={{ top: coords.top, left: coords.left, width: coords.width }}
           >
-            <div className="flex items-center justify-between gap-2">
-              {payload ? (
-                <StatusBadge status={payload.status} />
-              ) : (
-                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)]">
-                  {title ?? 'What this affects'}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={close}
-                aria-label="Close methodology"
-                className="w-5 h-5 rounded-full bg-[var(--fill)] hover:bg-[var(--fill-hover)] text-[var(--text-3)] flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <Icon name="x" size={10} />
-              </button>
-            </div>
-
-            {sections && sections.length > 0 ? (
-              <>
-                {sections.map((s) => (
-                  <div key={s.label}>
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)] block mb-0.5">
-                      {s.label}
-                    </span>
-                    <p className="text-[12px] text-[var(--text-2)] leading-snug">{s.text}</p>
-                  </div>
-                ))}
-              </>
-            ) : payload ? (
-              <>
-                <div>
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)] block mb-0.5">
-                    Scoring basis
-                  </span>
-                  <p className="text-[12px] text-[var(--text-1)] leading-snug">{payload.formula}</p>
-                </div>
-
-                <div>
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)] block mb-0.5">
-                    Data source
-                  </span>
-                  <p className="text-[12px] text-[var(--text-2)] leading-snug">{payload.dataSource}</p>
-                </div>
-
-                <div>
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)] block mb-0.5">
-                    Fetched at
-                  </span>
-                  <p className="text-[12px] text-[var(--text-2)] leading-snug tabular-nums font-mono">
-                    {formatFetchedAt(payload.fetchedAt)}
-                  </p>
-                </div>
-
-                <div className="pt-1 border-t border-[var(--hairline)]">
-                  <p className="text-[11px] text-[var(--text-2)] leading-snug">
-                    {payload.status === 'ASSUMED'
-                      ? payload.fallbackNote ?? assumedFootnote('')
-                      : payload.status === 'UNKNOWN'
-                      ? 'Telemetry unavailable — the neutral placeholder shown is disclosed, never fabricated.'
-                      : payload.status === 'CALCULATED'
-                      ? 'Derived deterministically server-side; not a live telemetry reading.'
-                      : 'Measured from live telemetry during this analysis.'}
-                  </p>
-                </div>
-              </>
-            ) : null}
+            <React.Suspense fallback={<PanelSkeleton />}>
+              <MethodologyPopoverPanel
+                payload={payload}
+                title={title}
+                sections={sections}
+                onClose={close}
+                onMeasured={updateCoords}
+              />
+            </React.Suspense>
           </div>,
           document.body
         )
@@ -226,7 +190,16 @@ export const MethodologyPopover: React.FC<MethodologyPopoverProps> = ({
       <button
         type="button"
         ref={triggerRef}
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => {
+          loadPanel();
+          setOpen((prev) => !prev);
+        }}
+        onPointerEnter={() => {
+          void loadPanel();
+        }}
+        onFocus={() => {
+          void loadPanel();
+        }}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-describedby={open ? contentId : undefined}
