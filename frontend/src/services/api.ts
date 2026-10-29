@@ -4,6 +4,8 @@ import type {
   SiteVisionResponse,
   FloorPlanRequest,
   FloorPlanResponse,
+  RemediationResponse,
+  AdvisoryResponse,
   ReportRequestPayload,
   ExtractedClientConstraints,
 } from './types';
@@ -86,6 +88,66 @@ export async function generateFloorPlan(
 
   return resp.json();
 }
+
+/**
+ * Engine dry-runs for the plan's remediation options.
+ *
+ * The options' existence and every predicted number come from this response;
+ * the advisor may word them, never change them.
+ */
+export async function fetchRemediationOptions(
+  payload: {
+    request: FloorPlanRequest;
+    warnings: string[];
+    plan_verdict?: string | null;
+    placed_rooms?: string[];
+    rotation_alternatives?: Array<Record<string, any>>;
+    scheme_alternatives?: Array<Record<string, any>>;
+    selected_scheme_id?: string | null;
+    baseline?: { warning_count: number; failure_count: number; relaxation_count: number; plate_area_m2?: number | null };
+    plan_hash?: string;
+  },
+  signal?: AbortSignal,
+): Promise<RemediationResponse> {
+  const resp = await fetch(`${API_BASE_URL}/api/floorplan/remediation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (!resp.ok) {
+    const errorData = await resp.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Remediation dry-run failed with status: ${resp.status}`);
+  }
+  return resp.json();
+}
+
+/** Advisory wording for the plan's blocking reasons and measured options. */
+export async function fetchPlanAdvisory(
+  payload: {
+    plan_hash: string;
+    plan_verdict: string;
+    summary_line: string;
+    blocking_reasons: string[];
+    warning_counts: Record<string, number>;
+    options: Array<{ id: string; title: string; effect_line: string }>;
+    provider?: string;
+  },
+  signal?: AbortSignal,
+): Promise<AdvisoryResponse> {
+  const resp = await fetch(`${API_BASE_URL}/api/floorplan/advisory`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (!resp.ok) {
+    const errorData = await resp.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Advisor unavailable (HTTP ${resp.status})`);
+  }
+  return resp.json();
+}
+
 
 export async function downloadPdfReport(
   payloadOrAnalysis: ReportRequestPayload | AnalysisResponse,

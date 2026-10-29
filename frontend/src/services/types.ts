@@ -978,6 +978,11 @@ export interface MultiStoreyBuildingModel {
   duct_shafts: DuctShaftSpec[];
   structural_grid?: StructuralGridSpec;
   floors: SingleFloorPlanModel[];
+  programme_variables?: Record<string, any>;
+  units_per_floor?: number;
+  strategy_chain?: StrategyChainEntry[];
+  strategy_chain_line?: string;
+  strategy_selected?: string;
   global_metrics: Record<string, any>;
   qa_report: Record<string, any>;
   warnings: string[];
@@ -989,6 +994,23 @@ export interface MultiStoreyBuildingModel {
   land_economics?: LandEconomicsReport;
   plot_polygon?: PlotPolygon;
   site_plan?: SitePlanModel;
+}
+
+/** One strategy the escalation ladder actually tried, skipped or errored. */
+export interface StrategyChainEntry {
+  id: string;
+  label: string;
+  status: 'certified' | 'fail' | 'skipped' | 'error';
+  disclosure: string;
+  verdict?: string | null;
+  certificate_valid?: boolean | null;
+  gate_status?: string | null;
+  warnings?: number | null;
+  failures?: number | null;
+  plate_area_m2?: number | null;
+  floors?: number | null;
+  skip_reason?: string;
+  error?: string;
 }
 
 /** Requested room the solver could not place, with an explicit reason. */
@@ -1046,6 +1068,10 @@ export interface FloorPlanRequest {
   include_structural_sheet?: boolean;
   include_scheme_alternatives?: boolean;
   selected_scheme_id?: string;
+  /** Deterministic plate variant chosen by the strategy ladder (S1/S2). */
+  partition_variant?: 'service_row' | 'single_unit' | 'duplex';
+  /** Declared dwellings per floor; 1 selects the one-unit V2 plate. */
+  units_per_floor?: number;
   // Size the plate from the programme need (capped by the statutory ceiling)
   // Instead of the typology's comfortable plate.
   program_aware_footprint?: boolean;
@@ -1104,6 +1130,9 @@ export interface FloorPlanParamsSnapshot {
   include_scheme_alternatives?: boolean;
   /** Chosen profile; the plate is re-solved with that profile's weights. */
   selected_scheme_id?: string;
+  /** Strategy inputs applied by a remediation card, kept for a restore. */
+  partition_variant?: 'service_row' | 'single_unit' | 'duplex';
+  units_per_floor?: number;
   /** Backend-recorded outcome of a scheme selection. */
   scheme_selection_status?: 'applied' | 'rejected_non_compliant' | 'recorded_only' | string;
   scheme_selection_failing_layers?: string[];
@@ -1153,6 +1182,61 @@ export interface FloorPlanResponse {
    */
   plan_verdict?: 'CERTIFIED' | 'ADVISORY' | 'NOT-CERTIFIED-FAIL-STAMP';
   plan_verdict_reasons?: string[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Remediation + advisory (engine-measured, AI-worded)                 */
+/* ------------------------------------------------------------------ */
+
+export interface MeasuredEffect {
+  verdict: 'CERTIFIED' | 'ADVISORY' | 'NOT-CERTIFIED-FAIL-STAMP' | string;
+  certificate_valid: boolean;
+  gate_status?: string | null;
+  warning_count: number;
+  failure_count: number;
+  relaxation_count: number;
+  plate_area_m2?: number | null;
+  rooms_placed: number;
+  floors: number;
+  status?: string | null;
+  delta_warnings: number;
+  delta_failures: number;
+  engine_ms: number;
+}
+
+export interface RemediationOption {
+  id: 'add_storey' | 'reduce_programme' | 'accept_rotation' | 'enlarge_plate' | 'switch_scheme' | string;
+  title: string;
+  description: string;
+  /** Only validated generator inputs: floors, rooms, coverage, polygon, scheme id. */
+  patch: Partial<FloorPlanRequest> & Record<string, any>;
+  effect: MeasuredEffect | null;
+  error: string | null;
+  details: Record<string, any>;
+}
+
+export interface RemediationResponse {
+  plan_hash: string;
+  options: RemediationOption[];
+  engine_ms: number;
+  note: string;
+}
+
+export interface AdvisoryMeta {
+  provider_requested: string;
+  provider_used: string;
+  narrative_class: string;
+  fallback_reason?: string | null;
+  redactions: string[];
+  cached: boolean;
+  generation_time_ms?: number | null;
+}
+
+export interface AdvisoryResponse {
+  narrative: string | null;
+  /** One advisor-worded sentence per engine option id (wording only). */
+  option_notes?: Record<string, string>;
+  meta: AdvisoryMeta;
 }
 
 export interface ReportRequestPayload {
