@@ -583,6 +583,8 @@ export interface SheetProps {
   children: React.ReactNode;
   widthClass?: string;
   footer?: React.ReactNode;
+  /** Stacking override for sheets that must sit above another modal (e.g. reset). */
+  zIndex?: number;
 }
 
 export const Sheet: React.FC<SheetProps> = ({
@@ -593,6 +595,7 @@ export const Sheet: React.FC<SheetProps> = ({
   children,
   widthClass = 'max-w-lg',
   footer,
+  zIndex = Z_INDEX.sheet,
 }) => {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -624,7 +627,7 @@ export const Sheet: React.FC<SheetProps> = ({
   if (!open) return null;
 
   return ReactDOM.createPortal(
-    <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: Z_INDEX.sheet }}>
+    <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex }}>
       <div
         className="animate-scrim absolute inset-0 bg-black/35 backdrop-blur-[2px]"
         onClick={onClose}

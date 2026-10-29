@@ -1,10 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useReducer, useRef, useCallback, useMemo, Suspense } from 'react';
 import type {
   AnalysisParams,
   AnalysisRequest,
-  AnalysisResponse,
-  SiteVisionResponse,
-  FloorPlanResponse,
   ReportRequestPayload,
 } from './services/types';
 import { submitSiteVision } from './services/api';
@@ -29,6 +26,13 @@ import type { SharedBoundaryState } from './services/siteBoundary';
 import { boundaryToSummaryPayload } from './services/siteIntelligence';
 import type { Map as MaplibreMap } from 'maplibre-gl';
 import { Icon } from './components/Icon';
+import {
+  clearSessionDataStorage,
+  createInitialSessionData,
+  sessionDataReducer,
+  stripTransientUrl,
+  type SiteLocation,
+} from './services/sessionReset';
 
 /**
  * Code-split the route chunk so the shell's first commit needs as little of it
@@ -81,6 +85,17 @@ const SiteMoveDialog = React.lazy(() =>
 const AnalysisHUD = React.lazy(() =>
   import('./components/AnalysisHUD').then((m) => ({ default: m.AnalysisHUD })),
 );
+/*
+ * The reset confirmation is deferred for the same reason as the dialogs above,
+ * with one extra: it is UNREACHABLE without a click (Reset / R). It stays
+ * mounted — the chunk is fetched at boot in parallel and the Sheet keeps its
+ * open/close transition — but its code is no longer parsed before the shell can
+ * paint. Measured in `npm run assert:bundle`: this is the last shell surface that
+ * could not be on screen before an interaction.
+ */
+const ConfirmResetDialog = React.lazy(() =>
+  import('./components/ConfirmResetDialog').then((m) => ({ default: m.ConfirmResetDialog })),
+);
 
 const PIPELINE_STAGES = [
   'Geocoding site address...',
@@ -92,14 +107,8 @@ const PIPELINE_STAGES = [
   'Synthesizing report...',
 ] as const;
 
-/** Where the site is. One pair of numbers, one owner — see `siteLocation`. */
-export interface SiteLocation {
-  latitude: number;
-  longitude: number;
-}
-
-/** The app's default site (Bengaluru Urban), used until a link or a click moves it. */
-const DEFAULT_SITE: SiteLocation = { latitude: 12.9716, longitude: 77.5946 };
+/** Where the site is — defined beside the reset contract that seeds it. */
+export type { SiteLocation } from './services/sessionReset';
 
 /**
  * Placeholder shown while the MapLibre chunk downloads and executes. It is a
@@ -195,21 +204,34 @@ const AppShell: React.FC = () => {
     () => new URLSearchParams(window.location.search).get('start') === 'capture',
     []
   );
-  // Application Parameters State (no coordinates: the site owns those)
-  const [request, setRequest] = useState<AnalysisParams>(() => ({
-    built_up_area_sqft: 2000,
-    quality_grade: 'standard',
-    building_typology: 'residential_single',
-    floors: 1,
-    ai_provider: 'groq',
-    ground_coverage_ratio: 0.6,
-  }));
+  /**
+   * THE session data store. Every datum that describes a site or a plan lives
+   * in one reducer, seeded by the same pristine contract a reset produces:
+   * `services/sessionReset.ts` is the single source of both states.
+   */
+  const [session, dispatchSession] = useReducer(
+    sessionDataReducer,
+    deepLinkSite,
+    createInitialSessionData
+  );
+  const {
+    request,
+    boundary,
+    site,
+    analysisData,
+    siteVisionData,
+    floorPlanData,
+    overrideLandRate,
+    overridePlotArea,
+    testWarnings,
+    pendingSiteMove,
+    sessionEpoch,
+  } = session;
 
-  // ======== Single-source site boundary + capture wizard state ========
-  const [boundary, setBoundary] = useState<SharedBoundaryState | null>(null);
-
-  /** The pin, owned by setSite. Only ever the site when no plot exists. */
-  const [site, setSite] = useState<SiteLocation | null>(() => deepLinkSite ?? DEFAULT_SITE);
+  // Destructive reset confirmation, and the token that returns the map camera
+  // to its first-run view (MapCanvas owns the camera, not this component).
+  const [confirmResetOpen, setConfirmResetOpen] = useState<boolean>(false);
+  const [mapViewResetToken, setMapViewResetToken] = useState<number>(0);
 
   /**
    * THE site location — one value pair, one owner, no second copy to drift.
@@ -288,10 +310,10 @@ const AppShell: React.FC = () => {
   }, [boundary, tier]);
 
   const handleBoundaryCommit = useCallback((b: SharedBoundaryState) => {
-    setBoundary(b);
-    // The pin follows the plot from here on: a committed boundary is the located
-    // site, so the card, the map pin and the request bodies all read its origin.
-    setSite({ latitude: b.origin.lat, longitude: b.origin.lon });
+    // The reducer derives the site from the plot's own origin: a committed
+    // boundary is the located site, so the card, the map pin and the request
+    // bodies all read the same numbers.
+    dispatchSession({ type: 'boundary', boundary: b });
     setPreviewDismissed(false); // new boundary re-arms the preview
     setCaptureOpen(false);
     pushToast({ message: 'Site boundary saved · ready to analyze', tone: 'success' });
@@ -314,7 +336,8 @@ const AppShell: React.FC = () => {
     setAssistedNoticeDismissed(true);
     dismissAssistedNoticeForSession();
   }, []);
-  const handleResetRef = useRef<(() => void) | null>(null);
+  /** Open the destructive reset confirmation (header button and R shortcut). */
+  const requestReset = useCallback((): void => setConfirmResetOpen(true), []);
 
   // Global keyboard shortcuts (T/M/R/?); Escape closes the shortcuts sheet.
   useShortcuts((action) => {
@@ -323,7 +346,7 @@ const AppShell: React.FC = () => {
         setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
         break;
       case 'resetApp':
-        handleResetRef.current?.();
+        requestReset();
         break;
       case 'toggleShortcuts':
         setIsShortcutsOpen((prev) => !prev);
@@ -334,11 +357,6 @@ const AppShell: React.FC = () => {
     }
   });
 
-  const [analysisData, setAnalysisData] = useState<AnalysisResponse | null>(null);
-  const [overrideLandRate, setOverrideLandRate] = useState<number | null>(null);
-  const [overridePlotArea, setOverridePlotArea] = useState<number | null>(null);
-  const [siteVisionData, setSiteVisionData] = useState<SiteVisionResponse | null>(null);
-  const [floorPlanData, setFloorPlanData] = useState<FloorPlanResponse | null>(null);
   const [isSiteVisionLoading, setIsSiteVisionLoading] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [currentStageIndex, setCurrentStageIndex] = useState<number>(0);
@@ -346,12 +364,6 @@ const AppShell: React.FC = () => {
   const [cancelToast, setCancelToast] = useState<string | null>(null);
   /** Shown after a pin move carried the captured plot to the new site. */
   const [siteMovedNotice, setSiteMovedNotice] = useState<boolean>(false);
-  /**
-   * Site move awaiting a decision. With a plot already captured, moving the pin
-   * must not silently re-meaning the boundary: the coordinates are held here
-   * until the user chooses (take the plot / re-capture / keep as-is).
-   */
-  const [pendingSiteMove, setPendingSiteMove] = useState<{ lat: number; lon: number } | null>(null);
   /** Bumped to re-sync the coordinate inputs with the app's actual coordinates. */
   const [coordinatesSyncKey, setCoordinatesSyncKey] = useState<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -367,7 +379,6 @@ const AppShell: React.FC = () => {
 
   // Telemetry Warnings State
   const [isWarningDismissed, setIsWarningDismissed] = useState<boolean>(false);
-  const [testWarnings, setTestWarnings] = useState<string[] | null>(null);
 
   // Accessibility Refs for Drawer Focus Trap/Return
   const drawerToggleBtnRef = useRef<HTMLButtonElement>(null);
@@ -449,8 +460,6 @@ const AppShell: React.FC = () => {
         setIsReportOpen(false);
       }
     };
-  handleResetRef.current = handleReset;
-
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [analysisData]);
@@ -537,7 +546,8 @@ const AppShell: React.FC = () => {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      (window as any).__setTestWarnings = (w: string[] | null) => setTestWarnings(w);
+      (window as any).__setTestWarnings = (w: string[] | null) =>
+        dispatchSession({ type: 'testWarnings', warnings: w });
     }
   }, []);
 
@@ -555,9 +565,9 @@ const AppShell: React.FC = () => {
         setBackendConnected(res.status === 'online');
         setServerStatus({ groq: res.groq, gemini: res.gemini });
         if (res.groq) {
-          setRequest((prev) => ({ ...prev, ai_provider: 'groq' }));
+          dispatchSession({ type: 'request', patch: { ai_provider: 'groq' } });
         } else if (res.gemini) {
-          setRequest((prev) => ({ ...prev, ai_provider: 'gemini' }));
+          dispatchSession({ type: 'request', patch: { ai_provider: 'gemini' } });
         }
       })
       .catch(() => {
@@ -610,9 +620,9 @@ const AppShell: React.FC = () => {
     setIsLoading(false);
     setHudFallbackMessage(null);
     setErrorMessage(null);
-    setSiteVisionData(null);
-    setAnalysisData(null);
-    setFloorPlanData(null);
+    dispatchSession({ type: 'siteVision', data: null });
+    dispatchSession({ type: 'analysis', analysis: null });
+    dispatchSession({ type: 'floorPlan', plan: null });
     setIsReportOpen(false);
     setPreviewDismissed(false);
     if (typeof window !== 'undefined' && window.location.hash === '#report') {
@@ -629,10 +639,13 @@ const AppShell: React.FC = () => {
     (lat: number, lon: number, withPlot: boolean): void => {
       invalidateSiteResults();
       const target: SiteLocation = { latitude: lat, longitude: lon };
-      setSite(target);
+      dispatchSession({ type: 'site', site: target });
       if (withPlot && boundary) {
         // The boundary is anchored to the pin: same traced shape, new origin.
-        setBoundary({ ...boundary, origin: { lat: target.latitude, lon: target.longitude } });
+        dispatchSession({
+          type: 'boundary',
+          boundary: { ...boundary, origin: { lat: target.latitude, lon: target.longitude } },
+        });
         setSiteMovedNotice(true);
       }
     },
@@ -646,7 +659,7 @@ const AppShell: React.FC = () => {
   const handleLocationSelect = useCallback(
     (lat: number, lon: number, fromInput = false) => {
       if (boundary) {
-        setPendingSiteMove({ lat, lon });
+        dispatchSession({ type: 'pendingSiteMove', move: { lat, lon } });
         if (tier !== 'FULL') {
           setIsMobileControlOpen(false);
         }
@@ -667,20 +680,23 @@ const AppShell: React.FC = () => {
   const handleSiteMoveApply = useCallback((): void => {
     if (!pendingSiteMove) return;
     applySiteMove(pendingSiteMove.lat, pendingSiteMove.lon, true);
-    setPendingSiteMove(null);
+    dispatchSession({ type: 'pendingSiteMove', move: null });
   }, [pendingSiteMove, applySiteMove]);
 
   const handleSiteMoveRecapture = useCallback((): void => {
     if (!pendingSiteMove) return;
     invalidateSiteResults();
-    setSite({ latitude: pendingSiteMove.lat, longitude: pendingSiteMove.lon });
-    setBoundary(null);
-    setPendingSiteMove(null);
+    dispatchSession({
+      type: 'site',
+      site: { latitude: pendingSiteMove.lat, longitude: pendingSiteMove.lon },
+    });
+    dispatchSession({ type: 'boundary', boundary: null });
+    dispatchSession({ type: 'pendingSiteMove', move: null });
     openCapture('locate');
   }, [pendingSiteMove, invalidateSiteResults, openCapture]);
 
   const handleSiteMoveCancel = useCallback((): void => {
-    setPendingSiteMove(null);
+    dispatchSession({ type: 'pendingSiteMove', move: null });
     // The typed coordinates were never applied: put the inputs back in sync.
     setCoordinatesSyncKey((k) => k + 1);
   }, []);
@@ -692,15 +708,10 @@ const AppShell: React.FC = () => {
     }
     setIsLoading(false);
     setHudFallbackMessage(null);
-    setPendingSiteMove(null);
     setSiteMovedNotice(false);
     // Clearing drops the site itself, not just its display: nothing is left
     // behind for a later capture to silently anchor to.
-    setSite(null);
-    setAnalysisData(null);
-    setSiteVisionData(null);
-    setFloorPlanData(null);
-    setBoundary(null);
+    dispatchSession({ type: 'clearSite' });
     setCaptureOpen(false);
     setErrorMessage(null);
     setIsDrawerOpen(false);
@@ -713,7 +724,7 @@ const AppShell: React.FC = () => {
   };
 
   const handleRequestChange = (updated: Partial<AnalysisParams>) => {
-    setRequest((prev) => ({ ...prev, ...updated }));
+    dispatchSession({ type: 'request', patch: updated });
     // Do not clear floorPlanData on parameter changes (floors, typology, area, coverage)
     // so the stale-plan guard can display the "Parameters changed - regenerate" indicator.
     // Moving the site is not a parameter change: it goes through applySiteMove,
@@ -735,12 +746,12 @@ const AppShell: React.FC = () => {
         mode_override: modeOverride,
         orientation_deg: analysisData?.orientation?.optimal_axis_degrees ?? undefined,
       }, signal);
-      setSiteVisionData(resp);
+      dispatchSession({ type: 'siteVision', data: resp });
     } catch (err: any) {
       if (err.name === 'AbortError' || err.message?.includes('aborted')) {
         return;
       }
-      setSiteVisionData({
+      dispatchSession({ type: 'siteVision', data: {
         mode: 'unavailable',
         green_cover_pct: 0,
         water_cover_pct: 0,
@@ -750,7 +761,7 @@ const AppShell: React.FC = () => {
         preservation_plan: [],
         warnings: [err.message || 'Satellite vision service temporarily unreachable.'],
         timing_ms: {},
-      });
+      } });
     } finally {
       setIsSiteVisionLoading(false);
       triggerMapResize();
@@ -818,10 +829,10 @@ const AppShell: React.FC = () => {
         setFallbackToast('AI Engine unreachable, falling back to deterministic mock.');
       }
 
-      setAnalysisData(response);
+      dispatchSession({ type: 'analysis', analysis: response });
 
       // Freshness guarantee: Clear any prior floorPlanData to eliminate stale blueprint retention and cross-run bleed
-      setFloorPlanData(null);
+      dispatchSession({ type: 'floorPlan', plan: null });
 
       setIsDrawerOpen(true);
       // Auto-open ReportSheet on success
@@ -842,39 +853,58 @@ const AppShell: React.FC = () => {
     }
   };
 
-  // Reset entire application
-  const handleReset = () => {
+  /**
+   * THE reset. Lands the app in `createInitialSessionData`'s state and nothing
+   * else:
+   *   • session data (pin, boundary, analysis, vision, plan, overrides, test
+   *     warnings, pending move, request) is replaced by the reducer's pristine
+   *     state — the same seeds the first render uses, not a parallel list;
+   *   • every data surface and guard is closed, and the report is keyed by the
+   *     reset epoch so its tab, scroll and generator state are unmounted;
+   *   • stored report state is dropped and the transient deep-link params are
+   *     scrubbed, so a reload cannot restore the site that was just reset;
+   *   • the map camera returns to its first-run view;
+   *   • preferences (theme, units, coach marks, map style) are untouched.
+   */
+  const performReset = useCallback((): void => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    // Match first-run provider selection: groq when the engine is online,
+    // gemini when that is all it advertises, groq when status is unknown.
+    const provider: 'groq' | 'gemini' | 'mock' = serverStatus?.groq
+      ? 'groq'
+      : serverStatus?.gemini
+      ? 'gemini'
+      : 'groq';
+    dispatchSession({ type: 'reset', provider });
+    clearSessionDataStorage();
+    stripTransientUrl();
+
+    // UI state owned by this component — no site/plan datum lives here.
     setIsLoading(false);
     setHudFallbackMessage(null);
     setCurrentStageIndex(0);
-    setRequest({
-      built_up_area_sqft: 2000,
-      quality_grade: 'standard',
-      building_typology: 'residential_single',
-      floors: 1,
-      ai_provider: 'mock',
-    });
-    setSite(DEFAULT_SITE);
-    setAnalysisData(null);
-    setSiteVisionData(null);
-    setFloorPlanData(null);
-    setOverrideLandRate(null);
-    setOverridePlotArea(null);
+    setCancelToast(null);
+    setFallbackToast(null);
     setErrorMessage(null);
+    setSiteMovedNotice(false);
+    setPreviewDismissed(false);
+    setCaptureOpen(false);
+    setCaptureStep('locate');
     setIsDrawerOpen(true);
     setIsMobileControlOpen(false);
     setIsMobileResultsOpen(false);
     setIsReportOpen(false);
-    if (typeof window !== 'undefined' && window.location.hash === '#report') {
-      window.history.replaceState(null, '', window.location.pathname + window.location.search);
-    }
+    setActiveResultsTab('overview');
     setIsWarningDismissed(false);
+    setCoordinatesSyncKey((k) => k + 1);
+    setMapViewResetToken((t) => t + 1);
+    setConfirmResetOpen(false);
     triggerMapResize();
-  };
+    pushToast({ message: 'Session reset · pristine first-run state', tone: 'success' });
+  }, [serverStatus, pushToast, triggerMapResize]);
 
   // Dismiss telemetry notice
   const handleDismissWarning = () => {
@@ -928,7 +958,9 @@ const AppShell: React.FC = () => {
 
       {/* Coordinates Input Card */}
       <CoordinatesInput
-        key={`coords-${coordinatesSyncKey}`}
+        /* The epoch remounts the card on reset, so its search box, suggestion
+           list and pending-confirmation buffer cannot outlive the session. */
+        key={`coords-${coordinatesSyncKey}-${sessionEpoch}`}
         latitude={siteLocation?.latitude ?? null}
         longitude={siteLocation?.longitude ?? null}
         formattedAddress={analysisData?.formatted_address}
@@ -1089,6 +1121,7 @@ const AppShell: React.FC = () => {
               : handleLocationSelect
           }
           invalidateTrigger={mapResizeTrigger}
+          viewResetToken={mapViewResetToken}
           entranceDirection={analysisData?.vastu_advisory?.ranked_entrances?.[0]?.direction}
           treeClusters={siteVisionData?.tree_clusters}
           waterBodies={siteVisionData?.water_bodies}
@@ -1164,7 +1197,7 @@ const AppShell: React.FC = () => {
         activeAiProvider={request.ai_provider}
         serverStatus={serverStatus}
         onOpenMethodology={() => setIsMethodologyOpen(true)}
-        onReset={handleReset}
+        onReset={requestReset}
         warnings={warnings}
         isWarningDismissed={isWarningDismissed}
         onRestoreWarning={handleRestoreWarning}
@@ -1456,10 +1489,12 @@ const AppShell: React.FC = () => {
       {analysisData && (
         <Suspense fallback={null}>
         <ReportSheet
+          key={sessionEpoch}
           isOpen={isReportOpen}
           onClose={handleCloseReport}
           analysisData={analysisData}
           analysisRequest={request}
+          onRequestPatch={(patch) => dispatchSession({ type: 'request', patch })}
           sharedBoundary={boundary}
           siteVisionData={siteVisionData}
           isSiteVisionLoading={isSiteVisionLoading}
@@ -1475,19 +1510,29 @@ const AppShell: React.FC = () => {
            * yields between units of work, so no single task carries the arrival
            * (the certificate takes its own idle slice — ArrivalSlice).
            */
-          onFloorPlanGenerated={(plan) => React.startTransition(() => setFloorPlanData(plan))}
+          onFloorPlanGenerated={(plan) =>
+            React.startTransition(() => dispatchSession({ type: 'floorPlan', plan }))
+          }
           overrideLandRate={overrideLandRate}
           overridePlotArea={overridePlotArea}
-          onOverrideChange={(rate, area) => {
-            setOverrideLandRate(rate);
-            setOverridePlotArea(area);
-          }}
+          onOverrideChange={(rate, area) =>
+            dispatchSession({ type: 'overrides', rate, area })
+          }
           reportPayload={reportPayload!}
           activeTab={activeResultsTab}
           onTabChange={setActiveResultsTab}
         />
         </Suspense>
       )}
+
+      {/* Destructive reset confirmation (header Reset / R shortcut). */}
+      <React.Suspense fallback={null}>
+        <ConfirmResetDialog
+          open={confirmResetOpen}
+          onCancel={() => setConfirmResetOpen(false)}
+          onConfirm={performReset}
+        />
+      </React.Suspense>
 
       {/* Design system: keyboard shortcuts sheet + toast viewport */}
       <ShortcutsSheet open={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />

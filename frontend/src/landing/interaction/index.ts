@@ -1,5 +1,5 @@
 /**
- * landing/interaction — the landing's interaction system (Phase 1).
+ * landing/interaction — the landing's interaction system.
  *
  * Seven primitives, each with a PURE core and a React binding:
  *
@@ -20,7 +20,7 @@
  * MEASURE the spring settle times rather than trusting a comment about them.
  *
  * Consumers should import from here rather than from the individual files, so
- * Phase 2 sections and the prototype share one spelling of every primitive.
+ * the landing sections and the prototype share one spelling of every primitive.
  */
 export * from './capability';
 export * from './springs';

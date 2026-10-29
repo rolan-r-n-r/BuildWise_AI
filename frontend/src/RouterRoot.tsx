@@ -17,7 +17,7 @@ const LandingPage = lazy(() =>
   import('./landing/LandingPage').then((m) => ({ default: m.LandingPage })),
 )
 /**
- * Phase-0 centrepiece prototype — UNLINKED, `noindex`, and NOT IN THE SHIPPED
+ * Centrepiece prototype — UNLINKED, `noindex`, and NOT IN THE SHIPPED
  * GRAPH.
  *
  * A prototype under review must not move the artifact it is asking to join. A

@@ -5,9 +5,9 @@
  * headline, subcopy, the two calls to action and the spec bar. There is no stage
  * under it, and there is nothing here to reserve a box for. The scenic photograph,
  * its two scrims, the filmic grain layer and the 90-second mist loop were removed
- * first, and their combined cost went with them: Phase A measured that preloaded
- * 565 KB JPEG as the LCP element at 7.7 s on the mobile trace, and measured the
- * mist loop as roughly doubling the per-frame interval during scroll.
+ * first, and their combined cost went with them: the mobile trace measured that
+ * preloaded 565 KB JPEG as the LCP element at 7.7 s, and measured the mist loop
+ * as roughly doubling the per-frame interval during scroll.
  *
  * TWO 3D HEROES WERE BUILT OUT OF THIS FILE AND BOTH WERE REMOVED, FOR DIFFERENT
  * REASONS. The first was a live WebGL massing model — orbit, drag, hotspots — which

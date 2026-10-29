@@ -1,13 +1,13 @@
 /**
- * preview/TraceStage.tsx — PHASE 0 PROTOTYPE of the recommended hero
- * centerpiece. Unlinked, `noindex`, and lazily imported so neither `/` nor
+ * preview/TraceStage.tsx — unlinked prototype of the recommended hero
+ * centerpiece. It is `noindex`, and lazily imported so neither `/` nor
  * `/app` pays a byte for it until this route is decided on.
  *
  * WHAT IT IS
  * ----------
  * The product's actual first act, miniaturised: a plot is traced, and the engine
  * answers. Two real engine generations are shipped as data
- * (`plotSamples.ts`, generated from the committed captures); this stage draws them
+ * (`plotSamples.ts`, generated from the committed captures); this preview draws them
  * in the engine's own local tangent plane (metres, E/N) and lets the reader take
  * hold of the survey ring.
  *
@@ -17,7 +17,7 @@
  * real time". Area and perimeter can be, and are: the app already computes them in
  * the browser while you trace (`services/siteBoundary.metricsFor` — the same
  * shoelace pass, the same EC-01/02/03 validity gate, the same shape classification
- * and the same quadrant bearings this stage prints). Those numbers come from the
+ * and the same quadrant bearings this preview prints). Those numbers come from the
  * SHIPPED module, imported, not re-implemented, so the hero and the tool cannot
  * disagree.
  *
@@ -54,11 +54,11 @@ import type { MotionValue } from 'framer-motion';
 import { edgeBearingLength, metricsFor } from '../services/siteBoundary';
 import type { Vertex } from '../services/boundaryIO';
 import { PLOT_SAMPLES, type PlotSample } from './plotSamples';
-/* THE PROMOTED PRIMITIVES (Phase 1). None of this is prototype-local any more:
-   the springs, the pointer maths, the capability gate, the plane geometry and the
+/* THE PROMOTED PRIMITIVES. None of this is prototype-local any more: the
+   springs, the pointer maths, the capability gate, the plane geometry and the
    drag live in `src/landing/interaction`, where their pure cores are unit-tested
    (`scripts/test_interaction_primitives.cjs`) and their acceptance criteria are
-   written down in the Phase-0 dossier. THIS FILE IS THE REFERENCE CONSUMER, and
+   written down in the interaction spec. THIS FILE IS THE REFERENCE CONSUMER, and
    the reason there is no second copy of any of it anywhere. */
 import {
   dragBounds,
@@ -109,8 +109,7 @@ const PERSPECTIVE_PX = 4200;
  */
 /* The three tones are spaced widely enough to be told apart by MEASUREMENT as well
    as by eye — a pixel check over the stage asserted that all three are on screen
-   with the roof above the faces; the sampled counts are recorded in
-   `docs_ignore/landing-interactive/PHASE_0_REPORT.md`.
+   with the roof above the faces.
    The first palette had a near-white roof over a porcelain gradient ground, i.e.
    two of the three faces were the same colour as the paper they were drawn on, and
    a massing drawn in the colour of its own background is not a massing. */
@@ -161,7 +160,7 @@ export const TraceStage: React.FC = () => {
    * another on every sample change, which is both a cascading render and the
    * pattern React's lint flags), and `Reset` is one assignment inside the hook.
    *
-   * THE STATE THAT USED TO LIVE HERE IS NOW `interaction/useRingDrag` (Phase 1):
+   * THE STATE THAT USED TO LIVE HERE IS NOW `interaction/useRingDrag`:
    * the draft override, the grab record, the metres-per-pixel conversion, the
    * clamp and the keyboard nudge. This component got smaller on purpose — the
    * maths is unit-tested where it is pure, and the gesture is driven by real

@@ -358,10 +358,10 @@
    asked for bg-[var(--accent)] silently painted --panel instead — e.g. the
    white-on-white "close the ring" pill, which was unreadable. */
 /* ========================================================================= */
-/* GLASS POLICY (B10) — one cap, no stacking, and an opt-out                 */
+/* GLASS POLICY — one cap, no stacking, and an opt-out                       */
 /* ========================================================================= */
-/* Measured in Phase A: the report's glass cost nothing (0 fps difference with
-   it on or off), so this is not a performance rule — it is a consistency rule
+/* Measured: the report's glass cost nothing (0 fps difference with it on or
+   off), so this is not a performance rule — it is a consistency rule
    so the material cannot grow three different blur radii again.
 
    1. ONE radius, declared once. `--glass-blur` is the only blur value in the

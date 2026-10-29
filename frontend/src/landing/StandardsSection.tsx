@@ -45,6 +45,7 @@ import { ScrollRule } from './ScrollRule';
 import { Bearing } from './Bearing';
 import { useDampedScrub, useOnScreen } from './interaction';
 import { GROUP_LABELS, GROUP_ORDER, sourcesIn, type Source, type SourceGroup } from './standards';
+import { CERTIFIED_DEFINITION } from '../components/report/statusTaxonomy';
 
 const SpecList: React.FC<{ group: SourceGroup; rows: ReadonlyArray<Source> }> = ({ group, rows }) => (
   /* A stagger group of its own: the caption, then each row. The `dl` between
@@ -143,6 +144,12 @@ export const StandardsSection: React.FC = () => {
         {/* Same drawn boundary as the capabilities grid: the rule is the section
             edge, and it reports the reader's travel as it draws. */}
         <ScrollRule className="mt-10" />
+        <p
+          data-testid="landing-certified-definition"
+          className="mt-4 max-w-3xl text-[12.5px] leading-relaxed text-[var(--text-2)]"
+        >
+          {CERTIFIED_DEFINITION}
+        </p>
         <div className="mt-8 grid gap-x-12 gap-y-10 md:grid-cols-2 lg:grid-cols-3">
           {GROUP_ORDER.map((group) => (
             <SpecList key={group} group={group} rows={sourcesIn(group)} />

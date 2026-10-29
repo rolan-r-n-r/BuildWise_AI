@@ -1,6 +1,5 @@
 /**
- * preview/PreviewTrace.tsx — the route shell for the Phase-0 centrepiece
- * prototype.
+ * preview/PreviewTrace.tsx — the route shell for the centrepiece prototype.
  *
  * DELIBERATELY UNLINKED AND `noindex`. Nothing in the landing, the nav or the
  * footer points here; the route exists so the idea can be reviewed on a real
@@ -61,7 +60,7 @@ export const PreviewTrace: React.FC = () => {
         </button>
         <span className="inline-flex h-9 items-center gap-2 rounded-full border border-bw-amber/40 bg-bw-amber/[0.08] px-3 text-[12px] font-semibold text-bw-amber-ink">
           <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-bw-amber" />
-          Phase 0 prototype · unlinked · noindex
+          Prototype · unlinked · noindex
         </span>
         <span className="ml-auto hidden text-[12px] text-bw-ink-2 sm:block">
           Centrepiece option (a), rendered as option (c)

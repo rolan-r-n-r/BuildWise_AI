@@ -57,7 +57,7 @@ import { ENTRY_BAND as ENTRY, SETPIECE_BAND as SETPIECE, bandOffset } from './in
  * window and the 90px map legend.
  */
 /*
- * THE BANDS NOW COME FROM THE PROMOTED PRIMITIVES (Phase 1).
+ * THE BANDS COME FROM THE PROMOTED PRIMITIVES.
  *
  * `interaction/scrub.ts` owns the entry and set-piece bands as NUMBERS, and this
  * module owns their spelling as framer offset strings — so the landing's existing
