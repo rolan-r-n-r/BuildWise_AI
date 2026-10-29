@@ -234,18 +234,40 @@ def assess_programme_completeness(
     per_unit: Dict[str, List[str]] = {}
 
     if typology == "T2_FAMILY_APARTMENT":
-        units: Dict[str, set] = {}
-        for room, sid in typed:
-            uid = str(getattr(room, "unit_id", "") or "")
-            if uid:
-                units.setdefault(uid, set()).add(sid)
-        if not units:
-            missing.append("no unit-identified rooms (T2 programme not materialised)")
-        for uid in sorted(units):
-            per_unit[uid] = sorted(s for s in units[uid] if s)
-            for need in _T2_UNIT_ESSENTIAL:
-                if need not in units[uid]:
-                    missing.append(f"{need} in {uid}")
+        # A two-storey dwelling keeps its living/kitchen/bath on one level and
+        # its bedroom on the other.  Completeness therefore belongs to the
+        # household (``dwelling_id``), not to one floor's level-unit: checking
+        # each floor separately would demand a bedroom downstairs and a kitchen
+        # upstairs from a perfectly complete maisonette.  Legacy one-level plans
+        # have no dwelling_id and keep the per-floor unit grouping unchanged.
+        dwelling_ids = {
+            str(getattr(room, "dwelling_id", "") or "")
+            for room, _sid in typed
+        } - {""}
+        if dwelling_ids:
+            units: Dict[str, set] = {uid: set() for uid in dwelling_ids}
+            for room, sid in typed:
+                uid = str(getattr(room, "dwelling_id", "") or "")
+                if uid:
+                    units.setdefault(uid, set()).add(sid)
+            per_unit = {uid: sorted(s for s in units[uid] if s) for uid in sorted(units)}
+            for uid in sorted(units):
+                for need in _T2_UNIT_ESSENTIAL:
+                    if need not in units[uid]:
+                        missing.append(f"{need} in {uid}")
+        else:
+            units = {}
+            for room, sid in typed:
+                uid = str(getattr(room, "unit_id", "") or "")
+                if uid:
+                    units.setdefault(uid, set()).add(sid)
+            if not units:
+                missing.append("no unit-identified rooms (T2 programme not materialised)")
+            for uid in sorted(units):
+                per_unit[uid] = sorted(s for s in units[uid] if s)
+                for need in _T2_UNIT_ESSENTIAL:
+                    if need not in units[uid]:
+                        missing.append(f"{need} in {uid}")
     elif typology == "T3_LARGE_COMPLEX":
         ids = {sid for _r, sid in typed if sid}
         if "sanitary_block" not in ids:
@@ -473,8 +495,23 @@ def build_gate_layers(
             # "compromise". Only a material deficit (>15 %, the same threshold
             # that refuses a collapsed brief) is a land FAIL. The certificate
             # Itself still reports the check as failed either way.
-            _small_deficit = (
-                _name == "program_fits_footprint" and 0.0 < _deficit_ratio <= 0.15
+            #
+            # An INSCRIBED-CAPPED plate is a different case: on a tapered
+            # boundary the largest orthogonal rectangle is smaller than the
+            # coverage ceiling, so the shortfall is a property of the boundary,
+            # not of the brief.  Refusing it would hide a plan the partitioner
+            # can draw and disclose (PLATE-SHORT + ROOM-MIN + L16); the deficit
+            # stays printed on the certificate and LAND-06 names the cause.
+            # Refusal remains for a plate the brief has collapsed (the engine's
+            # own GEN-UNFIT path runs before the gate).
+            _inscribed_capped = (
+                str(getattr(_land_report, "footprint_source", "") or "") == "inscribed"
+                and float(getattr(_land_report, "footprint_area_sqm", 0.0) or 0.0)
+                < float(getattr(_land_report, "coverage_limit_area_sqm", 0.0) or 0.0) - 1.0
+            )
+            _small_deficit = _name == "program_fits_footprint" and (
+                0.0 < _deficit_ratio <= 0.15
+                or (_inscribed_capped and _deficit_ratio <= 0.35)
             )
             if _name in _LAND_ADVISORY_CHECKS or _small_deficit:
                 _land_advisory.append(
@@ -584,13 +621,23 @@ def build_gate_layers(
     # ------------------------------------------------------- L9-L14 (engineering)
     try:
         vent = compute_ventilation_registry(floors, duct_shafts)
+        _vent_findings = [
+            f"{r['room_id']} (F{r['floor_index']}): mechanical ventilation flagged"
+            for r in vent["records"] if r["status"] == "warn"
+        ]
+        _vent_findings.extend(vent.get("daylight_findings") or [])
         layers.append(make_layer(
             "L9", _status_from_str(vent["status"]),
             summary=(f"{vent['external_opening_count']} external, {vent['shaft_vent_count']} shaft, "
-                     f"{vent['mechanical_flagged_count']} mechanical-flagged"),
-            findings=[f"{r['room_id']} (F{r['floor_index']}): mechanical ventilation flagged" for r in vent["records"] if r["status"] == "warn"],
+                     f"{vent['mechanical_flagged_count']} mechanical-flagged"
+                     + (f"; {vent['daylight_failure_count']} kitchen(s) without a "
+                        "daylight/exterior opening"
+                        if vent.get("daylight_failure_count") else "")),
+            findings=_vent_findings,
             citation=vent["citation"],
-            details={"records": vent["records"], "total_rooms": vent["total_rooms"]},
+            details={"records": vent["records"], "total_rooms": vent["total_rooms"],
+                     "daylight_required_count": vent.get("daylight_required_count", 0),
+                     "daylight_failure_count": vent.get("daylight_failure_count", 0)},
         ))
     except Exception as exc:  # defensive: a layer engine bug must never kill the gate
         logger.exception("L9 ventilation layer crashed")
@@ -696,14 +743,25 @@ def build_gate_layers(
         fire = compute_fire_egress_audit(floors, typology,
                                          bool(getattr(cert, "egress_distances_satisfied", True)),
                                          occupant_load=occ)
+        _protection = fire.get("protection") or {}
+        _cap_note = ""
+        if _protection:
+            _cap_note = (
+                f"; stair {_protection.get('stair_clear_width_m', 0.0):.2f} m carries "
+                f"~{_protection.get('stair_occupants_served', 0.0):.0f} of "
+                f"{_protection.get('governing_occupant_load', 0)} occupants"
+                + ("" if _protection.get("capacity_satisfied") else " - CAPACITY SHORTFALL")
+            )
         layers.append(make_layer(
             "L14", _status_from_str(fire["status"]),
             summary=(f"Travel distances {'verified' if bool(getattr(cert, 'egress_distances_satisfied', True)) else 'EXCEEDED'}; "
-                     f"{len(fire['bedroom_egress'])} bedroom egress checks, {len(fire['exit_width_table'])} exit rows"),
+                     f"{len(fire['bedroom_egress'])} bedroom egress checks, "
+                     f"{len(fire['exit_width_table'])} exit rows{_cap_note}"),
             findings=list(fire["findings"]),
             citation=fire["citation"],
             details={"exit_width_table": fire["exit_width_table"],
-                     "bedroom_egress": fire["bedroom_egress"]},
+                     "bedroom_egress": fire["bedroom_egress"],
+                     "protection": _protection},
         ))
     except Exception as exc:
         logger.exception("L14 fire-egress layer crashed")

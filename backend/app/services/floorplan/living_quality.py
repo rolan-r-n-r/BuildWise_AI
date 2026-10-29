@@ -1072,7 +1072,25 @@ def audit_and_enforce_program_intent(
                     r.zone_category == "private" and ("bed" in r.room_id.lower() or "master" in r.room_id.lower())
                     for r in fl.rooms
                 )
-                if not has_bed:
+                # A two-storey dwelling legitimately keeps its sleeping level
+                # above its living level.  Floor 2 of a 4-storey duplex is the
+                # LOWER level of the second pair, not a bedroom-less flat: its
+                # households' bedrooms are on floor 3.  The requirement is per
+                # dwelling (across the pair), never per level.
+                duplex_level_dids = {
+                    str(getattr(r, "dwelling_id", "") or "")
+                    for r in fl.rooms
+                    if getattr(r, "dwelling_id", None)
+                } - {""}
+                duplex_bed_above = bool(duplex_level_dids) and any(
+                    str(getattr(r, "dwelling_id", "") or "") in duplex_level_dids
+                    and r.zone_category == "private"
+                    and ("bed" in r.room_id.lower() or "master" in r.room_id.lower())
+                    for upper in floors
+                    if upper.floor_index == fl.floor_index + 1
+                    for r in upper.rooms
+                )
+                if not has_bed and not duplex_bed_above:
                     if mask_terraced:
                         warnings.append(
                             f"PROGRAM INTENT NOTE: Floor {fl.floor_index} ({fl.floor_name}) has no bedroom because the "
@@ -1085,6 +1103,11 @@ def audit_and_enforce_program_intent(
                             f"PROGRAM INTENT VIOLATION: Floor {fl.floor_index} ({fl.floor_name}) lacks residential sleeping quarters. "
                             "Multi-storey residential programs require >= 1 bedroom per upper floor."
                         )
+                elif not has_bed and duplex_bed_above:
+                    warnings.append(
+                        f"PROGRAM INTENT NOTE: Floor {fl.floor_index} ({fl.floor_name}) is the lower level of "
+                        "two-storey dwellings; the households' bedrooms are on the paired upper floor."
+                    )
 
     # 2. Terrace Ratio Calculation Across Whole Building
     total_terrace_m2 = 0.0

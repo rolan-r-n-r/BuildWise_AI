@@ -590,22 +590,36 @@ def _enforce_room(
                         area < float(spec.min_area_sqm) - 0.02
                         or min(width, depth) < float(spec.min_width_m) - 0.02
                     )
-                    if _squeezed:
-                        room.relaxations.append({
-                            "rule_id": "PROP-PLATE-CAP",
-                            "rationale": (
+                    # EVERY beyond-cap room carries its own reason. A squeezed
+                    # room (below catalogue minimum) and a stretched one (the
+                    # band gave it length instead of width) fail for different
+                    # causes; the certificate must name which, never print a
+                    # bare ratio. Both remain hard violations.
+                    room.relaxations.append({
+                        "rule_id": "PROP-PLATE-CAP",
+                        "rationale": (
+                            (
                                 f"aspect 1:{aspect:.2f} is {aspect / max(limit, 0.01):.2f}x the "
                                 f"1:{limit:.2f} band, beyond the {ASPECT_RELAXATION_CAP:.2f}x cap, "
                                 "and the room is below its catalogue minimum: the plate cannot "
                                 "give it a wider band or a legal split. Disclosed as a programme "
                                 "deficit, not accepted as compliant."
-                            ),
-                        })
-                        audit.log.append(
-                            f"PROP-PLATE-CAP: {room.room_id} aspect 1:{aspect:.2f} beyond the "
-                            f"{ASPECT_RELAXATION_CAP:.2f}x cap; justified per room (plate cannot "
-                            "host this room within its band) and still disclosed as a deficit."
-                        )
+                            )
+                            if _squeezed
+                            else (
+                                f"aspect 1:{aspect:.2f} is {aspect / max(limit, 0.01):.2f}x the "
+                                f"1:{limit:.2f} band, beyond the {ASPECT_RELAXATION_CAP:.2f}x cap: "
+                                "the plate's band gives this room length instead of width and no "
+                                "legal split or adjunct fits without dropping programme. "
+                                "Disclosed as a deficit, not accepted as compliant."
+                            )
+                        ),
+                    })
+                    audit.log.append(
+                        f"PROP-PLATE-CAP: {room.room_id} aspect 1:{aspect:.2f} beyond the "
+                        f"{ASPECT_RELAXATION_CAP:.2f}x cap; justified per room (plate cannot "
+                        "host this room within its band) and still disclosed as a deficit."
+                    )
                     audit.hard_violations.append(
                         f"{room.room_id} aspect 1:{aspect:.2f} > 1:{limit:.2f} hard band "
                         f"(beyond the {ASPECT_RELAXATION_CAP:.2f}x relaxation cap and cannot split)"
