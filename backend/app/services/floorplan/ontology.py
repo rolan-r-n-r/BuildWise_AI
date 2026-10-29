@@ -420,6 +420,7 @@ PROPORTION_BANDS: Dict[str, ProportionBand] = {
     "store": _band(1.80, 8.0, split=("store",), action=OverflowAction.SPLIT, citation=CITE_STORAGE),
     # --- shared residential core ------------------------------------------------
     "shared_stair": _band(1.20, 25.0, split=("shared_stair",), adjunct=("store",), citation=CITE_CIRCULATION),
+    "unit_stair": _band(2.00, 4.0, split=("unit_stair",), action=OverflowAction.SPLIT, citation=CITE_CIRCULATION),
     "lift_core": _band(1.00, 12.0, split=("lift_core",), action=OverflowAction.SPLIT, citation=CITE_CIRCULATION),
     "floor_lobby": _band(1.40, 20.0, split=("floor_lobby",), adjunct=("store",), citation=CITE_CIRCULATION),
     "central_lobby": _band(1.40, 20.0, split=("central_lobby",), adjunct=("store",), citation=CITE_CIRCULATION),
@@ -1166,6 +1167,32 @@ UNIVERSAL_SPACE_CATALOG: Dict[str, SpaceTypeSpec] = {
         is_vertical_core=True,
         requires_exterior_wall=True,
         citation="NBC 2016 Pt 4 Cl 4.4.2 Table 5",
+    ),
+    "unit_stair": SpaceTypeSpec(
+        id="unit_stair",
+        name="Internal Unit Stair",
+        typologies=["T2_FAMILY_APARTMENT"],
+        function=FunctionType.CIRCULATION,
+        hygiene=HygieneType.NEUTRAL,
+        odor_emit=0, moisture_emit=0, grease_emit=0, noise_emit=1,
+        noise_sensitive=0, acoustic_privacy=0,
+        public_access=PublicAccess.PRIVATE,
+        visitor_depth=VisitorDepth.DEEP,
+        security=SecurityLevel.CONTROLLED,
+        service_side=ServiceSide.FRONT_OF_HOUSE,
+        fire_hazard=FireHazard.LOW,
+        egress_role=EgressRole.NONE,
+        floor_load=FloorLoad.NORMAL,
+        daylight_req=False,
+        ventilation_req="mechanical",
+        min_area_sqm=2.40,
+        min_width_m=0.90,
+        max_aspect_ratio=4.00,
+        vastu_zone_weights={"CENTER": 0.5},
+        permitted_levels=[0, 1, 2, 3],
+        is_vertical_core=False,
+        requires_exterior_wall=False,
+        citation="NBC 2016 Pt 4 Cl 4.4.2 (private dwelling stair)",
     ),
     "lift_core": SpaceTypeSpec(
         id="lift_core",
@@ -2934,6 +2961,7 @@ class OntologyRegistry:
     # Downstream surfaces read the resolved identity, so the specific label
     # lives here with the other naming data instead of in the engine.
     ROOM_ID_LABEL_OVERRIDES: Dict[str, str] = {
+        "terrace_wing_b": "Open Terrace / Setback Deck",
         "guest_bed": "Guest Bedroom",
         "t3_suite_n": "North Open Office Suite",
         "t3_suite_e": "Executive Boardroom Suite",
@@ -2946,7 +2974,17 @@ class OntologyRegistry:
         },
     }
     ROOM_ID_ALIASES: Dict[str, str] = {
+        # Solver-emitted outdoor ids (suffix-stripped to these before lookup).
+        # Without an alias they fell through to `unresolved:*` and stamped a
+        # SPACE-IDENTITY fallback on every terrace band / dropped-wing terrace.
+        "terrace_band": "terrace",
+        "terrace_wing_b": "terrace",
         "guest_bed": "bed_2",
+        # V2/V3 single-unit plate's second bedroom: the T2 prefix resolver
+        # would otherwise look for ``unit_bed_2``, which is not a registered
+        # space type.  It is a bedroom, not a new class of room.
+        "t2_unita_bed_2": "unit_bed",
+        "t2_unitb_bed_2": "unit_bed",
         "ensuite_bath": "bath_master",
         "reception": "reception_lobby",
         "t3_sanitary": "sanitary_block",
@@ -2980,6 +3018,53 @@ class OntologyRegistry:
         "T3_LARGE_COMPLEX": "spine_corridor",
         "T4_WAREHOUSE": "distribution_lobby",
     }
+
+    # Floor applicability of the AREA minimum. A ground entrance lobby is judged
+    # by area; the same strip on an upper floor is a landing corridor, judged by
+    # clear width (NBC 2016 Pt 4 Cl 4.5). A terrace band is an outdoor strip at
+    # every level, judged by width and drainage, never by habitable-room area or
+    # aspect (NBC 2016 Pt 3 Cl 10.2.1 / RULE-FP).
+    GROUND_AREA_GOVERNED: Dict[str, str] = {
+        "central_lobby": "CIRC-01-GROUND-FOYER-AREA",
+        "floor_lobby": "CIRC-01-GROUND-FOYER-AREA",
+        "spine_corridor": "CIRC-01-GROUND-FOYER-AREA",
+        "reception_lobby": "CIRC-01-GROUND-FOYER-AREA",
+        "distribution_lobby": "CIRC-01-GROUND-FOYER-AREA",
+    }
+    UPPER_LANDING_RULE = (
+        "CIRC-02-UPPER-LANDING-WIDTH",
+        "NBC 2016 Pt 4 Cl 4.5 (corridor/landing clear width)",
+    )
+    TERRACE_STRIP_RULE = (
+        "RULE-FP-04-TERRACE-STRIP",
+        "NBC 2016 Pt 3 Cl 10.2.1 (terrace drainage) / RULE-FP outdoor strip",
+    )
+    MIN_LANDING_WIDTH_M = 1.20
+
+    def floor_area_rule(
+        self,
+        space_id: Optional[str],
+        typology: Optional[str],
+        floor_index: int,
+        zone_category: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Whether the AREA minimum applies on this floor, and under what rule.
+
+        Returns ``{area_applies, rule_id, citation, min_width_m}``. The caller
+        must still measure clear width when ``area_applies`` is false; a skipped
+        area minimum is not a skipped dimension check.
+        """
+        resolved = (self.resolve_space_id(str(space_id or ""), typology) or str(space_id or "")).lower()
+        if resolved == "terrace" or str(zone_category or "").lower() == "terrace" or "terrace" in resolved:
+            rule_id, citation = self.TERRACE_STRIP_RULE
+            return {"area_applies": False, "rule_id": rule_id, "citation": citation,
+                    "min_width_m": self.MIN_LANDING_WIDTH_M}
+        if resolved in self.GROUND_AREA_GOVERNED and floor_index > 0:
+            rule_id, citation = self.UPPER_LANDING_RULE
+            return {"area_applies": False, "rule_id": rule_id, "citation": citation,
+                    "min_width_m": self.MIN_LANDING_WIDTH_M}
+        return {"area_applies": True, "rule_id": None, "citation": None,
+                "min_width_m": self.MIN_LANDING_WIDTH_M}
 
     def resolve_space_id(
         self,
@@ -3374,6 +3459,11 @@ class MathematicalValidityCertificate(BaseModel):
     )
     vertical_stack_valid: bool = Field(default=True, description="Vertical core locking, wet stacks, and vertical rules hold across all floors")
     core_continuity_valid: bool = Field(default=True, description="Core continuity across all occupied levels (RULE-FP-01)")
+    unit_stairs_valid: bool = Field(
+        default=True,
+        description=("Every multi-storey dwelling has exactly one aligned internal unit stair per level, "
+                     "with the pair on consecutive floors and identical footprint"),
+    )
     no_wet_over_terrace_valid: bool = Field(default=True, description="No wet room directly above terrace or open-to-sky (RULE-FP-03)")
     terrace_far_exempt: bool = Field(default=True, description="Terrace area excluded from FAR numerator (RULE-FP-06)")
     cores_stack_aligned: bool = Field(default=True, description="Remaining cores still stack-aligned across storeys")

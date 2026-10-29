@@ -97,6 +97,140 @@ class FloorPlanRequest(BaseModel):
         default=None,
         description="Optional user-chosen scheme id; recorded in provenance when scheme alternatives are generated"
     )
+    partition_variant: Optional[Literal["service_row", "single_unit", "duplex"]] = Field(
+        default=None,
+        description=(
+            "Optional deterministic T2 plate variant. 'service_row' is the S1 "
+            "depth-row alternative; 'single_unit' is V2 (one dwelling per floor, "
+            "core/lobby in a north strip); 'duplex' is V3, four floor-level "
+            "units per plate arranged as two-storey dwellings with an internal "
+            "unit stair. Omitting it keeps the baseline side-by-side two-unit "
+            "partition."
+        ),
+    )
+    units_per_floor: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=4,
+        description=(
+            "Declared floor-level units. T2 implements 1 (one-unit V2 plate), 2 "
+            "(side-by-side) and 4 when partition_variant='duplex' (four "
+            "floor-level units, grouped into dwellings that span two storeys). "
+            "3 is not implemented and is rejected rather than drawn as a "
+            "different plan. Omitted keeps the typology default."
+        ),
+    )
+    confirm_dwelling_deficit: bool = Field(
+        default=False,
+        description=(
+            "Explicit confirmation of a strategy's dwelling-count change. The "
+            "ladder measures S2 but will not make it the active generation "
+            "until this is true; the unconfirmed result stays a remediation card."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_duplex_unit_count(self) -> "FloorPlanRequest":
+        """Duplex is a drawn variant with four floor-level units per plate.
+
+        The doorway into V3 is explicit: the caller must ask for the duplex
+        variant (and, if it declares a count, the four floor-level units that
+        variant actually draws).  Asking for four units without the variant is
+        refused rather than silently drawn as a two-unit plate.
+        """
+        if self.partition_variant == "duplex":
+            if self.units_per_floor not in (None, 4):
+                raise ValueError(
+                    "partition_variant='duplex' draws four floor-level units "
+                    "per plate (two two-storey dwellings in the target "
+                    "programme); units_per_floor must be omitted or 4."
+                )
+            if self.floors is not None and int(self.floors) % 2:
+                raise ValueError(
+                    "partition_variant='duplex' needs an even number of storeys "
+                    "so every dwelling has its paired upper level."
+                )
+            return self
+        if self.units_per_floor == 4:
+            raise ValueError(
+                "units_per_floor=4 is implemented only with "
+                "partition_variant='duplex'. Implemented T2 variants are 1 "
+                "(single_unit), 2 (side-by-side / service_row) and duplex=4."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def reject_unimplemented_t2_units(self) -> "FloorPlanRequest":
+        """Do not accept a T2 unit count the partitioner cannot draw.
+
+        T2 now draws 1, 2 or (with the explicit duplex variant) 4 floor-level
+        units.  Three remains unimplemented; requiring it used to return a "
+        successful two-unit plan whose ``units_per_floor`` said three.  The "
+        request is refused at the API boundary with a named range instead of "
+        being silently clamped.
+        """
+        # Mirror normalize_typology(): every identifier that resolves to T2
+        # must be refused here, or the engine's strict guard becomes a 500
+        # instead of a named 422.
+        t2_aliases = (
+            "residential_multi",
+            "T2_FAMILY_APARTMENT",
+            "t2_family_apartment",
+            "apartment",
+            "duplex",
+            "builder_floor",
+            "t2",
+        )
+        if (
+            self.building_typology in t2_aliases
+            and self.units_per_floor is not None
+            and self.units_per_floor > 2
+            and not (self.partition_variant == "duplex" and self.units_per_floor == 4)
+        ):
+            raise ValueError(
+                f"units_per_floor={self.units_per_floor} is not implemented for "
+                "T2_FAMILY_APARTMENT. Implemented values are 1 (one-unit V2 "
+                "plate), 2 (side-by-side two-unit plate) and 4 with "
+                "partition_variant='duplex' (two-storey dwellings); a "
+                "three-unit T2 partition is not available."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def enforce_typology_unit_range(self) -> "FloorPlanRequest":
+        """Refuse a unit count the typology does not draw.
+
+        T1/T3/T4 used to clamp an out-of-range ``units_per_floor`` and then
+        certify the smaller plan under a generation token that still named the
+        requested count: a T1 request for three units returned a ONE-unit plan
+        labelled CERTIFIED.  The typology's own ProgrammeVariables is the
+        single source of truth, so the API boundary refuses the same range the
+        engine declares - it never substitutes a different count for a
+        certified answer.  T2 keeps its named 422 above (three units and the
+        duplex doorway are T2-specific), so it is skipped here.
+        """
+        if self.units_per_floor is None:
+            return self
+        # Lazy imports keep the schema module free of a services import cycle.
+        from app.services.floorplan.programme_variables import get_programme_variables
+        from app.services.floorplan.typologies import TYPOLOGY_T2, normalize_typology
+
+        canonical = normalize_typology(self.building_typology)
+        if canonical == TYPOLOGY_T2:
+            return self
+        variables = get_programme_variables(canonical)
+        low, high = variables.units_per_floor_range
+        value = int(self.units_per_floor)
+        if low <= value <= high:
+            return self
+        expected = (
+            f"{low}" if low == high else f"{low}-{high}"
+        )
+        raise ValueError(
+            f"units_per_floor={value} is outside the implemented range for "
+            f"{canonical} ({expected}); the engine will not draw a different "
+            "unit count while reporting the requested one."
+        )
 
     @model_validator(mode="before")
     @classmethod

@@ -88,6 +88,20 @@ class MultiFloorRoomRectangle(BaseModel):
     room_name: str
     floor_index: int  # 0 = Ground, 1 = G+1, 2 = G+2, 3 = G+3
     unit_id: Optional[str] = None  # None for T1/T4; "U1", "U2" for multi-unit T2/T3
+    # A dwelling may occupy more than one storey.  ``unit_id`` names the
+    # level-unit a room belongs to on its own floor; ``dwelling_id`` names the
+    # household that owns it.  For a repeated flat the two are equal (each
+    # level is its own dwelling); for a duplex two levels share one
+    # ``dwelling_id`` and carry complementary ``dwelling_level`` values.  Both
+    # fields are optional so existing serialized plans remain valid.
+    dwelling_id: Optional[str] = Field(
+        default=None,
+        description="Stable household id; equal to unit_id unless the dwelling spans storeys",
+    )
+    dwelling_level: Optional[Literal["lower", "upper"]] = Field(
+        default=None,
+        description="Level of a multi-storey dwelling; None for a single-level unit",
+    )
     x: float
     y: float
     width_m: float
@@ -244,6 +258,31 @@ class MultiStoreyBuildingModel(BaseModel):
     duct_shafts: List[DuctShaftSpec] = Field(default_factory=list)
     structural_grid: Optional[StructuralGridSpec] = None
     floors: List[SingleFloorPlanModel] = Field(default_factory=list)
+    # Design variables the solve actually used (units per floor range, stacking
+    # model, amenity placement, governing floor).  Disclosed with the plan so a
+    # reader can see which choices were fixed and which were searched.
+    programme_variables: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Per-typology programme variables used by this solve",
+    )
+    units_per_floor: Optional[int] = Field(
+        default=None,
+        description="Resolved dwellings per floor for this solve",
+    )
+    # Strategy escalation is engine evidence, not UI state: every tried strategy
+    # stays on the plan whether it passed, failed, was skipped or errored.
+    strategy_chain: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Ordered S0-S5 strategies tried for this plan, with measured outcomes",
+    )
+    strategy_chain_line: Optional[str] = Field(
+        default=None,
+        description="One-line disclosure: S0 fail -> S1 fail -> ...; selected S1",
+    )
+    strategy_selected: Optional[str] = Field(
+        default=None,
+        description="Id of the strategy whose plan was returned",
+    )
     global_metrics: Dict[str, Any] = Field(default_factory=dict)
     qa_report: Dict[str, Any] = Field(default_factory=dict)
     warnings: List[str] = Field(default_factory=list)
