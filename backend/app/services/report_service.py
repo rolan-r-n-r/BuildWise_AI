@@ -2,6 +2,10 @@ import io
 import os
 import html
 import re
+import hashlib
+import json
+import threading
+from collections import Counter, OrderedDict
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -21,6 +25,13 @@ from app.services.floorplan.identity import (
     identity_dict,
     identity_name,
     identity_zone_category,
+)
+from app.services.plan_verdict import (
+    ADVISORY as PLAN_VERDICT_ADVISORY,
+    CERTIFIED as PLAN_VERDICT_CERTIFIED,
+    FAIL_STAMP as PLAN_VERDICT_FAIL_STAMP,
+    compute_plan_verdict,
+    plan_truth_labels,
 )
 
 
@@ -99,6 +110,99 @@ COLOR_AMBER_BORDER = colors.HexColor("#FF9500")
 COLOR_RED_TEXT = colors.HexColor("#D70015")
 COLOR_RED_TINT = colors.HexColor("#FDECEB")
 COLOR_RED_BORDER = colors.HexColor("#FF3B30")
+
+
+# =============================================================================
+# 2b. REPORT OUTPUT CACHE
+# =============================================================================
+#
+# A report download is a pure function of (analysis payload, site vision,
+# authoritative floor-plan result, report template).  The same browser session
+# re-downloads the identical body whenever the user clicks Download again, and
+# rebuilding it re-runs ReportLab over the full plan and warning ledger.  The
+# cache is deliberately content-addressed and tiny:
+#
+#   * every key includes the COMPLETE canonical request and the template
+#     version, so a changed input, verdict, finding, floor plan or template
+#     cannot return a stale PDF;
+#   * entries are inserted only after a successful build, so validation errors
+#     and failed certification paths are never cached as a successful report;
+#   * the key is request-scoped by content, not by client/session, so one
+#     design cannot receive another design's document;
+#   * returning a copy keeps each caller's stream independent.
+REPORT_TEMPLATE_VERSION = "2026-10-29.finding-ledger-v1"
+REPORT_CACHE_MAX_ENTRIES = 8
+_REPORT_CACHE: "OrderedDict[str, bytes]" = OrderedDict()
+_REPORT_CACHE_LOCK = threading.Lock()
+
+
+def _cacheable_report_value(value: Any) -> Any:
+    """Canonicalise a report input for content-addressed hashing.
+
+    Pydantic models are dumped; anything else is left to json.dumps(default=...)
+    so a datetime or a custom scalar cannot make an otherwise identical request
+    hash differently between calls.
+    """
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {str(k): _cacheable_report_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_cacheable_report_value(v) for v in value]
+    return value
+
+
+def report_cache_key(
+    data: Dict[str, Any],
+    site_vision: Optional[Dict[str, Any]] = None,
+    floor_plan: Optional[Dict[str, Any]] = None,
+    template_version: str = REPORT_TEMPLATE_VERSION,
+    options: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Stable SHA-256 of the exact inputs plus the template identity.
+
+    ``options`` covers render-affecting switches (dossier-only, construction
+    schedules).  Two requests with the same payload but different output modes
+    are not interchangeable and must never share an entry.
+    """
+    payload = {
+        "template": template_version,
+        "options": _cacheable_report_value(options or {}),
+        "analysis_data": _cacheable_report_value(data),
+        "site_vision": _cacheable_report_value(site_vision),
+        "floor_plan": _cacheable_report_value(floor_plan),
+    }
+    blob = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
+def _cache_get_report(key: str) -> Optional[bytes]:
+    with _REPORT_CACHE_LOCK:
+        value = _REPORT_CACHE.get(key)
+        if value is None:
+            return None
+        _REPORT_CACHE.move_to_end(key)
+        return value
+
+
+def _cache_put_report(key: str, value: bytes) -> None:
+    with _REPORT_CACHE_LOCK:
+        _REPORT_CACHE[key] = value
+        _REPORT_CACHE.move_to_end(key)
+        while len(_REPORT_CACHE) > REPORT_CACHE_MAX_ENTRIES:
+            _REPORT_CACHE.popitem(last=False)
+
+
+def clear_report_cache() -> None:
+    """Test/QA seam: forget every assembled report."""
+    with _REPORT_CACHE_LOCK:
+        _REPORT_CACHE.clear()
 
 
 # =============================================================================
@@ -229,6 +333,316 @@ def _truth_label_sections(labels: Dict[str, Any]) -> List[tuple]:
         ),
         (labels["headings"]["unresolved_breaches"], list(labels["unresolved_breaches"])),
     ]
+
+
+def _deviation_line(deviation: Dict[str, Any]) -> str:
+    """One listed-deviation row, in the order every surface prints it."""
+    room = str(deviation.get("room_id") or "").strip()
+    rule = str(deviation.get("rule_id") or "").strip()
+    chip = " · ".join(part for part in (room, rule) if part)
+    row = str(deviation.get("page1_row") or "").strip()
+    if row:
+        return f"{row} [{chip}]" if chip else row
+    reason = str(deviation.get("reason") or "").strip()
+    return f"{chip} · {reason}" if chip else reason
+
+
+def _clip_finding(text: Any, limit: int = 230) -> str:
+    """A page-1 preview of a finding; the appendix keeps the verbatim row."""
+    clean = " ".join(str(text or "").split())
+    if len(clean) <= limit:
+        return clean
+    cut = clean[:limit].rsplit(" ", 1)[0].rstrip(" ,;:")
+    return f"{cut}…"
+
+
+def _finding_code(text: Any) -> str:
+    raw = str(text or "").strip()
+    return raw.split(":", 1)[0].split(" ", 1)[0].upper()
+
+
+def _authoritative_plan_verdict(plan_payload: Optional[Dict[str, Any]]) -> Optional[str]:
+    """The API's published verdict, or the same computation when absent.
+
+    The PDF must consume the authoritative result; it may never re-derive a
+    verdict from a warning count or a layer flag of its own.
+    """
+    if not isinstance(plan_payload, dict) or not plan_payload:
+        return None
+    published = str(plan_payload.get("plan_verdict") or "").strip().upper()
+    if published in (PLAN_VERDICT_CERTIFIED, PLAN_VERDICT_ADVISORY, PLAN_VERDICT_FAIL_STAMP):
+        return published
+    return compute_plan_verdict(plan_payload)
+
+
+def _all_truth_rows(labels: Dict[str, Any]) -> List[str]:
+    rows: List[str] = []
+    for row in labels.get("unresolved_breaches") or []:
+        rows.append(str(row))
+    for row in labels.get("certificate_failures") or []:
+        rows.append(str(row))
+    for deviation in labels.get("listed_deviations") or []:
+        rows.append(_deviation_line(deviation))
+    return rows
+
+
+_FINDING_PRIORITY = {
+    "PROGRAMME-SQUEEZE": 0,
+    "PROGRAMME-DEFICIT": 1,
+    "PLATE-SHORT": 2,
+    "GATE-FAIL": 3,
+    "PROP-HARD": 4,
+    "PROP-PLATE-CAP": 5,
+    "PROPORTION-FAIL": 6,
+    "ROOM-OVERLAP": 7,
+    "ROOM-MIN": 8,
+    "ROOM-MAX": 9,
+    "SELECTION-FALLBACK": 10,
+    "PROP-ASPECT": 11,
+    "PROP-CEILING": 12,
+    "PROP-IDEAL": 13,
+}
+
+
+def _top_findings(labels: Dict[str, Any], limit: int = 3) -> List[str]:
+    """The three findings that matter most on page 1.
+
+    Breaches and certificate failures come first.  Listed deviations are ranked
+    by what limits the design (a programme squeeze explains dozens of room
+    deviations), not by their position in the raw log.  The page-1 row is
+    clipped only for layout; Appendix A prints every row verbatim.
+    """
+    ordered: List[str] = []
+    for key in ("unresolved_breaches", "certificate_failures"):
+        ordered.extend(str(row) for row in (labels.get(key) or []))
+    deviations = list(labels.get("listed_deviations") or [])
+    deviations.sort(
+        key=lambda d: _FINDING_PRIORITY.get(
+            _finding_code(d.get("rule_id") or d.get("page1_row") or d.get("reason")), 99
+        )
+    )
+    ordered.extend(_deviation_line(d) for d in deviations)
+    seen = set()
+    out: List[str] = []
+    for row in ordered:
+        clean = " ".join(row.split())
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        out.append(_clip_finding(clean))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _recommended_actions(labels: Dict[str, Any], verdict: str) -> List[str]:
+    """Plain-language next steps mapped to the findings actually present."""
+    rows = _all_truth_rows(labels)
+    codes = {_finding_code(row) for row in rows}
+    certified = verdict in ("CERTIFIED", "ADVISORY")
+    actions: List[str] = []
+
+    if codes & {"PROGRAMME-DEFICIT", "PROGRAMME-SQUEEZE", "PLATE-SHORT", "ROOM-MIN"}:
+        if certified:
+            actions.append(
+                "No certification action is required: the squeezed rooms are listed, "
+                "within-cap deviations. If those sizes are unacceptable, reduce the "
+                "requested programme, add a storey where the brief permits, or enlarge "
+                "the buildable plate within the site constraints."
+            )
+        else:
+            actions.append(
+                "Reduce the requested programme, add a storey where the brief permits, "
+                "or enlarge the buildable plate within the site constraints; then regenerate."
+            )
+    if codes & {"GATE-FAIL", "PROP-HARD", "PROP-PLATE-CAP", "PROPORTION-FAIL", "ROOM-OVERLAP"}:
+        actions.append(
+            "Resolve the failed statutory/safety or geometry rows above before relying "
+            "on this drawing; regenerate after the layout changes."
+        )
+    if codes & {"PROP-ASPECT", "PROP-IDEAL", "PROP-CEILING", "ROOM-MAX"}:
+        actions.append(
+            "Review the affected room proportions and sizes in Appendix A. A listed, "
+            "within-cap relaxation is disclosed, not a certification failure."
+        )
+    if codes & {"SELECTION-FALLBACK"}:
+        actions.append(
+            "The requested scheme was replaced by a legal fallback. Choose a scheme the "
+            "engine reports as feasible, or accept the disclosed fallback."
+        )
+    if codes & {"PROGRAMME-DEFICIT", "PLATE-SHORT"} and verdict == "NOT-CERTIFIED-FAIL-STAMP":
+        actions.append(
+            "If no input change can satisfy the programme on this plate, the honest "
+            "result is a refusal; do not treat the fail stamp as an approval."
+        )
+    if not actions:
+        actions.append("No action required. Retain the assumptions, data notices and limitations in this report.")
+    # Keep the page-1 list short. Appendix A carries every row and its evidence.
+    return actions[:3]
+
+
+def _page1_plan_sections(labels: Dict[str, Any], verdict: str) -> List[Tuple[str, List[str]]]:
+    """Concise page-1 summary; the full ledger lives in Appendix A.
+
+    The three certificate-owned group headings are printed first, with their
+    own counts, so a reader never has to add warning lines to discover the
+    metric.  Only the three most important findings are previewed here; every
+    row is verbatim in Appendix A.
+    """
+    rows = _all_truth_rows(labels)
+    findings = _top_findings(labels, 3)
+    headings = labels.get("headings") or {}
+    sections: List[Tuple[str, List[str]]] = []
+    count_rows = [
+        str(headings.get(key) or "")
+        for key in ("certificate_failures", "listed_deviations", "unresolved_breaches")
+        if headings.get(key)
+    ]
+    if count_rows:
+        sections.append(("Certificate-owned counts", count_rows))
+    if findings:
+        sections.append((f"Three most important findings (of {len(rows)})", findings))
+    sections.append(("Recommended next actions", _recommended_actions(labels, verdict)))
+    return sections
+
+
+def make_finding_ledger_appendix(
+    plan_payload: Optional[Dict[str, Any]],
+    analysis_warnings: Optional[List[str]] = None,
+) -> List[Any]:
+    """Appendix A: every finding, verbatim, with its group and evidence.
+
+    Page 1 is a summary; this appendix is the traceability record.  It prints
+    the certificate failures, every listed deviation (including structured
+    relaxations with no page-1 row), every unresolved breach, and the complete
+    raw engine log.  Exact duplicate log lines are collapsed to one row with an
+    occurrence count so nothing is lost and the appendix stays readable.
+    """
+    if not isinstance(plan_payload, dict) or not plan_payload:
+        return []
+    labels = plan_truth_labels(plan_payload)
+    truth_rows = _all_truth_rows(labels)
+    warnings = [str(w).strip() for w in (plan_payload.get("warnings") or []) if str(w).strip()]
+    # The analysis payload can carry notices that never reached the plan.  They
+    # are data-quality evidence, not plan findings; keep them in their own
+    # group so a reader can tell the two apart.
+    notices = [str(w).strip() for w in (analysis_warnings or []) if str(w).strip()]
+
+    th = ParagraphStyle(
+        "LedgerTH", fontName=FONT_SEMIBOLD, fontSize=7.5, leading=9.5,
+        textColor=COLOR_TEXT_SECONDARY, alignment=0,
+    )
+    td = ParagraphStyle(
+        "LedgerTD", fontName=FONT_REGULAR, fontSize=7.2, leading=9.2,
+        textColor=COLOR_TEXT_PRIMARY, alignment=0,
+    )
+    mono = ParagraphStyle(
+        "LedgerMono", fontName=FONT_REGULAR, fontSize=6.8, leading=8.8,
+        textColor=COLOR_TEXT_SECONDARY, alignment=0,
+    )
+    h3 = ParagraphStyle(
+        "LedgerH3", fontName=FONT_SEMIBOLD, fontSize=9.0, leading=12.0,
+        textColor=COLOR_ACCENT, alignment=0,
+    )
+
+    def table(rows: List[List[Any]], widths: List[float]) -> Table:
+        t = Table(rows, colWidths=widths, repeatRows=1)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), COLOR_BG_SUBTLE),
+            ('BOX', (0, 0), (-1, -1), 0.5, COLOR_HAIRLINE),
+            ('LINEBELOW', (0, 0), (-1, -1), 0.4, COLOR_HAIRLINE),
+            ('TOPPADDING', (0, 0), (-1, -1), 3.0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3.0),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4.0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4.0),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        return t
+
+    flowables: List[Any] = [PageBreak()]
+    flowables.append(create_section_header("A", "Complete Finding Ledger"))
+    flowables.append(make_callout(
+        "<b>Traceability:</b> this appendix is the complete record behind the page-1 "
+        f"summary. {labels['summary_line']}. Page-1 previews are shortened for layout; "
+        "the rows below are verbatim. Nothing is omitted.",
+        width=CONTENT_WIDTH_PT,
+    ))
+    flowables.append(Spacer(1, 8))
+
+    # 1. Certificate failures
+    flowables.append(Paragraph(f"<b>{html.escape(labels['headings']['certificate_failures'])}</b>", h3))
+    flowables.append(Spacer(1, 3))
+    failure_rows: List[List[Any]] = [[Paragraph("Certificate failure (verbatim)", th)]]
+    for row in labels.get("certificate_failures") or []:
+        failure_rows.append([Paragraph(html.escape(str(row)), td)])
+    if len(failure_rows) == 1:
+        failure_rows.append([Paragraph("None.", td)])
+    flowables.append(table(failure_rows, [CONTENT_WIDTH_PT]))
+    flowables.append(Spacer(1, 9))
+
+    # 2. Listed deviations
+    flowables.append(Paragraph(f"<b>{html.escape(labels['headings']['listed_deviations'])}</b>", h3))
+    flowables.append(Spacer(1, 3))
+    deviation_rows: List[List[Any]] = [[
+        Paragraph("Room", th), Paragraph("Rule", th), Paragraph("Disclosed finding (verbatim)", th),
+    ]]
+    for deviation in labels.get("listed_deviations") or []:
+        deviation_rows.append([
+            Paragraph(html.escape(str(deviation.get("room_id") or "—")), mono),
+            Paragraph(html.escape(str(deviation.get("rule_id") or "—")), mono),
+            Paragraph(html.escape(_deviation_line(deviation)), td),
+        ])
+    if len(deviation_rows) == 1:
+        deviation_rows.append([Paragraph("None.", td), Paragraph("", td), Paragraph("", td)])
+    flowables.append(table(deviation_rows, [88.0, 82.0, CONTENT_WIDTH_PT - 170.0]))
+    flowables.append(Spacer(1, 9))
+
+    # 3. Unresolved breaches
+    flowables.append(Paragraph(f"<b>{html.escape(labels['headings']['unresolved_breaches'])}</b>", h3))
+    flowables.append(Spacer(1, 3))
+    breach_rows: List[List[Any]] = [[Paragraph("Unresolved breach (verbatim)", th)]]
+    for row in labels.get("unresolved_breaches") or []:
+        breach_rows.append([Paragraph(html.escape(str(row)), td)])
+    if len(breach_rows) == 1:
+        breach_rows.append([Paragraph("None.", td)])
+    flowables.append(table(breach_rows, [CONTENT_WIDTH_PT]))
+    flowables.append(Spacer(1, 9))
+
+    # 4. Complete raw engine log.  Duplicate lines are one row + count; no row
+    # is dropped.  This is the ledger a reviewer needs when a page-1 preview
+    # cannot carry the full sentence.
+    flowables.append(Paragraph("<b>Raw engine findings log</b>", h3))
+    flowables.append(Spacer(1, 3))
+    counts = Counter(warnings)
+    log_rows: List[List[Any]] = [[
+        Paragraph("Code", th), Paragraph("Engine message (verbatim)", th), Paragraph("Count", th),
+    ]]
+    for message, occurrences in counts.items():
+        log_rows.append([
+            Paragraph(html.escape(_finding_code(message) or "—"), mono),
+            Paragraph(html.escape(message), mono),
+            Paragraph(str(occurrences), mono),
+        ])
+    if len(log_rows) == 1:
+        log_rows.append([Paragraph("—", td), Paragraph("No engine findings were logged.", td), Paragraph("", td)])
+    flowables.append(table(log_rows, [72.0, CONTENT_WIDTH_PT - 104.0, 32.0]))
+
+    if notices:
+        flowables.append(Spacer(1, 9))
+        flowables.append(Paragraph("<b>Data-quality notices (analysis payload)</b>", h3))
+        flowables.append(Spacer(1, 3))
+        notice_rows: List[List[Any]] = [[Paragraph("Notice (verbatim)", th)]]
+        for notice in dict.fromkeys(notices):
+            notice_rows.append([Paragraph(html.escape(notice), td)])
+        flowables.append(table(notice_rows, [CONTENT_WIDTH_PT]))
+
+    flowables.append(Spacer(1, 8))
+    flowables.append(Paragraph(
+        "<i>End of Appendix A. The complete ledger above is the traceability source for "
+        f"the page-1 verdict {html.escape(str(plan_payload.get('plan_verdict') or _authoritative_plan_verdict(plan_payload) or 'UNKNOWN'))}.</i>",
+        ParagraphStyle('LedgerEnd', fontName=FONT_REGULAR, fontSize=7.5, leading=10.0, textColor=COLOR_TEXT_TERTIARY),
+    ))
+    return flowables
 
 
 def _plan_banner_table(
@@ -1668,10 +2082,12 @@ def generate_pdf_report(
     story.append(Spacer(1, 10))
 
     # -------------------------------------------------------------------------
-    # DEGRADED-MODE WARNING BANNER: degradation notices collected
-    # during analysis are surfaced as a visible amber banner near the top of the
-    # PDF - they must never be buried in appendix prose or dropped entirely.
+    # DEGRADED-MODE WARNING BANNER: degradation notices collected during
+    # analysis are surfaced as a visible amber banner on page 1.  It is built
+    # here but appended AFTER the verdict banner: the certification verdict is
+    # the first fact on page 1, and a data notice must not push it down.
     # -------------------------------------------------------------------------
+    _deferred_data_notices: List[Any] = []
     pdf_warnings = [str(w).strip() for w in (data.get("warnings") or []) if str(w).strip()]
     if pdf_warnings or bool(data.get("degraded_mode")):
         banner_style = ParagraphStyle(
@@ -1701,16 +2117,16 @@ def generate_pdf_report(
             ('RIGHTPADDING', (0, 0), (-1, -1), 8.0),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
-        story.append(banner_tbl)
-        story.append(Spacer(1, 8))
+        _deferred_data_notices.append(banner_tbl)
+        _deferred_data_notices.append(Spacer(1, 8))
 
     # -------------------------------------------------------------------------
-    # STRATEGY CHAIN: what the engine tried before this verdict.  It is printed
-    # BEFORE the verdict banner because that banner can carry a long page-1
-    # warning list; placing the chain after it pushed the chain onto page 2 on
-    # the T2 129.6 m² case.  The chain belongs on page 1 with the verdict, and
-    # the full warning list still prints in full below it.
+    # STRATEGY CHAIN: what the engine tried before this verdict.  It sits AFTER
+    # the verdict banner: page 1 leads with the certification fact, then the
+    # evidence.  The banner is now a short summary, so the chain no longer
+    # needs to be promoted above it to stay on page 1.
     # -------------------------------------------------------------------------
+    _chain_flowables: List[Any] = []
     _chain_line = None
     for _src in (
         floor_plan if isinstance(floor_plan, dict) else {},
@@ -1722,34 +2138,34 @@ def generate_pdf_report(
             continue
         _chain_line = _src.get("strategy_chain_line") or _chain_line
     if _chain_line:
-        story.append(Paragraph(
+        _chain_flowables.append(Paragraph(
             f"<b>Strategy chain:</b> {_chain_line}",
             ParagraphStyle(
                 'PlanStrategyChain', fontName=FONT_REGULAR, fontSize=8.0,
                 leading=11.0, textColor=COLOR_TEXT_PRIMARY,
             ),
         ))
-        story.append(Spacer(1, 6))
+        _chain_flowables.append(Spacer(1, 6))
 
     # -------------------------------------------------------------------------
-    # PLAN VERDICT BANNER: a withheld certificate or a named
-    # programme deficit is a PAGE-1 fact.  The plan is still drawn and exported;
-    # it must never leave the printer looking certified.  The squeezed rooms are
-    # listed by id (the same ROOM-MIN / PLATE-SHORT / PROGRAMME lines the screen
-    # renders) rather than hidden behind a count.
+    # PLAN VERDICT BANNER: the authoritative verdict is a PAGE-1 fact.  The
+    # plan is still drawn and exported; it must never leave the printer looking
+    # certified.  Page 1 carries the verdict, its meaning, the three most
+    # important findings and the next actions; Appendix A carries the complete
+    # verbatim ledger.  A 42-row list used to split this table across pages and
+    # printed the certified banner again beside a FAIL-stamp sentence.
     # -------------------------------------------------------------------------
     _plan_payload = floor_plan or data.get("multi_storey") or {}
     if hasattr(_plan_payload, "model_dump"):
         _plan_payload = _plan_payload.model_dump()
+    _plan_verdict: Optional[str] = None
+    _truth: Dict[str, Any] = {}
     if isinstance(_plan_payload, dict):
         _plan_cert = (
             _plan_payload.get("mathematical_certificate")
             or ((_plan_payload.get("multi_storey") or {}).get("mathematical_certificate") if isinstance(_plan_payload.get("multi_storey"), dict) else None)
         ) or {}
         _plan_gate = _plan_payload.get("validation_gate") or {}
-        # The ONE canonical page-1 list (same filter as the in-app print view).
-        # It is printed verbatim and in full: a count or "+N more" line would
-        # make the print banner and the PDF banner disagree.
         _deficit_lines = page1_plan_warnings(_plan_payload.get("warnings"))
         if not _deficit_lines:
             # Some API payloads carry warnings only on the analysis object; the
@@ -1758,25 +2174,18 @@ def generate_pdf_report(
         # ONE verdict, published by the API and rendered verbatim here.  The
         # PDF must never pick a severity of its own: that is how a card came to
         # promise a FAIL stamp the export did not carry.
-        from app.services.plan_verdict import (
-            ADVISORY as _VERDICT_ADVISORY,
-            CERTIFIED as _VERDICT_CERTIFIED,
-            CERTIFIED_DEFINITION as _CERT_DEF,
-            FAIL_STAMP as _VERDICT_FAIL,
-            compute_plan_verdict,
-            plan_truth_labels,
-        )
+        from app.services.plan_verdict import CERTIFIED_DEFINITION as _CERT_DEF
 
-        _plan_verdict = _plan_payload.get("plan_verdict") or compute_plan_verdict(_plan_payload)
+        _plan_verdict = _authoritative_plan_verdict(_plan_payload)
         _verdict_line = f"<b>Plan verdict:</b> {_plan_verdict}"
         # ONE grouping for the screen, the print view and this page: the
         # certificate's own failure rows, the listed deviations, and the rows
         # the FAIL stamp rests on - counted separately, never conflated.
         _truth = plan_truth_labels(_plan_payload)
-        _truth_sections = _truth_label_sections(_truth)
+        _summary_sections = _page1_plan_sections(_truth, _plan_verdict or PLAN_VERDICT_FAIL_STAMP)
         _truth_summary = f"<i>{_truth['summary_line']}</i>"
 
-        if _plan_verdict == _VERDICT_FAIL:
+        if _plan_verdict == PLAN_VERDICT_FAIL_STAMP:
             _verdict_bits: List[str] = []
             if _plan_cert.get("is_valid") is False:
                 _verdict_bits.append("mathematical certificate WITHHELD")
@@ -1796,7 +2205,7 @@ def generate_pdf_report(
                     f'<br/>{_truth_summary}'
                     f'<br/><i>{_CERT_DEF}</i>'
                 ),
-                sections=_truth_sections,
+                sections=_summary_sections,
                 style=_verdict_p,
                 background=colors.HexColor("#FEF2F2"),
                 border=colors.HexColor("#E5A9A9"),
@@ -1805,7 +2214,7 @@ def generate_pdf_report(
             )
             story.append(_verdict_tbl)
             story.append(Spacer(1, 8))
-        elif _plan_verdict == _VERDICT_ADVISORY:
+        elif _plan_verdict == PLAN_VERDICT_ADVISORY:
             # A passing/advised plan still publishes its page-1 evidence.  The
             # in-app print banner shows these rows on every plan; printing them
             # only when the certificate fails made the two page-1 lists differ.
@@ -1819,7 +2228,7 @@ def generate_pdf_report(
                     'PLAN ADVISORIES — DISCLOSED ON THE DRAWING</b></font>'
                 ),
                 lead_html=f'<br/>{_verdict_line}<br/>{_truth_summary}<br/><i>{_CERT_DEF}</i>',
-                sections=_truth_sections,
+                sections=_summary_sections,
                 style=_adv_p,
                 background=COLOR_AMBER_TINT,
                 border=COLOR_AMBER_BORDER,
@@ -1828,7 +2237,7 @@ def generate_pdf_report(
             )
             story.append(_adv_tbl)
             story.append(Spacer(1, 8))
-        elif _plan_verdict == _VERDICT_CERTIFIED:
+        elif _plan_verdict == PLAN_VERDICT_CERTIFIED:
             # A certified plan says so on page 1 too: the verdict is a fact the
             # reader should not have to infer from the absence of a warning.
             _cert_p = ParagraphStyle(
@@ -1842,11 +2251,12 @@ def generate_pdf_report(
                 ),
                 lead_html=(
                     f'<br/>{_verdict_line}<br/>'
-                    'Listed, within-cap deviations do not withhold the certificate; '
-                    f'every row is printed in this report.<br/>{_truth_summary}'
+                    'The drawing passes the statutory/safety gates. Listed, within-cap '
+                    'deviations are disclosed below and in Appendix A; they do not '
+                    f'withhold the certificate.<br/>{_truth_summary}'
                     f'<br/><i>{_CERT_DEF}</i>'
                 ),
-                sections=_truth_sections,
+                sections=_summary_sections,
                 style=_cert_p,
                 background=COLOR_GREEN_TINT,
                 border=COLOR_GREEN_BORDER,
@@ -1855,6 +2265,14 @@ def generate_pdf_report(
             )
             story.append(_cert_tbl)
             story.append(Spacer(1, 8))
+
+    # Data-quality notices sit directly under the verdict: important, but never
+    # ahead of the certification fact they qualify.  The strategy chain follows
+    # the notices as supporting evidence.
+    if _deferred_data_notices:
+        story.extend(_deferred_data_notices)
+    if _chain_flowables:
+        story.extend(_chain_flowables)
 
     if not is_dossier_only:
         # -------------------------------------------------------------------------
@@ -2660,10 +3078,12 @@ def generate_pdf_report(
 
         # Mathematical Validity Certificate block on Sheet 10.0
         cert = _get(multi_storey, "mathematical_certificate") or _get(floorplan, "mathematical_certificate") or {}
-        # The printed verdict must be derived, exactly like the screen: gate
-        # status, warnings and every invariant flag are read from the payload
-        # Nothing is printed as satisfied unconditionally.
-        _cert_warnings = list(_get(floorplan, "warnings", []) or []) + list(_get(multi_storey, "warnings", []) or [])
+        # The printed verdict IS the authoritative plan verdict published by
+        # the API.  It is never re-derived from a warning count here: a
+        # certified plan with 42 listed deviations used to print "CERTIFIED -
+        # ADVISORIES" and "127 advisories" while page 1 said CERTIFIED with 0
+        # unresolved breaches, because the block added the plan's and the
+        # multi-storey model's warning lists together.
         _cert_gate = ((cert or {}).get("details") or {}).get("validation_gate") or _get(multi_storey, "validation_gate") or {}
         _cert_gate_status = str(_cert_gate.get("overall_status") or "").upper()
         # A gate that never ran is NOT a pass: "" must not fall
@@ -2673,16 +3093,22 @@ def generate_pdf_report(
             f"GATE-{l.get('layer_id')}" for l in (_cert_gate.get("layers") or [])
             if str(l.get("status", "")).upper() == "FAIL"
         ]
+        _cert_plan_payload = floorplan if isinstance(floorplan, dict) else {}
+        if not _cert_plan_payload.get("plan_verdict") and isinstance(multi_storey, dict):
+            _cert_plan_payload = {**_cert_plan_payload, **multi_storey}
+        _cert_truth = plan_truth_labels(_cert_plan_payload) if _cert_plan_payload else {
+            "counts": {"certificate_failures": 0, "listed_deviations": 0, "unresolved_breaches": 0}
+        }
+        _cert_plan_verdict = _authoritative_plan_verdict(_cert_plan_payload) or _plan_verdict
         if cert:
             cert_id = str(cert.get("certificate_id", "CERT-MATH-VALID-2026"))
-            is_valid = bool(cert.get("is_valid", True)) and _cert_gate_status != "FAIL"
-            if not is_valid:
+            if _cert_plan_verdict == PLAN_VERDICT_FAIL_STAMP:
                 status_text = "NON-COMPLIANT"
                 status_color = "#D70015"
             elif not _gate_ran:
                 status_text = "UNVERIFIED - GATE DID NOT RUN"
                 status_color = "#B25E00"
-            elif _cert_gate_status == "WARN" or _cert_warnings:
+            elif _cert_plan_verdict == PLAN_VERDICT_ADVISORY:
                 status_text = "CERTIFIED - ADVISORIES"
                 status_color = "#B25E00"
             else:
@@ -2743,22 +3169,30 @@ def generate_pdf_report(
             rules_list = cert.get("certified_rules") or []
             _passed = sum(1 for _, s, _ in cert_checks if s == "PASS")
             _total = len(cert_checks)
-            if not is_valid:
-                _verdict = f"NOT CERTIFIED - {_passed}/{_total} invariants"
+            _cert_counts = _cert_truth.get("counts") or {}
+            _cert_counts_line = (
+                f"{int(_cert_counts.get('listed_deviations', 0))} listed deviations · "
+                f"{int(_cert_counts.get('unresolved_breaches', 0))} unresolved breaches"
+            )
+            if _cert_plan_verdict == PLAN_VERDICT_FAIL_STAMP:
+                _verdict = f"NOT CERTIFIED - {_passed}/{_total} invariants · {_cert_counts_line}"
                 if _gate_fail_ids:
                     _verdict += " - failing: " + ", ".join(_gate_fail_ids)
                 _verdict_color = "#D70015"
             elif not _gate_ran:
                 _verdict = f"UNVERIFIED - gate did not run - {_passed}/{_total} invariants"
                 _verdict_color = "#B25E00"
-            elif _cert_gate_status == "WARN" or _cert_warnings:
+            elif _cert_plan_verdict == PLAN_VERDICT_ADVISORY:
                 _verdict = (
-                    f"CERTIFIED - {_passed}/{_total} invariants - "
-                    f"{len(_cert_warnings)} advisor{'y' if len(_cert_warnings) == 1 else 'ies'}"
+                    f"CERTIFIED WITH ADVISORIES - {_passed}/{_total} invariants · "
+                    f"{_cert_counts_line}"
                 )
                 _verdict_color = "#B25E00"
             else:
-                _verdict = f"100% SATISFIED - {_passed}/{_total} invariants"
+                _verdict = (
+                    f"CERTIFIED - {_passed}/{_total} invariants · "
+                    f"{_cert_counts_line}"
+                )
                 _verdict_color = "#166534"
             rules_str = ", ".join(rules_list[:10]) if rules_list else "none"
             if len(rules_list) > 10:
@@ -3227,7 +3661,64 @@ def generate_pdf_report(
         story.append(Spacer(1, 12))
         story.append(make_callout(disclaimer_text, width=CONTENT_WIDTH_PT))
 
+    # Appendix A: the complete finding ledger.  Page 1 summarises; this is the
+    # record.  It is added for every plan with any truth rows or engine findings
+    # and never replaces a row with a count.
+    _has_ledger = bool(
+        _plan_payload
+        and (
+            (_truth.get("certificate_failures") or [])
+            or (_truth.get("listed_deviations") or [])
+            or (_truth.get("unresolved_breaches") or [])
+            or (_plan_payload.get("warnings") or [])
+        )
+    )
+    if _has_ledger:
+        story.extend(make_finding_ledger_appendix(_plan_payload, pdf_warnings))
+
     # Build document using NumberedCanvas
     doc.build(story, canvasmaker=NumberedCanvas)
     buffer.seek(0)
     return buffer
+
+
+def generate_pdf_report_with_cache(
+    data: Dict[str, Any],
+    site_vision: Optional[Dict[str, Any]] = None,
+    floor_plan: Optional[Dict[str, Any]] = None,
+    dossier_only: bool = False,
+    include_construction_schedules: Optional[bool] = None,
+    cache_key_data: Optional[Dict[str, Any]] = None,
+    template_version: str = REPORT_TEMPLATE_VERSION,
+) -> Tuple[io.BytesIO, bool]:
+    """Assemble a report once per canonical request.
+
+    Returns ``(stream, cache_hit)``.  The cache stores bytes only after a
+    successful build; an exception leaves no entry.  ``cache_key_data`` lets a
+    caller omit display-only metadata (for example the dossier's issue clock)
+    from the identity while still rendering it on the miss.  The output mode is
+    part of the key, so a dossier and a full report cannot share bytes.
+    """
+    key = report_cache_key(
+        cache_key_data if cache_key_data is not None else data,
+        site_vision,
+        floor_plan,
+        template_version=template_version,
+        options={
+            "dossier_only": bool(dossier_only),
+            "include_construction_schedules": include_construction_schedules,
+        },
+    )
+    cached = _cache_get_report(key)
+    if cached is not None:
+        return io.BytesIO(cached), True
+    stream = generate_pdf_report(
+        data,
+        site_vision=site_vision,
+        floor_plan=floor_plan,
+        dossier_only=dossier_only,
+        include_construction_schedules=include_construction_schedules,
+    )
+    assembled = stream.getvalue()
+    _cache_put_report(key, assembled)
+    return io.BytesIO(assembled), False
