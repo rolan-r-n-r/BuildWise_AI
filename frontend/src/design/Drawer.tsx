@@ -11,7 +11,7 @@
  * scroll contained (no chaining to the page).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useReducedMotion } from './primitives';
+import { usePresence, useReducedMotion } from './primitives';
 import { Z_INDEX } from './tokens';
 
 export type DrawerSide = 'left' | 'right' | 'bottom';
@@ -57,6 +57,7 @@ export const Drawer: React.FC<DrawerProps> = ({
     dismissing: false,
   });
   const reduced = useReducedMotion();
+  const presence = usePresence(open);
 
   /* Focus management: trap + restore + initial focus */
   useEffect(() => {
@@ -146,7 +147,7 @@ export const Drawer: React.FC<DrawerProps> = ({
     }
   }, [dragY, onClose]);
 
-  if (!open) return null;
+  if (!presence.mounted) return null;
 
   const isBottom = side === 'bottom';
   const isLeft = side === 'left';
@@ -174,7 +175,7 @@ export const Drawer: React.FC<DrawerProps> = ({
       <div
         aria-hidden="true"
         onClick={onClose}
-        className="fixed inset-0 bg-black/25 z-[1040] animate-scrim"
+        className={`fixed inset-0 bg-black/25 z-[1040] ${presence.exiting ? 'animate-scrim-out' : 'animate-scrim'}`}
         style={{ zIndex: Z_INDEX.popover - 10 }}
       />
       {/* Panel */}
@@ -185,6 +186,8 @@ export const Drawer: React.FC<DrawerProps> = ({
         aria-modal="true"
         aria-label={label}
         tabIndex={-1}
+        data-side={side}
+        data-exiting={presence.exiting ? 'true' : 'false'}
         className={`fixed bw-drawer bw-scroll-pane ${isBottom ? 'bw-drawer-bottom' : ''} ${className}`}
         style={{
           zIndex: Z_INDEX.popover,

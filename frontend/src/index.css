@@ -70,7 +70,10 @@
   --motion-duration-base: 150ms;
   --motion-duration-slow: 200ms;
   --motion-duration-sheet: 250ms;
+  --motion-duration-popover: 180ms;
+  --motion-duration-panel: 280ms;
   --motion-ease-out: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --motion-ease-spatial: cubic-bezier(0.22, 0.61, 0.36, 1);
   /* Density tokens (design/tokens.ts DENSITY mirrors these) */
   --density-row-h: 40px;
   --density-pad-card: 16px;
@@ -122,7 +125,10 @@
   --motion-duration-base: 150ms;
   --motion-duration-slow: 200ms;
   --motion-duration-sheet: 250ms;
+  --motion-duration-popover: 180ms;
+  --motion-duration-panel: 280ms;
   --motion-ease-out: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --motion-ease-spatial: cubic-bezier(0.22, 0.61, 0.36, 1);
   /* Density tokens (design/tokens.ts DENSITY mirrors these) */
   --density-row-h: 40px;
   --density-pad-card: 16px;
@@ -155,6 +161,11 @@
   /* Off-scale sheet duration (drawer/camera) used by ui('sheet') */
   .duration-250 {
     transition-duration: var(--motion-duration-sheet);
+  }
+
+  /* Spatial curve for JS-adjacent surfaces (drawers, map sheets). */
+  .ease-spatial {
+    transition-timing-function: var(--motion-ease-spatial);
   }
 
   /* Tabular (fixed-width) numerals for ALL measurements */
@@ -304,9 +315,58 @@
   margin: 8px auto 4px;
 }
 
+/* Drawer presence: enter from the edge it belongs to, leave the same way.
+   Transform + opacity only — no layout property is animated. The reduced-
+   motion path does not mount at all (usePresence), so these keyframes never
+   play for a reader who asked for less motion. */
+@keyframes bwDrawerInRight {
+  from { opacity: 0; transform: translate3d(28px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes bwDrawerOutRight {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(28px, 0, 0); }
+}
+@keyframes bwDrawerInLeft {
+  from { opacity: 0; transform: translate3d(-28px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes bwDrawerOutLeft {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(-28px, 0, 0); }
+}
+@keyframes bwDrawerInBottom {
+  from { opacity: 0.4; transform: translate3d(0, 40px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes bwDrawerOutBottom {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(0, 40px, 0); }
+}
+
+.bw-drawer[data-side='right'] {
+  animation: bwDrawerInRight var(--motion-duration-panel) var(--motion-ease-spatial) both;
+}
+.bw-drawer[data-side='left'] {
+  animation: bwDrawerInLeft var(--motion-duration-panel) var(--motion-ease-spatial) both;
+}
+.bw-drawer[data-side='bottom'] {
+  animation: bwDrawerInBottom var(--motion-duration-panel) var(--motion-ease-spatial) both;
+}
+.bw-drawer[data-side='right'][data-exiting='true'] {
+  animation: bwDrawerOutRight 180ms var(--motion-ease-out) both;
+}
+.bw-drawer[data-side='left'][data-exiting='true'] {
+  animation: bwDrawerOutLeft 180ms var(--motion-ease-out) both;
+}
+.bw-drawer[data-side='bottom'][data-exiting='true'] {
+  animation: bwDrawerOutBottom 180ms var(--motion-ease-out) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .bw-drawer {
     transition: none;
+    animation: none !important;
   }
 }
 
@@ -349,6 +409,40 @@
 .animate-popover-open {
   animation: popoverOpen 150ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
   transform-origin: top;
+}
+
+/* Exit keyframes for surfaces kept mounted by usePresence. */
+@keyframes scrimFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.animate-scrim-out {
+  animation: scrimFadeOut 200ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+
+@keyframes sheetScaleFadeOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.985); }
+}
+.animate-sheet-out {
+  animation: sheetScaleFadeOut 200ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+  transform-origin: center center;
+}
+
+@keyframes toastOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(4px) scale(0.985); }
+}
+.animate-toast-out {
+  animation: toastOut 160ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-scrim-out,
+  .animate-sheet-out,
+  .animate-toast-out {
+    animation: none !important;
+  }
 }
 
 /* Floating Vibrancy Surfaces.

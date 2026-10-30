@@ -33,6 +33,12 @@ export const MOTION = {
     slow: 200,
     /** Map camera / drawer sheet (drag-adjacent, outside the 150-200 band by design) */
     sheet: 250,
+    /** Popovers and inline menus — one step above a control, below a panel. */
+    popover: 180,
+    /** Drawers and modals: long enough to read as a surface, not a flash. */
+    panel: 280,
+    /** Spatial camera moves (gated by usePresence / readSpatialDuration). */
+    spatial: 720,
   },
   ease: {
     /** Standard deceleration — iOS ease-out */
@@ -41,6 +47,12 @@ export const MOTION = {
     outBack: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
     /** Symmetric (theme cross-fades) */
     inOut: 'cubic-bezier(0.65, 0, 0.35, 1)',
+    /**
+     * Spatial ease — starts decisively, lands softly. Used for map camera
+     * flights and drawers: a long distance should not share the 150 ms control
+     * curve, or the last third of the movement is a crawl.
+     */
+    spatial: 'cubic-bezier(0.22, 0.61, 0.36, 1)',
   },
 } as const;
 
@@ -61,6 +73,10 @@ export function ui(token: MotionToken): string {
       return 'transition-[color,background-color,border-color,opacity,box-shadow,transform] duration-200 ease-apple';
     case 'sheet':
       return 'transition-[color,background-color,border-color,opacity,box-shadow,transform] duration-250 ease-apple';
+    case 'popover':
+      return 'transition-[color,background-color,border-color,opacity,box-shadow,transform] duration-[180ms] ease-apple';
+    case 'panel':
+      return 'transition-[color,background-color,border-color,opacity,box-shadow,transform] duration-[280ms] ease-spatial';
     case 'base':
     default:
       return 'transition-[color,background-color,border-color,opacity,box-shadow,transform] duration-150 ease-apple';
@@ -167,6 +183,55 @@ export const MAP_CAPTURE = {
 } as const;
 
 /* ------------------------------------------------------------------ */
+/* MAP CARTOGRAPHY — mode-specific raster treatment                   */
+/* Justification: MapLibre paint properties need concrete numbers, not */
+/* CSS variables. Keeping them here means the satellites/terrain look  */
+/* is tuned in one place and reviewed like every other visual token.   */
+/* ------------------------------------------------------------------ */
+export const MAP_CARTOGRAPHY = {
+  /** Satellite: street lines are context, not the subject. */
+  satellite: {
+    roadOpacity: 0.34,
+    saturation: -0.05,
+    contrast: 0.04,
+  },
+  /** Terrain: keep relief legible without the topo sheet shouting. */
+  terrain: {
+    saturation: -0.18,
+    contrast: 0,
+    brightnessMax: 1,
+    brightnessMaxDark: 0.66,
+    hillshadeExaggeration: 0.32,
+    pitch: 48,
+  },
+  /** Standard-mode massing. One step lighter on dark so roofs read as volume. */
+  buildingLight: '#E8E6E1',
+  buildingDark: '#344054',
+  /**
+   * Dark-mode map ground. The provider's near-black ground swallowed the
+   * building massing and left the roads as the only legible thing on screen;
+   * one step of navy restores ground-to-roof separation without turning the
+   * dark theme into a light map.
+   */
+  backgroundDark: '#141A24',
+} as const;
+
+/* ------------------------------------------------------------------ */
+/* CAMERA — spatial transition timing                                 */
+/* `readSpatialDuration` is the JS-side honour of the same reduced-    */
+/* motion contract the stylesheet applies to CSS transitions.          */
+/* ------------------------------------------------------------------ */
+export function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/** Camera duration in ms, collapsed to 0 when the reader asks for less motion. */
+export function spatialDuration(ms: number = MOTION.duration.spatial): number {
+  return prefersReducedMotion() ? 0 : ms;
+}
+
+/* ------------------------------------------------------------------ */
 /* MAP OVERLAY — site preview rendering                               */
 /* Justification: MapLibre layer `paint` props need concrete strings,  */
 /* not CSS vars; defined ONCE here and consumed by the preview overlay */
@@ -187,4 +252,7 @@ export const MAP_OVERLAY = {
   frontage: '#64D2FF',
   /** Arrow/marker halo */
   markerStroke: '#FFFFFF',
+  /** Dimming veil outside the selected plot (never above the overlays). */
+  spotlight: '#000000',
+  spotlightOpacity: 0.1,
 } as const;

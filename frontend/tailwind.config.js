@@ -76,12 +76,15 @@ export default {
         75: '75ms',
         100: '100ms',
         150: '150ms',
+        180: '180ms',
         200: '200ms',
         250: '250ms',
+        280: '280ms',
         300: '300ms',
       },
       transitionTimingFunction: {
         apple: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+        spatial: 'cubic-bezier(0.22, 0.61, 0.36, 1)',
       },
       keyframes: {
         'scrim-fade': {

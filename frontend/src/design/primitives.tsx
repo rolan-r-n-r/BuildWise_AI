@@ -22,6 +22,8 @@ import React, {
 import ReactDOM from 'react-dom';
 import {
   ui,
+  MOTION,
+  prefersReducedMotion,
   TABULAR_NUMS_CLASS as tabularCls,
   Z_INDEX,
   RADII,
@@ -57,6 +59,8 @@ export interface ToastItem {
 
 export interface DesignContextValue {
   toasts: ToastItem[];
+  /** Toasts in their exit animation; kept in `toasts` until it completes. */
+  exitingToasts: number[];
   dismissToast: (id: number) => void;
   pushToast: (t: Omit<ToastItem, 'id'>) => void;
   reducedMotion: boolean;
@@ -67,16 +71,35 @@ const DesignContext = createContext<DesignContextValue | null>(null);
 export function DesignProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const reducedMotion = useReducedMotion();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [exitingToasts, setExitingToasts] = useState<number[]>([]);
   const nextId = useRef(1);
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const exitTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
   const dismissToast = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
     const timer = timers.current.get(id);
     if (timer) {
       clearTimeout(timer);
       timers.current.delete(id);
     }
+    // A notification is a small surface: fade it out, then remove it. Under
+    // reduced motion the removal is immediate (the CSS rule already collapses
+    // the keyframe, but keeping the node around for 160 ms would still look
+    // like a delayed state change).
+    if (prefersReducedMotion()) {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+      setExitingToasts((prev) => prev.filter((x) => x !== id));
+      return;
+    }
+    const existingExit = exitTimers.current.get(id);
+    if (existingExit) clearTimeout(existingExit);
+    setExitingToasts((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    const exit = setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+      setExitingToasts((prev) => prev.filter((x) => x !== id));
+      exitTimers.current.delete(id);
+    }, 160);
+    exitTimers.current.set(id, exit);
   }, []);
 
   const pushToast = useCallback(
@@ -96,25 +119,61 @@ export function DesignProvider({ children }: { children: React.ReactNode }): Rea
 
   useEffect(() => {
     const pending = timers.current;
+    const exits = exitTimers.current;
     return () => {
       pending.forEach(clearTimeout);
       pending.clear();
+      exits.forEach(clearTimeout);
+      exits.clear();
     };
   }, []);
 
   const ctx = useMemo<DesignContextValue>(
-    () => ({ toasts, dismissToast, pushToast, reducedMotion }),
-    [toasts, dismissToast, pushToast, reducedMotion]
+    () => ({ toasts, exitingToasts, dismissToast, pushToast, reducedMotion }),
+    [toasts, exitingToasts, dismissToast, pushToast, reducedMotion]
   );
 
   return <DesignContext.Provider value={ctx}>{children}</DesignContext.Provider>;
+}
+
+/**
+ * usePresence — keeps a surface mounted long enough to animate OUT.
+ *
+ * A conditional `{open && <Sheet/>}` can enter beautifully and still disappear
+ * in one frame, because unmounting has no transition. This returns `mounted`
+ * for the render condition and `exiting` for the closing class. Reduced motion
+ * unmounts immediately: there is no point holding a surface for an animation
+ * the reader asked not to see.
+ */
+export function usePresence(
+  open: boolean,
+  exitMs: number = MOTION.duration.panel,
+): { mounted: boolean; exiting: boolean } {
+  const [mounted, setMounted] = useState<boolean>(open);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      return;
+    }
+    if (!mounted) return;
+    const duration = prefersReducedMotion() ? 0 : exitMs;
+    if (duration === 0) {
+      setMounted(false);
+      return;
+    }
+    const timer = setTimeout(() => setMounted(false), duration);
+    return () => clearTimeout(timer);
+  }, [open, mounted, exitMs]);
+
+  return { mounted, exiting: mounted && !open };
 }
 
 export function useDesign(): DesignContextValue {
   const ctx = useContext(DesignContext);
   if (!ctx) {
     // Headless fallback so primitives work outside the provider (tests, fragments).
-    return { toasts: [], dismissToast: () => {}, pushToast: () => {}, reducedMotion: false };
+    return { toasts: [], exitingToasts: [], dismissToast: () => {}, pushToast: () => {}, reducedMotion: false };
   }
   return ctx;
 }
@@ -599,6 +658,7 @@ export const Sheet: React.FC<SheetProps> = ({
 }) => {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const presence = usePresence(open, MOTION.duration.panel);
 
   useEffect(() => {
     if (!open) return;
@@ -624,12 +684,12 @@ export const Sheet: React.FC<SheetProps> = ({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!presence.mounted) return null;
 
   return ReactDOM.createPortal(
     <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex }}>
       <div
-        className="animate-scrim absolute inset-0 bg-black/35 backdrop-blur-[2px]"
+        className={`${presence.exiting ? 'animate-scrim-out' : 'animate-scrim'} absolute inset-0 bg-black/35 backdrop-blur-[2px]`}
         onClick={onClose}
         aria-hidden="true"
       />
@@ -639,7 +699,7 @@ export const Sheet: React.FC<SheetProps> = ({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`animate-sheet-in relative flex max-h-[min(85vh,720px)] w-full flex-col ${widthClass} vibrancy-panel rounded-[16px] shadow-2xl focus:outline-none`}
+        className={`${presence.exiting ? 'animate-sheet-out' : 'animate-sheet-in'} relative flex max-h-[min(85vh,720px)] w-full flex-col ${widthClass} vibrancy-panel rounded-[16px] shadow-2xl focus:outline-none`}
       >
         <div className="flex items-start justify-between gap-3 border-b border-[var(--hairline)] px-5 py-3.5">
           <div className="min-w-0">
@@ -737,7 +797,7 @@ const TOAST_TONE_PATH: Record<NonNullable<ToastItem['tone']>, string> = {
 };
 
 export const ToastViewport: React.FC = () => {
-  const { toasts, dismissToast } = useDesign();
+  const { toasts, exitingToasts, dismissToast } = useDesign();
   if (toasts.length === 0) return null;
   return ReactDOM.createPortal(
     <div
@@ -750,7 +810,8 @@ export const ToastViewport: React.FC = () => {
         <div
           key={t.id}
           role="status"
-          className={`animate-toast-in pointer-events-auto flex items-center gap-2.5 rounded-[12px] px-3.5 py-2.5 shadow-xl vibrancy-panel ${ui('slow')}`}
+          data-exiting={exitingToasts.includes(t.id) ? 'true' : 'false'}
+          className={`${exitingToasts.includes(t.id) ? 'animate-toast-out pointer-events-none' : 'animate-toast-in pointer-events-auto'} flex items-center gap-2.5 rounded-[12px] px-3.5 py-2.5 shadow-xl vibrancy-panel ${ui('slow')}`}
         >
           {t.tone && t.tone !== 'neutral' && (
             <svg
