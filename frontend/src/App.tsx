@@ -22,6 +22,7 @@ import type { CaptureStep } from './components/map/CaptureSheet';
 import { BoundaryChip } from './components/map/BoundaryChip';
 import { SitePreviewHUD } from './components/map/SitePreviewHUD';
 import { useSitePreview } from './hooks/useSitePreview';
+import { usePlotCameraFocus } from './hooks/usePlotCameraFocus';
 import type { SharedBoundaryState } from './services/siteBoundary';
 import { boundaryToSummaryPayload } from './services/siteIntelligence';
 import type { Map as MaplibreMap } from 'maplibre-gl';
@@ -252,6 +253,10 @@ const AppShell: React.FC = () => {
   const [captureOpen, setCaptureOpen] = useState<boolean>(wantsCapture);
   const [captureStep, setCaptureStep] = useState<CaptureStep>('locate');
   const mapInstanceRef = useRef<MaplibreMap | null>(null);
+  const [mapReady, setMapReady] = useState<boolean>(false);
+  // Desktop results panel. Declared here because the plot-camera hook needs the
+  // panel's inset before the rest of the shell state exists.
+  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(true);
 
   // Deterministic site preview (overlay + HUD) whenever a boundary exists.
   const [previewDismissed, setPreviewDismissed] = useState<boolean>(false);
@@ -270,11 +275,6 @@ const AppShell: React.FC = () => {
     coverageRatio: request.ground_coverage_ratio ?? 0.6,
     enabled: !captureOpen && !previewDismissed,
   });
-  const handleDismissPreview = useCallback((): void => {
-    setPreviewDismissed(true);
-    dismissPreview();
-  }, [dismissPreview]);
-
   // Responsive foundation: live capability tier + viewport class.
   const tier = useTier();
   const viewportClass = useViewportClass();
@@ -286,6 +286,25 @@ const AppShell: React.FC = () => {
   const mapSectionRef = useRef<HTMLElement | null>(null);
   const mapIntent = useMapLoadIntent(mapSectionRef);
   const mapEngineReady = mapIntent.deferred ? mapIntent.engaged : true;
+  /**
+   * A captured plot is a SELECTION, not just an overlay. Framing it (and
+   * restoring the previous camera when its panel closes) lives in one hook so
+   * the panel's open/close contract and the camera's have a single owner.
+   */
+  const plotCamera = usePlotCameraFocus({
+    getMap: getMapInstance,
+    boundary,
+    enabled: boundary !== null && !captureOpen && !previewDismissed,
+    captureOpen,
+    mapReady,
+    leftPanelOpen: tier === 'FULL',
+    rightPanelOpen: tier === 'FULL' && isDrawerOpen,
+  });
+  const handleDismissPreview = useCallback((): void => {
+    setPreviewDismissed(true);
+    dismissPreview();
+    plotCamera.restore();
+  }, [dismissPreview, plotCamera]);
   // ASSISTED mode: narrow viewport (<768px) OR coarse primary pointer.
   // All capabilities stay available; precision authoring is assisted, not exact.
   const compactAuthoring = useCompactAuthoring();
@@ -373,8 +392,8 @@ const AppShell: React.FC = () => {
   const [serverStatus, setServerStatus] = useState<{ groq: boolean; gemini: boolean } | null>(null);
   const [isMethodologyOpen, setIsMethodologyOpen] = useState<boolean>(false);
 
-  // Responsive Drawer State: persistent on desktop (>=1024px)
-  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(true);
+  // Responsive drawer geometry: the open/closed state itself is declared with
+  // the map camera state above; this is the resize token it triggers.
   const [mapResizeTrigger, setMapResizeTrigger] = useState<number>(0);
 
   // Telemetry Warnings State
@@ -1131,6 +1150,7 @@ const AppShell: React.FC = () => {
           maxZoom={captureOpen || boundary !== null ? 20 : 18}
           onMapReady={(map) => {
             mapInstanceRef.current = map;
+            setMapReady(map !== null);
           }}
           className="w-full h-full"
         /> : <MapPlaceholder />}
@@ -1322,7 +1342,11 @@ const AppShell: React.FC = () => {
       {/* SOFT notice + copy-link — never blocks interaction; session-dismissed via  */}
       {/* "Continue"; yields to the capture wizard (chip/HUD precedent).             */}
       {/* ========================================================================= */}
-      {!compactAuthoring || captureOpen ? null : (
+      {/* The assisted-mode tip is for the act of tracing. Once a plot exists,
+          the bottom band belongs to the plot's own chip/HUD; keeping a
+          "desktop recommended" notice there covered real measurements on a
+          phone. It yields, exactly as it already does to the capture wizard. */}
+      {!compactAuthoring || captureOpen || boundary !== null ? null : (
         <AssistedBar
           noticeVisible={!assistedNoticeDismissed}
           onContinue={handleAssistedContinue}
@@ -1346,7 +1370,11 @@ const AppShell: React.FC = () => {
           }}
           aria-expanded={isDrawerOpen}
           aria-controls="results-drawer"
-          aria-label={isDrawerOpen ? 'Close analysis panel' : 'Open analysis panel'}
+          // The visible label IS the name. A separate aria-label ("Close analysis
+          // panel") repeated the opposite of "Hide Panel" and failed
+          // label-content-name-mismatch; the action is already carried by
+          // aria-expanded + aria-controls.
+          title={isDrawerOpen ? 'Close the analysis panel' : 'Open the analysis panel'}
           className="h-8 flex items-center gap-2 px-3 rounded-[12px] vibrancy-panel text-[12px] font-medium text-[var(--text-1)] border border-[var(--panel-border-color)] shadow-md hover:bg-[var(--fill)] transition-colors active:brightness-95 cursor-pointer select-none"
         >
           <Icon name="layers" size={14} className="text-[var(--accent-ink)]" />

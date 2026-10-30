@@ -500,6 +500,12 @@ function parseLocationName(displayName: string): { title: string; subtitle: stri
             }}
             placeholder="Search location…"
             aria-label="Search for a location"
+            // A textbox may not own aria-expanded / aria-activedescendant: those
+            // belong to the combobox pattern this field implements. Without the
+            // role, assistive tech gets the autocomplete attributes on the wrong
+            // widget (axe: aria-allowed-attr, critical).
+            role="combobox"
+            aria-haspopup="listbox"
             aria-autocomplete="list"
             aria-expanded={isSuggestionsOpen}
             aria-controls="geocode-suggestions-list"
