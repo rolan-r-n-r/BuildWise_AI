@@ -44,11 +44,19 @@ export const SitePreviewHUD: React.FC<SitePreviewHUDProps> = ({
   return (
     <div
       data-testid="site-preview-hud"
-      className="absolute bottom-[96px] sm:bottom-[104px] right-2 sm:right-3 lg:right-[384px] z-[999] pointer-events-none max-w-[calc(100vw-16px)] sm:max-w-[calc(100vw-24px)]"
+      /*
+       * The HUD is a property summary, so it must never slide under the left
+       * parameters panel or clip its own dismiss control on a phone.
+       *   • compact: pinned to both edges, above the boundary chip; the assisted
+       *     bar yields once a plot exists (App).
+       *   • desktop: bounded by both floating panels and right-aligned inside
+       *     that band, never starting under the 340px sidebar.
+       */
+      className="absolute bottom-[118px] left-2 right-2 z-[999] pointer-events-none flex justify-end min-w-0 sm:bottom-[104px] sm:left-auto sm:right-3 lg:left-[364px] lg:right-[384px]"
       role="status"
       aria-label="Site preview measurements"
     >
-      <div className="vibrancy-panel rounded-[14px] shadow-lg border border-[var(--panel-border-color)] px-2.5 sm:px-3 py-1.5 sm:py-2 pointer-events-auto max-w-full">
+      <div className="vibrancy-panel rounded-[14px] shadow-lg border border-[var(--panel-border-color)] px-2.5 sm:px-3 py-1.5 sm:py-2 pointer-events-auto w-fit max-w-full min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--text-1)] shrink-0">
             <Icon name="layers" size={13} className="text-[var(--accent-ink)]" />

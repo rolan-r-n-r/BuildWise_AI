@@ -15,6 +15,7 @@ import { MAP_OVERLAY } from '../../design/tokens';
 import { unprojectToLngLat, type LocalOrigin } from '../../services/projection';
 import type { SitePreviewResponse } from '../../services/siteIntelligence';
 
+const SPOTLIGHT_SRC = 'bw-preview-spotlight';
 const SETBACK_SRC = 'bw-preview-setback';
 const BUILDABLE_SRC = 'bw-preview-buildable';
 const FOOTPRINT_SRC = 'bw-preview-footprint';
@@ -42,6 +43,37 @@ function ringFeature(ring: [number, number][], origin: Origin, props: Record<str
 
 function emptyPoly(): GeoJSON.Feature<GeoJSON.Polygon> {
   return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[]] } };
+}
+
+/**
+ * A world-sized veil with the selected plot punched out. It is the map's
+ * equivalent of lowering the room lights: unrelated parcels and labels recede,
+ * the surveyed ring keeps its full contrast, and no filter is composited over
+ * the canvas. The hole is the opposite winding of the outer ring so the fill
+ * rule is unambiguous.
+ */
+function spotlightFeature(
+  ring: [number, number][],
+  origin: Origin,
+): GeoJSON.Feature<GeoJSON.Polygon> {
+  const hole = ring.length >= 3 ? [...ring, ring[0]].map((v) => project(v, origin)).reverse() : [];
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-180, -85],
+          [180, -85],
+          [180, 85],
+          [-180, 85],
+          [-180, -85],
+        ],
+        hole,
+      ],
+    },
+  };
 }
 
 function emptyLine(): GeoJSON.Feature<GeoJSON.LineString> {
@@ -89,6 +121,7 @@ function ensureArrowImage(map: MlMap): void {
 export function installPreviewLayers(map: MlMap): void {
   if (map.getSource(SETBACK_SRC)) return;
 
+  map.addSource(SPOTLIGHT_SRC, { type: 'geojson', data: emptyPoly() });
   map.addSource(SETBACK_SRC, { type: 'geojson', data: emptyPoly() });
   map.addSource(BUILDABLE_SRC, { type: 'geojson', data: emptyPoly() });
   map.addSource(FOOTPRINT_SRC, { type: 'geojson', data: emptyPoly() });
@@ -97,7 +130,19 @@ export function installPreviewLayers(map: MlMap): void {
   map.addSource(ARROW_SRC, { type: 'geojson', data: emptyFc() });
   ensureArrowImage(map);
 
-  // Paint order: setback band (bottom) -> buildable -> wedges -> footprint -> frontage (top).
+  // Paint order: spotlight (bottom) -> setback band -> buildable -> wedges ->
+  // footprint -> frontage (top). The spotlight is below every app overlay so
+  // only the basemap is dimmed, never the evidence the reader is inspecting.
+  map.addLayer({
+    id: 'bw-preview-spotlight-fill',
+    type: 'fill',
+    source: SPOTLIGHT_SRC,
+    paint: {
+      'fill-color': MAP_OVERLAY.spotlight,
+      'fill-opacity': MAP_OVERLAY.spotlightOpacity,
+      'fill-opacity-transition': { duration: 240, delay: 0 },
+    },
+  });
   map.addLayer({
     id: 'bw-preview-setback-fill',
     type: 'fill',
@@ -189,6 +234,7 @@ export function updatePreviewSources(map: MlMap, input: PreviewRenderInput): voi
     return;
   }
 
+  apply(SPOTLIGHT_SRC, spotlightFeature(preview.plot.vertices, origin));
   apply(SETBACK_SRC, ringFeature(preview.plot.vertices, origin));
   apply(
     BUILDABLE_SRC,
@@ -244,6 +290,7 @@ export function clearPreviewSources(map: MlMap): void {
     const src = map.getSource(id) as GeoJSONSource | undefined;
     if (src) src.setData(data as never);
   };
+  apply(SPOTLIGHT_SRC, emptyPoly());
   apply(SETBACK_SRC, emptyPoly());
   apply(BUILDABLE_SRC, emptyPoly());
   apply(FOOTPRINT_SRC, emptyPoly());

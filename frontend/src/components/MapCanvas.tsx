@@ -13,6 +13,7 @@ import {
 } from '../services/mapRenderGate';
 import type { GeoJsonFeatureCollection } from '../services/types';
 import { DEFAULT_SITE_ZOOM } from '../services/sessionReset';
+import { MAP_CARTOGRAPHY, spatialDuration } from '../design/tokens';
 
 interface MapCanvasProps {
   latitude: number | null;
@@ -87,18 +88,17 @@ const LABEL_FADE_OUT_MS = 200; // outgoing labels leave early
 const RASTER_TILE_HEAD_START_MS = 80; // let fresh raster tiles decode before revealing
 const TILE_READY_TIMEOUT_MS = 1200; // max wait for incoming raster tiles before fading anyway
 const TILE_CHECK_INTERVAL_MS = 60; // poll frequency for tile-readiness checks
-// Zoom-pulse "dive": the camera pushes in ~1/3 zoom level as the new layer fades in,
-// then settles back — one synchronized beat instead of a flat opacity swap.
-const PULSE_ZOOM_DELTA = 0.32; // zoom levels pushed in at the pulse apex
-const PULSE_IN_MS = 280; // standalone dive-in duration (no pitch change)
-const PULSE_OUT_MS = 420; // settle-back duration
-
-/** Camera ease issued by syncCameraForMode — folded into the zoom pulse when present. */
-interface CameraEaseTarget {
-  pitch: number;
-  bearing?: number;
-  duration: number;
-}
+/**
+ * Camera easing issued by syncCameraForMode is intentionally NOT a zoom pulse.
+ *
+ * A previous "dive" beat pushed the camera ~0.32 zoom levels in on every mode
+ * switch and eased back. It could be stranded at the apex whenever anything
+ * interrupted the settle (a theme style swap, a second switch, the reader
+ * grabbing the map), leaving the camera permanently 0.3z closer than the view
+ * the reader chose — and it made a basemap change feel like a fly-to, which the
+ * map should never do. The cross-fade plus the deliberate pitch change already
+ * carry the transition; zoom, centre and bearing are now untouched.
+ */
 
 // Paint property that controls opacity for each MapLibre layer type. Animating these
 // (instead of flipping `visibility`) is what makes mode switches cross-fade smoothly.
@@ -124,6 +124,46 @@ const PAINT_OPACITY_PROPS: Record<string, string[]> = {
  * to nothing while leaving the correct attribution line on screen.
  */
 const RASTER_OVERLAY_MODE_LAYERS = new Set(['satellite-layer', 'terrain-layer']);
+
+/**
+ * Cartographic grade for the two raster modes.
+ *
+ * These are paint properties, not an image filter: MapLibre applies them on the
+ * GPU, so they cost one uniform change per tile and never composite a second
+ * full-screen surface. Terrain is desaturated and its dark-theme ceiling is
+ * lowered — a full-bright topo sheet under near-black chrome is the one surface
+ * that makes dark mode look unfinished. Satellite gets a hair more contrast so
+ * roofs separate from gardens without the usual saturation crank.
+ */
+const applyMapCartographyTone = (map: maplibregl.Map, theme: 'light' | 'dark') => {
+  const t = MAP_CARTOGRAPHY.terrain;
+  const s = MAP_CARTOGRAPHY.satellite;
+  const set = (layerId: string, prop: string, value: unknown) => {
+    if (!map.getLayer(layerId)) return;
+    try {
+      (map as any).setPaintProperty(layerId, prop, value);
+    } catch {
+      // Non-fatal: a missing layer keeps its authored treatment.
+    }
+  };
+
+  set('terrain-layer', 'raster-saturation', t.saturation);
+  set('terrain-layer', 'raster-contrast', t.contrast);
+  set('terrain-layer', 'raster-brightness-min', 0);
+  set('terrain-layer', 'raster-brightness-max', theme === 'dark' ? t.brightnessMaxDark : t.brightnessMax);
+
+  set('satellite-layer', 'raster-saturation', s.saturation);
+  set('satellite-layer', 'raster-contrast', s.contrast);
+
+  set('hillshade-layer', 'hillshade-exaggeration', t.hillshadeExaggeration);
+
+  // Dark mode only: lift the provider's near-black ground one step so the
+  // building massing and labels separate from it. A style reload restores the
+  // authored light ground, so no undo is needed when toggling back.
+  if (theme === 'dark') {
+    set('background', 'background-color', MAP_CARTOGRAPHY.backgroundDark);
+  }
+};
 
 const isStreetLineLayer = (layer: { type: string; id: string }) =>
   layer.type === 'line' &&
@@ -235,18 +275,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     timer: ReturnType<typeof setTimeout>;
     mode: MapStyleMode;
   } | null>(null);
-  // setTimeout handle for the zoom-pulse settle phase (mode-switch "dive" beat).
-  const zoomPulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // The zoom the camera must settle back to. Captured only when no pulse is already
-  // active, so rapid re-switches mid-dive keep returning to the ORIGINAL zoom instead
-  // of compounding upward (re-basing on mid-flight zoom would drift +Δ per volley).
-  const pulseBaseZoomRef = useRef<number | null>(null);
-  // Previous mode seen by the style effect — distinguishes real mode switches from
-  // initial mount / StrictMode remount so the pulse never fires on page load.
-  const prevMapStyleRef = useRef<MapStyleMode | null>(null);
   // Increments per applyMapStyleVisibility run so awaited tile-readiness gates can
   // detect when a newer switch superseded them mid-await.
   const styleFadeRunIdRef = useRef<number>(0);
+  // Terrain is enabled a beat after the crossfade lands, never at click time
+  // (see the terrain block in applyMapStyleVisibility). One timer, cancelled by
+  // the next switch or unmount.
+  const terrainEnableTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Raster layers deliberately kept visible at opacity 0 as a standing tile cache.
   // The deferred hide pass must never hide these — their residency is what makes
   // subsequent mode switches instant.
@@ -415,7 +450,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       prewarmedRasterLayersRef.current.add(layerId);
     };
 
-    if (map.isMoving() || zoomPulseTimerRef.current !== null) {
+    if (map.isMoving()) {
       // Retry once the camera rests — tiles for a moving viewport are wasted work.
       map.once('idle', () => prewarmRasterTiles(map, mode));
       return;
@@ -479,9 +514,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         continue;
       }
       if (layer.id === '3d-buildings') {
-        // Extrusions live in Standard (vector) and Terrain (relief) views — never over
-        // imagery, and never while the site is the subject (see hideMassing).
-        const massingOff = mode === 'satellite' || hideMassingRef.current;
+        // Extrusions belong to the Standard cartography only. Over imagery they
+        // ghost, and over relief they become a skyline that hides the contours
+        // the mode exists to show — the site is the subject in both views.
+        const massingOff = mode === 'satellite' || mode === 'terrain' || hideMassingRef.current;
         fadeTargets.push({ layerId: layer.id, type: layer.type, target: massingOff ? 0 : 1 });
         continue;
       }
@@ -490,12 +526,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (isCustomOverlayLayer(layer.id)) continue;
 
       let target: number;
-      if (mode === 'standard') {
+      if (layer.type === 'background') {
+        // The background is the crossfade's floor, never a faded participant:
+        // fading it to 0 is what produced a blank canvas when a raster mode's
+        // tiles were slower than the gate. It stays opaque under every mode;
+        // the raster paints over it when ready.
+        target = 1;
+      } else if (mode === 'standard') {
         target = 1;
       } else if (mode === 'satellite') {
-        // Keep only street/road lines above imagery for Apple-style dark cartography
-        // (suppressed when the dedicated vector-street-lines overlay already covers it).
-        target = isStreetLineLayer(layer) && !hasVectorStreets ? 1 : 0;
+        // Street lines stay as context, but at a third of their street-map
+        // weight: imagery is the subject, the road network is a locator.
+        // (Suppressed when a dedicated vector-street overlay already covers it.)
+        target = isStreetLineLayer(layer) && !hasVectorStreets ? MAP_CARTOGRAPHY.satellite.roadOpacity : 0;
       } else {
         target = 0; // terrain
       }
@@ -563,7 +606,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (!props) continue;
 
       const authored = orig.get(layerId) ?? 1;
-      const toValue = target === 1 ? authored : 0;
+      // A target between 0 and 1 is a fraction of the authored weight (satellite
+      // roads); plain 0/1 restore the authored value or remove it entirely.
+      const toValue =
+        target === 1
+          ? authored
+          : target > 0
+            ? typeof authored === 'number'
+              ? authored * target
+              : target
+            : 0;
 
       // Apple Maps choreography: the base cross-fades quickly while labels hold back
       // and arrive after the imagery settles; outgoing labels duck out early so they
@@ -599,7 +651,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         // Styles often omit opacity (implicit 1) — getPaintProperty then returns
         // undefined, so normalize before comparing or the fade would be skipped.
         const currentNum = typeof current === 'number' ? current : 1;
-        if (currentNum === toValue) continue;
+        // Raster overlays are ALWAYS written on reveal, even when the reported
+        // value already looks like 1. A recreated layer after a theme/style swap
+        // can report the default yet still composite at the old 0 (measured
+        // dark+terrain: the topo raster was invisible while attribution claimed
+        // it). An explicit paint write is what makes the share/theme path safe.
+        const forceRasterReveal = target === 1 && RASTER_OVERLAY_MODE_LAYERS.has(layerId);
+        if (currentNum === toValue && !forceRasterReveal) continue;
 
         if (target === 0) anyFadeOut = true;
         try {
@@ -611,6 +669,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         } catch {
           // Ignore unmodifiable internal layer styles
         }
+      }
+    }
+
+    // Terrain displacement, applied only once the topo raster is on screen.
+    //
+    // Enabling terrain invalidates the frame while DEM tiles load: MapLibre
+    // paints the background and little else. Doing that at click time — while
+    // the incoming raster is still held at opacity 0 by the tile gate —
+    // measured as a ~100 ms blank canvas (flash samples in the QA audit:
+    // luminance spread 5.9 at 80 ms). Enabling it after the crossfade lands
+    // puts that re-render on top of a fully opaque raster, which was measured
+    // to keep its detail (spread ~60 at 60/200/500 ms).
+    //
+    // Disabling is immediate: removing terrain restores geometry, it never
+    // blanks anything.
+    if (terrainEnableTimerRef.current !== null) {
+      clearTimeout(terrainEnableTimerRef.current);
+      terrainEnableTimerRef.current = null;
+    }
+    if (mode !== 'terrain') {
+      if (map.getTerrain()) map.setTerrain(null);
+    } else if (!map.getTerrain()) {
+      const enableTerrain = () => {
+        terrainEnableTimerRef.current = null;
+        if (runId !== styleFadeRunIdRef.current) return; // superseded mid-fade
+        if (!map.getSource('terrain-dem-source')) return;
+        if (!map.getTerrain()) map.setTerrain({ source: 'terrain-dem-source' });
+      };
+      if (waitForTiles) {
+        terrainEnableTimerRef.current = setTimeout(enableTerrain, maxFadeMs + 40);
+      } else {
+        // Style load / initial setup: the canvas is already being rebuilt, so
+        // there is no crossfade to hide behind and no reason to wait.
+        enableTerrain();
       }
     }
 
@@ -646,85 +738,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   /**
-   * Mode camera choreography (Apple Maps behaviour):
-   * - Terrain: true DEM displacement (setTerrain) + 55° tilt so relief reads well.
-   * - Standard: gentle 45° tilt when zoomed into the building-extrusion range (top-down
-   *   views make extruded blocks invisible); flattens out at street-map zooms.
-   * - Satellite: level orthographic-style view over the imagery.
-   */
-  /**
-   * Zoom-pulse "dive" (Apple Maps behaviour): as the new layer cross-fades in, the
-   * camera pushes in slightly and then settles back — one synchronized beat.
+   * Mode camera choreography (deliberate, and the only camera changes a style
+   * switch is allowed to make):
+   * - Terrain: true DEM displacement (setTerrain) + a 48° tilt. The old 55°
+   *   exaggerated the block massing and compressed the top of the frame; 48°
+   *   keeps relief readable while the plot stays a plan, not a skyline.
+   * - Standard: gentle 45° tilt only once the camera is in the building-
+   *   extrusion range, and only if the reader has not pitched the map.
+   * - Satellite: level view over the imagery.
    *
-   * Contract: the camera must always return to exactly the zoom it started at
-   * (baseZoom), so repeated switches never drift. MapLibre easeTo replaces any
-   * in-flight camera animation, so when a pitch ease is running (or about to run)
-   * the dive is FOLDED into it — zoom + pitch glide to the apex together, then the
-   * settle phase eases zoom back. If the camera is still easing at settle time,
-   * settle defers to the next idle and aborts if the user has grabbed the camera.
+   * Centre, zoom and bearing are never touched by a mode switch. Only pitch is
+   * mode-specific, because flat imagery and displaced relief are not legible at
+   * the same angle.
    */
-  const startZoomPulse = (
-    map: maplibregl.Map,
-    pitchTarget: CameraEaseTarget | null
-  ) => {
-    if (zoomPulseTimerRef.current !== null) {
-      clearTimeout(zoomPulseTimerRef.current);
-      zoomPulseTimerRef.current = null;
-    }
-    if (pulseBaseZoomRef.current === null) {
-      // Fresh pulse (none was active): anchor the settle target at the resting zoom.
-      pulseBaseZoomRef.current = map.getZoom();
-    }
-    const baseZoom = pulseBaseZoomRef.current ?? map.getZoom();
-    const apexZoom = baseZoom + PULSE_ZOOM_DELTA;
-
-    const doSettle = () => {
-      // User grabbed the camera or zoomed themselves mid-pulse — never fight them.
-      // (Our own dive ends exactly at apexZoom, so any deviation means user intent.)
-      if (Math.abs(map.getZoom() - apexZoom) > 0.05 || map.isMoving()) {
-        pulseBaseZoomRef.current = null; // no settle ease follows; re-arm immediately
-        return;
-      }
-      map.easeTo({ zoom: baseZoom, duration: PULSE_OUT_MS });
-      // Keep the base anchor until the settle ease finishes: a switch issued mid-settle
-      // must still target the ORIGINAL zoom, not re-base on the flying camera.
-      setTimeout(() => {
-        pulseBaseZoomRef.current = null;
-      }, PULSE_OUT_MS + 80);
-    };
-    const settle = () => {
-      zoomPulseTimerRef.current = null;
-      if (map.isMoving()) {
-        // A camera ease is still in flight; settle once it rests.
-        map.once('idle', doSettle);
-        return;
-      }
-      doSettle();
-    };
-
-    if (pitchTarget) {
-      // Fold: easeTo replaces the in-flight pitch ease, so re-issue its full target
-      // (pitch + bearing + own duration) with the dive zoom added — one synchronized
-      // glide in which zoom and pitch arrive at the apex together.
-      map.easeTo({
-        zoom: apexZoom,
-        pitch: pitchTarget.pitch,
-        ...(pitchTarget.bearing !== undefined ? { bearing: pitchTarget.bearing } : {}),
-        duration: pitchTarget.duration,
-      });
-      zoomPulseTimerRef.current = setTimeout(settle, pitchTarget.duration + 60);
-    } else {
-      map.easeTo({ zoom: apexZoom, duration: PULSE_IN_MS });
-      zoomPulseTimerRef.current = setTimeout(settle, PULSE_IN_MS + 60);
-    }
-  };
-
-  const syncCameraForMode = (
-    map: maplibregl.Map,
-    mode: MapStyleMode
-  ): CameraEaseTarget | null => {
-    // Returns the camera ease this call issued (so the zoom pulse can fold into the
-    // same glide), or null when no camera ease was issued.
+  const syncCameraForMode = (map: maplibregl.Map, mode: MapStyleMode): void => {
+    const motion = (ms: number) => spatialDuration(ms);
     const currentPitch = map.getPitch();
     if (mode === 'terrain') {
       autoTiltedRef.current = false;
@@ -740,36 +768,34 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           encoding: 'terrarium',
         });
       }
-      map.setTerrain({ source: 'terrain-dem-source' });
+      // The DEM itself is enabled by applyMapStyleVisibility once the topo
+      // raster has finished cross-fading; this keeps the camera ease immediate.
       if (currentPitch < 1) {
-        const bearing = map.getBearing() === 0 ? -17.5 : map.getBearing();
-        map.easeTo({ pitch: 55, bearing, duration: 900 });
-        return { pitch: 55, bearing, duration: 900 };
+        // Pitch only. Bearing is the reader's orientation: a relief mode that
+        // spins the map to a "nicer" angle is a camera jump wearing a hat.
+        map.easeTo({
+          pitch: MAP_CARTOGRAPHY.terrain.pitch,
+          duration: motion(760),
+        });
       }
-      return null;
-    } else {
-      if (map.getTerrain()) {
-        map.setTerrain(null);
+      return;
+    }
+
+    if (mode === 'standard') {
+      // Auto-tilt only when the camera is still flat or already auto-tilted by us —
+      // never stomp a pitch the user set themselves.
+      const buildingZoom = map.getZoom() >= 14.6;
+      if (currentPitch < 1 && buildingZoom) {
+        autoTiltedRef.current = true;
+        map.easeTo({ pitch: 45, duration: motion(680) });
+      } else if (autoTiltedRef.current && !buildingZoom) {
+        autoTiltedRef.current = false;
+        map.easeTo({ pitch: 0, duration: motion(600) });
       }
-      if (mode === 'standard') {
-        // Auto-tilt only when the camera is still flat or already auto-tilted by us —
-        // never stomp a pitch the user set themselves.
-        const buildingZoom = map.getZoom() >= 14.6;
-        if (currentPitch < 1 && buildingZoom) {
-          autoTiltedRef.current = true;
-          map.easeTo({ pitch: 45, duration: 800 });
-          return { pitch: 45, duration: 800 };
-        } else if (autoTiltedRef.current && !buildingZoom) {
-          autoTiltedRef.current = false;
-          map.easeTo({ pitch: 0, duration: 700 });
-          return { pitch: 0, duration: 700 };
-        }
-        return null;
-      } else if (currentPitch >= 1) {
-        map.easeTo({ pitch: 0, duration: 700 });
-        return { pitch: 0, duration: 700 };
-      }
-      return null;
+      return;
+    }
+    if (currentPitch >= 1) {
+      map.easeTo({ pitch: 0, duration: motion(600) });
     }
   };
 
@@ -805,7 +831,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const currentTheme = themeRef.current;
     const currentMode = mapStyleRef.current;
     const accentColor = currentTheme === 'dark' ? '#0A84FF' : '#0071E3';
-    const firstLayerId = style.layers?.[0]?.id;
+    // Raster modes sit ABOVE the style's background and BELOW its roads/labels.
+    //
+    // Adding them before `layers[0]` put them underneath the background, which is
+    // opaque in both themes: the topo/satellite layer could report opacity 1 and
+    // still be invisible. It also made the first terrain switch a white flash,
+    // because the background was faded out while the incoming raster was still
+    // below it. One insertion point fixes both: the background stays as a solid
+    // backdrop during the crossfade, the raster covers it when ready, and the
+    // satellite road network remains drawable above the imagery.
+    const backgroundIndex = style.layers?.findIndex((l: any) => l.type === 'background') ?? -1;
+    const rasterBeforeId =
+      backgroundIndex >= 0 ? style.layers[backgroundIndex + 1]?.id : style.layers?.[0]?.id;
 
     // 1. Satellite Raster Source & Layer (ESRI World Imagery)
     // maxzoom 18, NOT 19: outside metro coverage Esri has no z19 tiles and serves
@@ -838,7 +875,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           // terrain modes — where the imagery IS the layer being painted.
           paint: { 'raster-fade-duration': 0 },
         },
-        firstLayerId
+        rasterBeforeId
       );
     }
 
@@ -867,7 +904,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           },
           paint: { 'raster-fade-duration': 0 },
         },
-        firstLayerId
+        rasterBeforeId
       );
     }
 
@@ -900,7 +937,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             'hillshade-accent-color': '#3A3126',
           },
         },
-        firstLayerId
+        rasterBeforeId
       );
     }
 
@@ -952,7 +989,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             // below ~14.5 tile detail is too coarse for meaningful building shapes.
             minzoom: 14.5,
             paint: {
-              'fill-extrusion-color': currentTheme === 'dark' ? '#1F2430' : '#E8E6E1',
+              'fill-extrusion-color':
+                currentTheme === 'dark' ? MAP_CARTOGRAPHY.buildingDark : MAP_CARTOGRAPHY.buildingLight,
               'fill-extrusion-height': [
                 'coalesce',
                 ['get', 'render_height'],
@@ -978,7 +1016,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       map.setLayoutProperty(
         '3d-buildings',
         'visibility',
-        mapStyleRef.current !== 'satellite' && !hideMassingRef.current ? 'visible' : 'none'
+        mapStyleRef.current !== 'satellite' && mapStyleRef.current !== 'terrain' && !hideMassingRef.current
+          ? 'visible'
+          : 'none'
       );
     }
 
@@ -1175,6 +1215,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         },
       });
     }
+
+    // Grade the raster modes before revealing one: a theme/style load must not
+    // put a full-bright topo sheet behind dark chrome.
+    applyMapCartographyTone(map, currentTheme);
 
     // Apply the active Hybrid logic filter
     applyMapStyleVisibility(map, currentMode);
@@ -1489,9 +1533,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         clearTimeout(styleFadeCleanupRef.current.timer);
         styleFadeCleanupRef.current = null;
       }
-      if (zoomPulseTimerRef.current) {
-        clearTimeout(zoomPulseTimerRef.current);
-        zoomPulseTimerRef.current = null;
+      if (terrainEnableTimerRef.current !== null) {
+        clearTimeout(terrainEnableTimerRef.current);
+        terrainEnableTimerRef.current = null;
       }
       onMapReadyRef.current?.(null);
       setMapRenderGateReassert(null);
@@ -1530,20 +1574,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    // Real switch = a previous mode was seen AND differs. The null check alone would
-    // misfire on StrictMode remounts (the ref outlives the unmounted map instance).
-    const isUserSwitch =
-      prevMapStyleRef.current !== null && prevMapStyleRef.current !== mapStyle;
-    prevMapStyleRef.current = mapStyle;
-
     applyMapStyleVisibility(map, mapStyle, true);
-    // Camera first (its pitch ease may be running), then fold the dive beat into it —
-    // on real switches only, never on initial mount or StrictMode remount. The fade
-    // itself is gated on raster tile readiness and starts the moment tiles land.
-    const pitchTarget = syncCameraForMode(map, mapStyle);
-    if (isUserSwitch) {
-      startZoomPulse(map, pitchTarget);
-    }
+    // Deliberate pitch ease only; centre, zoom and bearing are preserved so a
+    // basemap switch is never experienced as a fly-to. The fade is gated on
+    // raster tile readiness and starts the moment tiles land.
+    syncCameraForMode(map, mapStyle);
   }, [mapStyle]);
 
   // Site session: raise/lower the zoom ceiling (see maxZoom).
@@ -1565,7 +1600,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     map.setLayoutProperty(
       '3d-buildings',
       'visibility',
-      mapStyleRef.current !== 'satellite' && !hideMassing ? 'visible' : 'none'
+      mapStyleRef.current !== 'satellite' && mapStyleRef.current !== 'terrain' && !hideMassing
+        ? 'visible'
+        : 'none'
     );
   }, [hideMassing, mapStyle]);
 
@@ -1853,10 +1890,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (map.getLayer('entrance-head')) {
         map.setPaintProperty('entrance-head', 'fill-color', accentColor);
       }
-      // Buildings visible in Standard + Terrain; hidden in Satellite so extrusions never
-      // ghost over the photography.
+      // Buildings are Standard-only: they ghost over photography and form a
+      // skyline over relief. In both raster modes the plot and terrain are the
+      // subject, so massing is removed rather than merely dimmed.
       const show3dBuildings =
-        mapStyleRef.current !== 'satellite' && !hideMassingRef.current;
+        mapStyleRef.current !== 'satellite' &&
+        mapStyleRef.current !== 'terrain' &&
+        !hideMassingRef.current;
       if (map.getLayer('3d-buildings')) {
         map.setLayoutProperty(
           '3d-buildings',
@@ -1866,7 +1906,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         map.setPaintProperty(
           '3d-buildings',
           'fill-extrusion-color',
-          theme === 'dark' ? '#1F2430' : '#E8E6E1'
+          theme === 'dark' ? MAP_CARTOGRAPHY.buildingDark : MAP_CARTOGRAPHY.buildingLight
         );
       }
 
@@ -2091,7 +2131,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   };
 
   return (
-    <div className={`relative z-0 overflow-hidden ${className}`}>
+    <div
+      className={`relative z-0 overflow-hidden ${className}`}
+      data-map-style={mapStyle}
+      data-map-fallback={isFallbackActive ? 'true' : 'false'}
+    >
       <div ref={mapContainerRef} className="w-full h-full" />
 
       {/* Floating Instructions Banner (when no coordinate selected) */}
@@ -2109,10 +2153,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         <MapStyleSelector
           currentStyle={mapStyle}
           onStyleChange={(s) => {
-            // A mode switch commits a lot (style fade bookkeeping, camera ease, a
-            // whole layer-visibility pass). Holding the render loop across the
-            // commit and its paint keeps the map's own frame OUT of that task —
-            // the map repaints on the frame after, which is where it belongs.
+            // A mode switch commits a lot (fade bookkeeping, camera ease, a whole
+            // layer-visibility pass). Holding the render loop across the commit
+            // and its paint keeps the map's own frame OUT of that task — the map
+            // repaints on the frame after, which is where it belongs. This hold
+            // never strips the layer stack (see mapRenderGate).
             holdMapRenderAcrossCommit('style-switch');
             setMapStyle(s);
           }}

@@ -28,13 +28,13 @@ const STYLE_OPTIONS: StyleOption[] = [
   {
     id: 'satellite',
     title: 'Satellite',
-    subtitle: 'Real imagery + labels',
+    subtitle: 'Aerial imagery + roads',
     icon: 'satellite',
   },
   {
     id: 'terrain',
     title: 'Terrain',
-    subtitle: 'Topographic + 3D relief',
+    subtitle: 'Topographic relief',
     icon: 'mountain',
   },
 ];
