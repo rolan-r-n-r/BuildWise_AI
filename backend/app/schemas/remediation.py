@@ -71,6 +71,15 @@ class RemediationOption(BaseModel):
     title: str
     description: str
     patch: Dict[str, Any]
+    # A recommendation is actionable only when the engine can validate and
+    # measure its patch.  A constraint says why the valid alternative does not
+    # exist for THIS request; the UI must show it as a constraint, never as a
+    # button that will fail with HTTP 422.
+    available: bool = True
+    constraint_reason: Optional[str] = None
+    # Evidence for the recommendation: finding codes, affected rooms, or the
+    # strategy id the engine already tried.  Never a generated claim.
+    basis: Dict[str, Any] = Field(default_factory=dict)
     effect: Optional[MeasuredEffect] = None
     error: Optional[str] = None
     details: Dict[str, Any] = Field(default_factory=dict)

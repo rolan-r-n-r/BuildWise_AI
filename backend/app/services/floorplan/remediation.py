@@ -67,6 +67,79 @@ COVERAGE_CEILING = 0.70
 MAX_DROPPED_ROOMS = 3
 
 
+def _warning_codes(warnings: List[str]) -> List[str]:
+    """Finding codes behind a recommendation, not the whole solver log.
+
+    Operational notes (door swings, furniture, telemetry) are not findings a
+    client can act on, so they never appear as a card's evidence.
+    """
+    import re
+
+    evidence = re.compile(
+        r"^(PROP-|PROGRAMME-|ROOM-|PLATE-|GATE-|SELECTION-|PLINTH:)"
+    )
+    codes: List[str] = []
+    for warning in warnings:
+        code = str(warning or "").strip().split(":", 1)[0].split(" ", 1)[0].upper()
+        if code and evidence.match(code) and code not in codes:
+            codes.append(code)
+    return codes
+
+
+def _squeezed_rooms(warnings: List[str]) -> List[str]:
+    """Room ids named by the engine's PROGRAMME-* / ROOM-MIN rows."""
+    import re
+
+    rooms: List[str] = []
+    squeeze = re.compile(r"below their minimum:\s*(.+?)\)", re.IGNORECASE)
+    room_id = re.compile(r"\b([A-Za-z0-9_]+_F\d+)\b")
+    for warning in warnings:
+        if not warning.startswith(("ROOM-MIN", "PROGRAMME-")):
+            continue
+        match = squeeze.search(warning)
+        if match:
+            candidates = [part.strip() for part in match.group(1).split(",") if part.strip()]
+        else:
+            candidates = room_id.findall(warning)
+        for room in candidates:
+            if room and room not in rooms:
+                rooms.append(room)
+    return rooms
+
+
+def _basis(warnings: List[str], kind: str = "finding", extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """What this recommendation is based on, from the engine's own rows."""
+    rooms = _squeezed_rooms(warnings)
+    return {
+        "type": kind,
+        "codes": _warning_codes(warnings),
+        "rooms": rooms[:8],
+        "room_count": len(rooms),
+        **(extra or {}),
+    }
+
+
+def _constraint(
+    option_id: str,
+    title: str,
+    description: str,
+    reason: str,
+    basis: Dict[str, Any],
+    details: Optional[Dict[str, Any]] = None,
+) -> RemediationOption:
+    """A named constraint: no patch can make this input valid for this request."""
+    return RemediationOption(
+        id=option_id,
+        title=title,
+        description=description,
+        patch={},
+        available=False,
+        constraint_reason=reason,
+        basis=basis,
+        details={"constraint": True, **(details or {})},
+    )
+
+
 def plan_hash(request: FloorPlanRequest, warnings: List[str], verdict: Optional[str]) -> str:
     payload = {
         "request": request.model_dump(mode="json", exclude_none=True),
@@ -276,6 +349,7 @@ def build_options(payload: RemediationIn) -> RemediationOut:
                     "units; only the depth-row split changes."
                 ),
                 patch={"partition_variant": "service_row", "units_per_floor": 2},
+                basis=_basis(warnings, "strategy", {"strategy_id": "S1"}),
                 details={
                     "engine_tried": True,
                     "strategy_id": "S1",
@@ -288,36 +362,81 @@ def build_options(payload: RemediationIn) -> RemediationOut:
                 },
             )
         )
-        options.append(
-            RemediationOption(
-                id="duplex",
-                title=(
-                    "Two-storey dwellings (current)"
-                    if duplex_current
-                    else "Use two-storey dwellings (V3)"
-                ),
-                description=(
-                    "Draw four floor-level units per plate and pair the storeys into "
-                    "two-storey dwellings joined by internal unit stairs. The "
-                    "household count is preserved (eight on a four-storey building), "
-                    "not traded for four; wet rooms keep identical footprints so the "
-                    "plumbing stacks remain real."
-                ),
-                patch={"partition_variant": "duplex", "units_per_floor": 4},
-                details={
-                    "engine_tried": True,
-                    "strategy_id": "S2",
-                    "requires_confirmation": False,
-                    "dwelling_count_change": "preserved",
-                    "current": duplex_current,
-                    "apply_blocked_reason": (
-                        "This is already the selected strategy."
-                        if duplex_current
-                        else None
+        # V3 pairs every dwelling with an upper level, so an odd storey count
+        # cannot be drawn.  Offering the patch anyway made the card's Apply a
+        # guaranteed HTTP 422: the request schema correctly refuses it.  The
+        # card is a named constraint here; "add a storey" is the actionable
+        # way to make the variant valid.
+        duplex_odd_storeys = floors % 2 == 1
+        duplex_details = {
+            "engine_tried": True,
+            "strategy_id": "S2",
+            "requires_confirmation": False,
+            "dwelling_count_change": "preserved",
+            "current": duplex_current,
+            "apply_blocked_reason": (
+                "This is already the selected strategy."
+                if duplex_current
+                else None
+            ),
+        }
+        if duplex_odd_storeys:
+            options.append(
+                _constraint(
+                    "duplex",
+                    "Two-storey dwellings (V3) unavailable",
+                    (
+                        "V3 draws four floor-level units per plate and pairs each "
+                        "with an upper level. This request has "
+                        f"{floors} storeys (odd), so one dwelling would be left "
+                        "without its pair. Add a storey to make the storey count "
+                        "even, then apply V3."
                     ),
-                },
+                    (
+                        f"The duplex variant needs an even number of storeys; "
+                        f"this request has {floors}. The request schema rejects "
+                        "the patch with HTTP 422 rather than drawing a different "
+                        "building."
+                    ),
+                    _basis(
+                        warnings,
+                        "constraint",
+                        {
+                            "strategy_id": "S2",
+                            "current_storeys": floors,
+                            "required": "even storeys",
+                            "input_change": "floors",
+                        },
+                    ),
+                    {
+                        "engine_tried": True,
+                        "strategy_id": "S2",
+                        "current": duplex_current,
+                        "requires_input_change": "floors",
+                    },
+                )
             )
-        )
+        else:
+            options.append(
+                RemediationOption(
+                    id="duplex",
+                    title=(
+                        "Two-storey dwellings (current)"
+                        if duplex_current
+                        else "Use two-storey dwellings (V3)"
+                    ),
+                    description=(
+                        "Draw four floor-level units per plate and pair the storeys into "
+                        "two-storey dwellings joined by internal unit stairs. The "
+                        "household count is preserved (eight on a four-storey building), "
+                        "not traded for four; wet rooms keep identical footprints so the "
+                        "plumbing stacks remain real."
+                    ),
+                    patch={"partition_variant": "duplex", "units_per_floor": 4},
+                    basis=_basis(warnings, "strategy", {"strategy_id": "S2"}),
+                    details=duplex_details,
+                )
+            )
         options.append(
             RemediationOption(
                 id="single_unit",
@@ -339,6 +458,7 @@ def build_options(payload: RemediationIn) -> RemediationOut:
                     # is the explicit confirmation, after the UI's dialog.
                     "confirm_dwelling_deficit": True,
                 },
+                basis=_basis(warnings, "strategy", {"strategy_id": "S2_deficit"}),
                 details={
                     "engine_tried": True,
                     "strategy_id": "S2_deficit",
@@ -364,6 +484,7 @@ def build_options(payload: RemediationIn) -> RemediationOut:
                     "compressing it onto this plate."
                 ),
                 patch={"floors": floors + 1},
+                basis=_basis(warnings, "finding", {"affected": "storeys"}),
             )
         )
 
@@ -385,6 +506,7 @@ def build_options(payload: RemediationIn) -> RemediationOut:
                     + "."
                 ),
                 patch={"required_rooms": remaining},
+                basis=_basis(warnings, "finding", {"dropped_rooms": dropped}),
                 details={"dropped_rooms": dropped, "remaining_rooms": remaining},
             )
         )
@@ -413,6 +535,13 @@ def build_options(payload: RemediationIn) -> RemediationOut:
                     f"current alignment."
                 ),
                 patch={"plot_polygon": rotated},
+                basis={
+                    "type": "site-evaluation",
+                    "codes": [],
+                    "rooms": [],
+                    "angle_deg": angle,
+                    "waste_pct": best.get("waste_pct"),
+                },
                 details={"angle_deg": angle, "waste_pct": best.get("waste_pct")},
             )
         )
@@ -431,6 +560,7 @@ def build_options(payload: RemediationIn) -> RemediationOut:
                     f"{raised * 100:.0f}% where setbacks and the site allow it."
                 ),
                 patch={"ground_coverage_ratio": raised},
+                basis=_basis(warnings, "finding", {"affected": "plate area"}),
                 details={"from_coverage": coverage, "to_coverage": raised},
             )
         )
@@ -458,6 +588,13 @@ def build_options(payload: RemediationIn) -> RemediationOut:
                     "selected_scheme_id": best_scheme["scheme_id"],
                     "include_scheme_alternatives": True,
                 },
+                basis={
+                    "type": "portfolio",
+                    "codes": [],
+                    "rooms": [],
+                    "scheme_id": best_scheme["scheme_id"],
+                    "score": best_scheme.get("score"),
+                },
                 details={
                     "scheme_id": best_scheme["scheme_id"],
                     "score": best_scheme.get("score"),
@@ -468,10 +605,16 @@ def build_options(payload: RemediationIn) -> RemediationOut:
     started = time.perf_counter()
     if options:
         with ThreadPoolExecutor(max_workers=min(4, len(options))) as pool:
-            futures = [
-                pool.submit(measure, request, option.patch, baseline) for option in options
+            # Constraints have no patch to solve; submitting one would measure
+            # the unmodified plan and dress a refusal up as a recommendation.
+            measurable = [
+                option for option in options if option.available and option.patch
             ]
-            for option, future in zip(options, futures):
+            futures = [
+                pool.submit(measure, request, option.patch, baseline)
+                for option in measurable
+            ]
+            for option, future in zip(measurable, futures):
                 try:
                     effect, evidence = future.result()
                     option.effect = effect

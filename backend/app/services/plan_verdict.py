@@ -290,7 +290,10 @@ def plan_truth_labels(plan: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             deviations.append(
                 {
                     "room_id": rooms[0] if rooms else "",
-                    "rule_id": str(row.split(":", 1)[0]).strip(),
+                    # The rule column is the CODE, not the code plus the room id:
+                    # a row without a colon ("ROOM-MIN room_F0: ...") used to
+                    # print its whole prefix in the appendix's Rule column.
+                    "rule_id": str(row.split(":", 1)[0]).strip().split(" ", 1)[0],
                     "reason": row,
                     "page1_row": row,
                     "source": "page1",

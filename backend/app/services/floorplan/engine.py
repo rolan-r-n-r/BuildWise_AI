@@ -208,10 +208,12 @@ def _stamp_listed_min_relaxation(room: Any, measure: str, measured: float,
     band; beyond that the room was a bare hard failure with no record, which the
     sweep rightly counted as an UNLISTED breach.  A plate that physically
     cannot hold the catalogue minimum still must not pretend the room complies:
-    the strict flag stays False (the certificate FAILs and the plan is stamped
-    NOT CERTIFIED), while this entry makes the breach individually listed and
-    auditable - measured value, required value, and why the plate cannot give
-    more.  Idempotent per (measure, basis).
+    the shortfall is recorded here with its measured value, required value and
+    the plate reason.  This record is evidence, not a verdict: the certificate's
+    own dimension result and `plan_verdict` decide whether the shortfall withholds
+    certification.  The old rationale asserted that the certificate "still fails
+    the dimension layer", which printed a FAIL claim inside a CERTIFIED report.
+    Idempotent per (measure, basis).
     """
     for rel in (getattr(room, "relaxations", None) or []):
         if (str(rel.get("rule_id")) == "NBC-01"
@@ -226,9 +228,9 @@ def _stamp_listed_min_relaxation(room: Any, measure: str, measured: float,
         "rationale": (
             f"{measure} {float(measured):.2f} is below the catalogue minimum "
             f"{float(required):.2f} (short by {shortfall:.2f}); {reason}. Listed "
-            "as a relaxation on this room and reported by the ROOM-MIN warning; "
-            "the certificate still fails the dimension layer, so the plan is "
-            "never claimed compliant."
+            "as a declared relaxation on this room and reported by the ROOM-MIN "
+            "warning. The certificate records the shortfall; the plan verdict "
+            "states whether it withholds certification."
         ),
     })
 
@@ -8880,8 +8882,10 @@ class SoleGeometryEngine:
                 # relaxations, but rooms it does not police (a loading dock, a
                 # shared amenity strip) could still sit outside their ontology
                 # band with no entry on the room - an UNLISTED breach.  Stamp
-                # the entry here, once per room, without changing the gate: a
-                # beyond-cap room still fails; the reader can audit the number.
+                # the entry here, once per room, without changing the gate: the
+                # certificate's aspect result and the plan verdict decide
+                # whether the deviation is within cap; the reader can audit the
+                # number either way.
                 _band = float(getattr(_spec, "max_aspect_ratio", 0.0) or 0.0)
                 if (
                     _band > 0.0
@@ -8897,8 +8901,9 @@ class SoleGeometryEngine:
                         "rationale": (
                             f"aspect 1:{_ar:.2f} exceeds the 1:{_band:.2f} band; the "
                             f"{envelope['area_sqm']:.1f} m² plate cannot give this room a "
-                            "wider band or a legal split. Listed so the certificate fails "
-                            "on a named, auditable deviation rather than an unlisted one."
+                            "wider band or a legal split. Listed as a named, auditable "
+                            "deviation rather than an unlisted one; the certificate's "
+                            "aspect result decides whether it withholds certification."
                         ),
                     })
 
@@ -9762,7 +9767,11 @@ class SoleGeometryEngine:
 
         # Refusal and plinth: ONE prominent, greppable banner per plan.
         #  * a programme deficit names EVERY squeezed room (ROOM-MIN) and the
-        #    options, so the drawing's FAIL stamp is backed by a readable list;
+        #    options, so the drawing's verdict is backed by a readable list.
+        #    The banner must NEVER announce the verdict itself: a squeeze whose
+        #    rooms all carry declared, within-cap relaxations is a listed
+        #    deviation (CERTIFIED), while the same wording on a plate shortfall
+        #    is a breach.  Only plan_verdict/PDF page 1 may name a FAIL stamp.
         #  * a plinth target larger than the need is reconciled: the ladder
         #    absorbs what it can, the residual is disclosed as unbuilt with the
         #    same three options.
@@ -9783,9 +9792,10 @@ class SoleGeometryEngine:
             _banner = (
                 f"{_label}: the programme needs {_need:.1f} m²; the plate provides "
                 f"{_plinth:.1f} m² ({len(_squeezed)} room(s) below their "
-                f"minimum: {', '.join(_squeezed)}). The plan is drawn with a FAIL stamp. "
-                "Options: add a storey, reduce the programme, or enlarge the plate "
-                "where the site allows."
+                f"minimum: {', '.join(_squeezed)}). This is a design finding, not a "
+                "verdict; the authoritative plan verdict is printed on page 1 and "
+                "in the certificate. Options: add a storey, reduce the programme, "
+                "or enlarge the plate where the site allows."
             )
             if _banner not in self.warnings:
                 self.warnings.append(_banner)
