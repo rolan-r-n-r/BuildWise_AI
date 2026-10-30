@@ -61,6 +61,8 @@
   --segmented-active-label: #1D1D1F;
   --segmented-active-sublabel: #6A6A6F;
   --segmented-active-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  /* Recessed track under segmented controls. */
+  --segmented-track-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
   --blueprint-bg: #F4F6F8;
   --card-bg-subtle: #FFFFFF;
   --sheet-bg: rgba(255, 255, 255, 0.92);
@@ -219,6 +221,12 @@
    Keeping the declaration here preserves the token as the single source. */
 .bw-segmented-active-shadow {
   box-shadow: var(--segmented-active-shadow);
+}
+
+/* The well the active pill sits in. Token-backed so new controls never add an
+   arbitrary shadow utility to the component budget. */
+.bw-segmented-track {
+  box-shadow: var(--segmented-track-shadow);
 }
 
 /* Horizontal tab strips: scrollable, snap to tab starts, hide the bar

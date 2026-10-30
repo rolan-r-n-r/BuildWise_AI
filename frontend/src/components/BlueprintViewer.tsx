@@ -1,11 +1,22 @@
-import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect, useLayoutEffect } from 'react';
 import ReactDOM from 'react-dom';
 import type { RoomPlacement, MultiStoreyBuildingModel, SingleFloorPlanModel, SitePlanModel } from '../services/types';
 import { downloadFloorplanDossier } from '../services/api';
 import { Icon } from './Icon';
-import { useDesign } from '../design';
+import { prefersReducedMotion, useDesign } from '../design';
 import { frontageChipText, polygonChipText } from '../services/sheetTruth';
 import { isGhostOverlayVisible, patchGhostOverlayDom, sanitizeBlueprintSvg } from './report/svgSanitize';
+import {
+  applyRoomFocus,
+  setSheetRevealState,
+  sheetHasRevealPhases,
+  startSheetReveal,
+} from './report/blueprintReveal';
+import {
+  applyBlueprintViewMode,
+  BLUEPRINT_VIEW_MODES,
+  type BlueprintViewMode,
+} from './report/blueprintViewMode';
 import { ECS_DISCLOSURE } from './report/termDisclosures';
 import { PlanVerdictChip } from './report/PlanVerdictChip';
 import {
@@ -220,6 +231,9 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   const [isPanning, setIsPanning] = useState<boolean>(false);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  // Readability without fullscreen: the card opens on the real plan region.
+  // The full sheet remains one press away and is what reset/export return to.
+  const [viewMode, setViewMode] = useState<BlueprintViewMode>('plan');
 
   // Site plan and multi-floor view state
   const [viewTab, setViewTab] = useState<'site' | 'floor'>('floor');
@@ -239,6 +253,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const modalDragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const modalPanStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const modalPanelRef = useRef<HTMLDivElement | null>(null);
 
   // A plan is multi-storey ONLY if multiStorey model has > 1 floor, exactly matching report_service.py:2050 (len(ms_floors) > 1)
   const isMultiStorey = Boolean(
@@ -300,6 +315,9 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   // so the invariant is unit-testable: the F0 anchor core is on every sheet, so
   // the overlay is injected ONLY when the toggle is on AND an upper floor is
   // active. `data-ghost-overlay` mirrors the same boolean in both directions.
+  const planFocusSupported = useMemo(() => sheetHasRevealPhases(activeSvg), [activeSvg]);
+  const effectiveViewMode: BlueprintViewMode =
+    viewMode === 'plan' && !planFocusSupported ? 'sheet' : viewMode;
   const ghostVisible = isGhostOverlayVisible(showGhostOverlay, safeFloorIndex);
   // `sanitizeBlueprintSvg` carries its own two-entry memo (keyed by the source
   // SVG identity), so toggling the ghost overlay between two states it has
@@ -387,6 +405,38 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
     // (the early return above covers that).
   }, [sheetKey, injectReady, ghostVisible]);
 
+  /**
+   * PROGRESSIVE REVEAL — once per generated plan, in the card only.
+   *
+   * The sheet's own layer groups are animated by CSS; this effect owns the one
+   * switch that starts it. A generation change is a new drawing and deserves
+   * the reveal; a floor/mode switch is navigation within a plan the reader has
+   * already seen, so later sheets are shown finished (no replay on every tab).
+   * The modal always shows the finished sheet: it is a deliberate close read,
+   * not the moment of arrival.
+   *
+   * The cleanup cancels the animationend listener and fallback timer when the
+   * sheet is replaced, so no reveal outlives the document it belongs to.
+   */
+  const revealedGenerationRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!injectReady) return;
+    const root = cardSheetRef.current;
+    if (!root) return;
+    if (!sheetHasRevealPhases(activeSvg)) {
+      setSheetRevealState(root, 'off');
+      return;
+    }
+    if (revealedGenerationRef.current === effectiveGenId) {
+      // Returning to a floor of the same generation: final drawing, instantly.
+      setSheetRevealState(root, 'done');
+      return;
+    }
+    revealedGenerationRef.current = effectiveGenId;
+    const reveal = startSheetReveal(root, prefersReducedMotion());
+    return () => reveal.cancel();
+  }, [injectReady, sheetKey, effectiveGenId, activeSvg]);
+
   // Derive per-floor room placements for current floor legend.
   // SINGLE SOURCE: the on-sheet room label and the ROOM SCHEDULE both print the
   // CLEAR area (`clear_area_sqm`). The room model's `area_sqm` is the GROSS
@@ -422,7 +472,91 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   // A new floor is a new room set: an id that only existed on the previous
   // plate must not highlight or open the inspector.  Derived during render so
   // the viewer never needs an effect just to clear state.
-  const activeRoomId = selectedRoom ? selectedRoomId : null;
+  // Single-storey plans have no `currentFloor` (the sheet is driven by
+  // `placements`), so a chip selection would otherwise be inert. The placement
+  // list is still authoritative for which ids exist on this sheet; accepting an
+  // id from it enables the same fill highlight without inventing room fields.
+  const activeRoomId = selectedRoom
+    ? selectedRoomId
+    : !isMultiStorey && selectedRoomId && placements.some((p) => p.room_id === selectedRoomId)
+      ? selectedRoomId
+      : null;
+
+  /**
+   * ROOM FOCUS — the legend chip and the drawing are one selection.
+   *
+   * The server-authored fills carry their room id (presentation metadata), so
+   * the selected room's fill brightens and the other fills recede. Nothing is
+   * redrawn and no outline is invented: walls, openings and dimensions remain
+   * the solver's geometry at their original coordinates. The card and the
+   * modal hold separate copies of the sheet, so both are updated.
+   */
+  useLayoutEffect(() => {
+    if (!injectReady) return;
+    applyRoomFocus(cardSheetRef.current, activeRoomId);
+  }, [injectReady, sheetKey, activeRoomId]);
+  useLayoutEffect(() => {
+    if (!isModalOpen) return;
+    applyRoomFocus(modalSheetRef.current, activeRoomId);
+  }, [isModalOpen, activeRoomId, sheetKey]);
+
+  /**
+   * FRAMING — a presentation-only viewBox change on the injected sheet.
+   *
+   * Switching modes never re-injects, re-solves or re-animates: the card and
+   * modal each get the same real SVG already on screen, with the viewBox set
+   * from its own groups' bounding boxes. Geometry, room focus, the reveal
+   * state and the authoritative verdict markup are untouched. The modal is
+   * mounted separately, so it receives the mode again when it opens.
+   */
+  useLayoutEffect(() => {
+    if (!injectReady) return;
+    applyBlueprintViewMode(cardSheetRef.current, effectiveViewMode);
+  }, [injectReady, sheetKey, effectiveViewMode]);
+  useLayoutEffect(() => {
+    if (!isModalOpen) return;
+    applyBlueprintViewMode(modalSheetRef.current, effectiveViewMode);
+  }, [isModalOpen, sheetKey, effectiveViewMode]);
+
+  /**
+   * Fullscreen opens at a READABLE scale, not fit-to-page.
+   *
+   * The sheet is a tall portrait artifact (e.g. 495 × 1386): fitting it to the
+   * modal's height rendered 7 pt dimensions at ~3 px. The dialog now opens
+   * top-aligned (transform-origin: top center) at the zoom that makes the sheet
+   * as wide as the available canvas, capped at 3.5×, with a 2× floor on phones.
+   * Reset still returns to the whole sheet at 100%; this only chooses a better
+   * first view for reading. It runs before paint, so there is no zoom animation
+   * on open and no camera-style disorientation.
+   */
+  useLayoutEffect(() => {
+    if (!isModalOpen) return;
+    const canvas = modalCanvasRef.current;
+    const sheet = modalSheetRef.current;
+    const svg = sheet?.querySelector('svg');
+    if (!canvas || !svg) return;
+    const viewBox = svg.viewBox?.baseVal;
+    const intrinsicW = viewBox?.width || svg.width.baseVal.value || 495;
+    const intrinsicH = viewBox?.height || svg.height.baseVal.value || 1386;
+    if (!(intrinsicW > 0) || !(intrinsicH > 0)) return;
+    const pad = 48;
+    if (effectiveViewMode !== 'sheet') {
+      // Plan Focus / Fit Width already frame the readable area; an extra
+      // opening zoom would crop it again. Reset only the transform.
+      setModalZoom(1);
+      setModalPan({ x: 0, y: 0 });
+      return;
+    }
+    const baseScale = Math.min(
+      Math.max(1, canvas.clientWidth - pad) / intrinsicW,
+      Math.max(1, canvas.clientHeight - pad) / intrinsicH
+    );
+    const targetWidth = Math.min(Math.max(1, canvas.clientWidth - 32), 720);
+    const readableZoom = targetWidth / Math.max(1, intrinsicW * baseScale);
+    setModalZoom(Number(Math.min(3.5, Math.max(2, readableZoom)).toFixed(2)));
+    setModalPan({ x: 0, y: 0 });
+  }, [isModalOpen, sheetKey, mode, safeFloorIndex, effectiveViewMode]);
+
   const selectedRoomWindows = useMemo(
     () => (currentFloor?.windows || []).filter((window) => window.room_id === selectedRoom?.room_id),
     [currentFloor, selectedRoom?.room_id]
@@ -491,8 +625,29 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   );
 
   const handleZoomIn = () => setZoom((z) => Math.min(2.5, +(z + 0.25).toFixed(2)));
-  const handleZoomOut = () => setZoom((z) => Math.max(0.75, +(z - 0.25).toFixed(2)));
+  // 100% is the authored, container-fitted sheet. Shrinking below the fitted
+  // size only made dimension text illegible; the overview is already "fit".
+  const handleZoomOut = () => setZoom((z) => Math.max(1.0, +(z - 0.25).toFixed(2)));
+
+  /**
+   * One switch for both surfaces. A framing change is a new view of the same
+   * sheet, so the pan/zoom transform is reset rather than carried over from a
+   * different crop; that also makes every mode's result predictable. The
+   * reveal is not touched (it belongs to the generation, not the framing).
+   */
+  const changeViewMode = (next: BlueprintViewMode) => {
+    if (next === 'plan' && !planFocusSupported) return;
+    setViewMode(next);
+    setZoom(1.0);
+    setPan({ x: 0, y: 0 });
+    setModalZoom(1.0);
+    setModalPan({ x: 0, y: 0 });
+  };
+
+  // Reset is explicitly a reset to the FULL SHEET: the whole drawing, whole
+  // title block, whole verdict stamp, at 100%, with no pan.
   const handleReset = () => {
+    setViewMode('sheet');
     setZoom(1.0);
     setPan({ x: 0, y: 0 });
   };
@@ -500,8 +655,58 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   const handleModalZoomIn = () => setModalZoom((z) => Math.min(3.5, +(z + 0.25).toFixed(2)));
   const handleModalZoomOut = () => setModalZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)));
   const handleModalReset = () => {
+    setViewMode('sheet');
     setModalZoom(1.0);
     setModalPan({ x: 0, y: 0 });
+  };
+
+  /**
+   * Keyboard control for the sheet viewport: +/- zoom, 0 returns to fit, arrows
+   * pan. It is scoped to the focused canvas (not a global shortcut), so typing
+   * elsewhere in the report is untouched and the map's own M/R/T keys never
+   * fire from here.
+   */
+  const handleSheetKeyDown = (
+    e: React.KeyboardEvent<HTMLDivElement>,
+    modal: boolean
+  ) => {
+    const key = e.key;
+    if (key === '+' || key === '=') {
+      e.preventDefault();
+      if (modal) handleModalZoomIn();
+      else handleZoomIn();
+      return;
+    }
+    if (key === '-' || key === '_') {
+      e.preventDefault();
+      if (modal) handleModalZoomOut();
+      else handleZoomOut();
+      return;
+    }
+    if (key === '0') {
+      e.preventDefault();
+      if (modal) handleModalReset();
+      else handleReset();
+      return;
+    }
+    if (key === '1' || key === '2' || key === '3') {
+      const next: BlueprintViewMode = key === '1' ? 'sheet' : key === '2' ? 'plan' : 'width';
+      if (next === 'plan' && !planFocusSupported) return;
+      e.preventDefault();
+      changeViewMode(next);
+      return;
+    }
+    if (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowUp' || key === 'ArrowDown') {
+      e.preventDefault();
+      const step = e.shiftKey ? 96 : 24;
+      const dx = key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0;
+      const dy = key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0;
+      if (modal) {
+        setModalPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+      } else {
+        setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+      }
+    }
   };
 
   const handleDownloadSvg = () => {
@@ -544,16 +749,69 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
     }
   };
 
-  // Close modal on Escape
+  /**
+   * Fullscreen sheet dialog: focus enters, stays inside, and returns.
+   *
+   * The modal is the viewer's one deliberate close-read surface, so it gets
+   * real dialog semantics: initial focus on Close, a Tab/Shift+Tab trap across
+   * its controls, Escape to dismiss, background scroll locked while open, and
+   * focus restored to the trigger on close. The listener and animation frame
+   * are cleaned up; no focus handler survives the dialog.
+   */
   useEffect(() => {
     if (!isModalOpen) return;
+    const panel = modalPanelRef.current;
+    const previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const focusables = () =>
+      Array.from(
+        panel?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ) || []
+      ).filter((el) => el.getClientRects().length > 0);
+
+    const frame = window.requestAnimationFrame(() => {
+      const closes = Array.from(
+        panel?.querySelectorAll<HTMLElement>('[data-blueprint-modal-close]') || []
+      ).filter((el) => el.getClientRects().length > 0);
+      (closes[0] || focusables()[0] || panel)?.focus();
+    });
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.stopPropagation();
         setIsModalOpen(false);
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const items = focusables();
+      if (items.length === 0) {
+        e.preventDefault();
+        panel?.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || !panel?.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (active === last || !panel?.contains(active))) {
+        e.preventDefault();
+        first.focus();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus?.();
+    };
   }, [isModalOpen]);
 
   // Card pan listeners
@@ -598,7 +856,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
     setPan: setPan,
     getZoom: () => zoom,
     setZoom: setZoom,
-    minZoom: 0.75,
+    minZoom: 1.0,
     maxZoom: 2.5,
     onDoubleTap: () => setZoom((z) => (z > 1.5 ? 1.0 : Math.min(2.5, z + 0.5))),
   });
@@ -624,7 +882,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
     const onWheel = (e: WheelEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
-      setZoom((z) => Number(Math.min(2.5, Math.max(0.75, z * (e.deltaY < 0 ? 1.12 : 1 / 1.12))).toFixed(2)));
+      setZoom((z) => Number(Math.min(2.5, Math.max(1.0, z * (e.deltaY < 0 ? 1.12 : 1 / 1.12))).toFixed(2)));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -665,6 +923,53 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   );
 
   const handleModalMouseUp = () => setIsModalPanning(false);
+
+  /**
+   * The same three framing modes on both surfaces. `Sheet` is the whole
+   * drawing (and therefore the reset target); `Plan` crops to the plan layers;
+   * `Width` fills the viewer with the sheet width. The pressed state is the
+   * EFFECTIVE mode, so a sheet without plan layers reads `Full Sheet` rather
+   * than claiming a crop it could not apply.
+   */
+  const viewModeHint =
+    effectiveViewMode === 'sheet'
+      ? 'Whole sheet, including title block and stamp'
+      : effectiveViewMode === 'plan'
+        ? 'Plan region; title block stays outside the crop'
+        : 'Width fills the viewer; top-aligned, pan for the rest';
+  const renderViewModeSwitcher = (isModal: boolean = false) => (
+    <div
+      data-testid={isModal ? 'blueprint-modal-view-modes' : 'blueprint-view-modes'}
+      role="group"
+      aria-label="Drawing framing"
+      className="flex items-center bg-[var(--fill)] rounded-[8px] sm:rounded-[9px] p-[2px] sm:p-[3px] bw-segmented-track shrink-0"
+    >
+      {BLUEPRINT_VIEW_MODES.map((option) => {
+        const unavailable = option.id === 'plan' && !planFocusSupported;
+        const active = effectiveViewMode === option.id;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            data-testid={`view-mode-${option.id}`}
+            data-bw-view-mode={option.id}
+            aria-pressed={active}
+            aria-label={`${option.label}: ${option.hint}`}
+            disabled={unavailable}
+            title={unavailable ? 'This sheet has no addressable plan layers to focus' : `${option.label} — ${option.hint}`}
+            onClick={() => changeViewMode(option.id)}
+            className={`bw-touch-target h-7 sm:h-8 px-2 sm:px-2.5 rounded-[6px] sm:rounded-[7px] text-[10px] sm:text-[11px] font-semibold transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 disabled:opacity-40 disabled:cursor-not-allowed ${
+              active
+                ? 'bg-[var(--segmented-active-bg)] text-[var(--segmented-active-label)] bw-segmented-active-shadow cursor-default'
+                : 'text-[var(--text-1)] cursor-pointer active:scale-[0.97]'
+            }`}
+          >
+            {isModal ? option.label : option.short}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   // Render floor switcher tab bar (including Site Plan tab when available)
   const renderFloorSwitcher = (isModal: boolean = false) => {
@@ -710,18 +1015,19 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
           <button
             type="button"
             data-testid="tab-site-plan"
+            aria-pressed={viewTab === 'site'}
             onClick={() => setViewTab('site')}
             className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-[8px] sm:rounded-[9px] text-[11px] sm:text-[12px] transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
               viewTab === 'site'
-                ? 'bg-emerald-600 text-white shadow-xs font-semibold ring-1 ring-white/20'
-                : 'bg-[var(--fill)] text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--fill-hover)] font-medium'
+                ? 'bg-emerald-700 text-white shadow-xs font-semibold ring-1 ring-white/20'
+                : 'bg-[var(--fill)] text-[var(--text-1)] hover:text-[var(--text-1)] hover:bg-[var(--fill-hover)] font-medium'
             }`}
           >
             <Icon name="compass" size={13} />
             <span>Site Plan</span>
             <span
               className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ${
-                viewTab === 'site' ? 'bg-white/20 text-white' : 'bg-emerald-500/15 text-[var(--semantic-green-ink)]'
+                viewTab === 'site' ? 'bg-black/20 text-white' : 'bg-emerald-500/20 text-emerald-900 dark:text-emerald-200'
               }`}
             >
               10.SP
@@ -744,6 +1050,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
               key={fl.floor_index}
               type="button"
               data-testid={`tab-floor-${fl.floor_index}`}
+              aria-pressed={isActive}
               onClick={() => {
                 setViewTab('floor');
                 setActiveFloorIndex(idx);
@@ -757,7 +1064,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
               <span>{tabLabel}</span>
               <span
                 className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                  isActive ? 'bg-white/20 text-white' : 'bg-black/5 dark:bg-white/10 text-[var(--text-3)]'
+                  isActive ? 'bg-black/20 text-white' : 'bg-black/5 dark:bg-white/10 text-[var(--text-1)]'
                 }`}
               >
                 +{elevation}m
@@ -853,7 +1160,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             </span>
             <span
               data-testid="generated-typology-badge"
-              className="px-2 py-0.5 rounded-[5px] font-mono font-bold text-[10px] bg-emerald-600 text-white tracking-tight select-none"
+              className="px-2 py-0.5 rounded-[5px] font-mono font-bold text-[10px] bg-emerald-700 text-white tracking-tight select-none"
             >
               {generatedProfile.shortCode}
             </span>
@@ -969,14 +1276,17 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             <button
               type="button"
               onClick={handleZoomOut}
-              disabled={zoom <= 0.75}
+              disabled={zoom <= 1.0}
               title="Zoom Out"
               aria-label="Zoom Out"
               className="bw-touch-target w-6 h-6 sm:w-7 sm:h-7 rounded-[5px] sm:rounded-[6px] hover:bg-[var(--fill-hover)] disabled:opacity-40 disabled:hover:bg-transparent text-[var(--text-1)] flex items-center justify-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
             >
               <Icon name="minus" size={13} />
             </button>
-            <span className="font-mono text-[11px] sm:text-[12px] text-[var(--text-2)] tabular-nums min-w-[32px] sm:min-w-[38px] text-center font-semibold select-none">
+            <span
+              data-testid="blueprint-zoom-value"
+              className="font-mono text-[11px] sm:text-[12px] text-[var(--text-2)] tabular-nums min-w-[32px] sm:min-w-[38px] text-center font-semibold select-none"
+            >
               {Math.round(zoom * 100)}%
             </span>
             <button
@@ -992,8 +1302,8 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             <button
               type="button"
               onClick={handleReset}
-              title="Reset Zoom & Pan"
-              aria-label="Reset View"
+              title="Reset to Full Sheet"
+              aria-label="Reset view to full sheet"
               className="bw-touch-target w-6 h-6 sm:w-7 sm:h-7 rounded-[5px] sm:rounded-[6px] hover:bg-[var(--fill-hover)] text-[var(--text-1)] flex items-center justify-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
             >
               <Icon name="refresh" size={13} />
@@ -1015,7 +1325,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             className={`h-6 sm:h-7 px-2 sm:px-2.5 rounded-[7px] sm:rounded-[9px] text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out select-none ${
               isStale
                 ? 'opacity-40 cursor-not-allowed bg-[var(--fill)] text-[var(--text-3)] border border-[var(--hairline)]'
-                : 'bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 text-red-600 dark:text-red-400 border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_1px_2px_rgba(220,38,38,0.12)] cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100'
+                : 'bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 text-red-800 dark:text-red-200 border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_1px_2px_rgba(220,38,38,0.12)] cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100'
             }`}
           >
             {isExportingPdf ? (
@@ -1035,6 +1345,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
 
           <button
             type="button"
+            data-testid="blueprint-expand"
             onClick={() => setIsModalOpen(true)}
             title="Open Fullscreen Blueprint Modal"
             aria-label="Open Fullscreen Blueprint"
@@ -1043,6 +1354,19 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             <Icon name="maximize" size={13} />
           </button>
         </div>
+      </div>
+
+      {/* 3b. Framing modes: the same sheet, three crops. No re-inject, no reveal. */}
+      <div className="flex items-center justify-between gap-2 px-2.5 sm:px-3.5 py-1.5 border-b border-[var(--hairline)] bg-[var(--fill)]/20">
+        {renderViewModeSwitcher(false)}
+        <span
+          data-testid="blueprint-view-mode-status"
+          aria-live="polite"
+          title={viewModeHint}
+          className="hidden sm:inline text-[10px] text-[var(--text-3)] truncate text-right select-none"
+        >
+          {viewModeHint}
+        </span>
       </div>
 
       {/* 4. Canvas Preview */}
@@ -1074,7 +1398,12 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             fixed-fidelity artifact — gestures move the viewport over it) */}
         <div
           ref={cardCanvasRef}
-          className="w-full h-full flex items-center justify-center p-3 transition-transform will-change-transform"
+          role="region"
+          data-testid="blueprint-viewport"
+          aria-label="Blueprint viewport. Plus and minus zoom, 0 fits the sheet, arrow keys pan."
+          tabIndex={0}
+          onKeyDown={(e) => handleSheetKeyDown(e, false)}
+          className="w-full h-full flex items-center justify-center p-3 transition-transform will-change-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]/55"
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: 'center center',
@@ -1091,6 +1420,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
           {injectReady ? (
             <div
               ref={cardSheetRef}
+              data-testid="blueprint-sheet-card"
               className="relative flex items-center justify-center w-full h-full drop-shadow-md"
               dangerouslySetInnerHTML={{ __html: renderSvg }}
             />
@@ -1335,15 +1665,14 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                 <span
                   className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs"
                   style={{ backgroundColor: chipDotColor }}
-                />
-                <span className="text-[11px] font-mono font-semibold opacity-75">[{pIdx + 1}]</span>
-                <span className="text-[12px] font-medium">{chipLabel}</span>
-                {p.area_sqm !== undefined && (
-                  <span className="text-[11px] font-mono opacity-75">{p.area_sqm.toFixed(2)}m²</span>
-                )}
+                />                  <span className="text-[11px] font-mono font-semibold">[{pIdx + 1}]</span>
+                  <span className="text-[12px] font-medium">{chipLabel}</span>
+                  {p.area_sqm !== undefined && (
+                    <span className="text-[11px] font-mono">{p.area_sqm.toFixed(2)}m²</span>
+                  )}
                 <span className="text-[10px] text-[var(--text-3)] font-normal">({chipZone})</span>
                 {p.is_core && (
-                  <span className="text-[9px] px-1 py-0.2 rounded font-bold uppercase bg-purple-500/20 text-purple-600 dark:text-purple-300 tracking-wider">
+                  <span className="text-[9px] px-1 py-0.2 rounded font-bold uppercase bg-purple-500/20 text-purple-800 dark:text-purple-200 tracking-wider">
                     Core
                   </span>
                 )}
@@ -1476,7 +1805,12 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             onClick={() => setIsModalOpen(false)}
           >
             <div
-              className="vibrancy-panel rounded-[20px] max-w-[92vw] max-h-[88vh] w-full h-full flex flex-col shadow-2xl border border-[var(--panel-border-color)] overflow-hidden"
+              ref={modalPanelRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${isMultiStorey && currentFloor ? currentFloor.floor_name : 'Architectural floor plan'} — fullscreen blueprint`}
+              tabIndex={-1}
+              className="vibrancy-panel rounded-[20px] max-w-[92vw] max-h-[88vh] w-full h-full flex flex-col shadow-2xl border border-[var(--panel-border-color)] overflow-hidden outline-none"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
@@ -1503,7 +1837,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                         )}
                         <span
                           data-testid="modal-blueprint-freshness-token"
-                          className="font-mono text-[10px] sm:text-[11px] font-semibold text-[var(--accent-ink)] bg-[var(--accent-tint)] px-1.5 py-0.5 rounded-[6px] whitespace-nowrap border border-[var(--accent)]/20 max-w-[180px] sm:max-w-xs truncate"
+                          className="font-mono text-[10px] sm:text-[11px] font-semibold text-[var(--text-1)] bg-[var(--accent-tint)] px-1.5 py-0.5 rounded-[6px] whitespace-nowrap border border-[var(--accent)]/20 max-w-[180px] sm:max-w-xs truncate"
                         >
                           {freshnessToken}
                         </span>
@@ -1527,6 +1861,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
+                    data-blueprint-modal-close
                     className="sm:hidden w-8 h-8 rounded-[9px] bg-[var(--fill)] hover:bg-[var(--fill-hover)] text-[var(--text-2)] hover:text-[var(--text-1)] flex items-center justify-center transition-colors duration-150 cursor-pointer active:scale-[0.92] shrink-0"
                     aria-label="Close modal"
                   >
@@ -1543,7 +1878,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                       className={`h-6 px-2.5 sm:px-3 rounded-[6px] sm:rounded-[7px] text-[11px] sm:text-[12px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
                         mode === 'cad'
                           ? 'bg-[var(--segmented-active-bg)] text-[var(--segmented-active-label)] bw-segmented-active-shadow'
-                          : 'text-[var(--text-2)] hover:text-[var(--text-1)]'
+                          : 'text-[var(--text-1)] hover:text-[var(--text-1)]'
                       }`}
                     >
                       CAD
@@ -1554,7 +1889,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                       className={`h-6 px-2.5 sm:px-3 rounded-[6px] sm:rounded-[7px] text-[11px] sm:text-[12px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
                         mode === 'paper'
                           ? 'bg-[var(--segmented-active-bg)] text-[var(--segmented-active-label)] bw-segmented-active-shadow'
-                          : 'text-[var(--text-2)] hover:text-[var(--text-1)]'
+                          : 'text-[var(--text-1)] hover:text-[var(--text-1)]'
                       }`}
                     >
                       Paper
@@ -1604,7 +1939,10 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                     >
                       <Icon name="minus" size={13} />
                     </button>
-                    <span className="font-mono text-[11px] sm:text-[12px] text-[var(--text-2)] tabular-nums min-w-[34px] sm:min-w-[40px] text-center font-semibold select-none">
+                    <span
+                      data-testid="blueprint-modal-zoom-value"
+                      className="font-mono text-[11px] sm:text-[12px] text-[var(--text-1)] tabular-nums min-w-[34px] sm:min-w-[40px] text-center font-semibold select-none"
+                    >
                       {Math.round(modalZoom * 100)}%
                     </span>
                     <button
@@ -1620,8 +1958,8 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                     <button
                       type="button"
                       onClick={handleModalReset}
-                      title="Reset View"
-                      aria-label="Reset View"
+                      title="Reset to Full Sheet"
+                      aria-label="Reset view to full sheet"
                       className="bw-touch-target w-6 h-6 sm:w-7 sm:h-8 rounded-[5px] sm:rounded-[6px] hover:bg-[var(--fill-hover)] text-[var(--text-1)] flex items-center justify-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
                     >
                       <Icon name="refresh" size={13} />
@@ -1641,7 +1979,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                     className={`h-7 sm:h-8 px-2 sm:px-3 rounded-[8px] sm:rounded-[9px] text-[11px] sm:text-[12px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out mr-1 sm:mr-2 select-none ${
                       isStale
                         ? 'opacity-40 cursor-not-allowed bg-[var(--fill)] text-[var(--text-3)] border border-[var(--hairline)]'
-                        : 'bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 text-red-600 dark:text-red-400 border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_1px_2px_rgba(220,38,38,0.15)] cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100'
+                        : 'bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 text-red-800 dark:text-red-200 border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_1px_2px_rgba(220,38,38,0.15)] cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100'
                     }`}
                   >
                     {isExportingPdf ? (
@@ -1662,6 +2000,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                   {/* Export SVG Button */}
                   <button
                     type="button"
+                    data-testid="blueprint-export-svg"
                     onClick={handleDownloadSvg}
                     disabled={isStale}
                     title={
@@ -1684,6 +2023,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
+                    data-blueprint-modal-close
                     className="hidden sm:flex w-8 h-8 rounded-[9px] bg-[var(--fill)] hover:bg-[var(--fill-hover)] text-[var(--text-2)] hover:text-[var(--text-1)] items-center justify-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
                     aria-label="Close modal"
                   >
@@ -1695,10 +2035,33 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
               {/* Modal Storey Switcher Tabs */}
               {renderFloorSwitcher(true)}
 
+              {/* Modal framing: same sheet, same modes, no reveal replay */}
+              <div className="flex items-center justify-between gap-2 px-3 sm:px-5 py-1.5 border-b border-[var(--hairline)] bg-[var(--fill)]/20">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="hidden sm:inline text-[10px] font-semibold uppercase tracking-wider text-[var(--text-3)] select-none">
+                    Framing
+                  </span>
+                  {renderViewModeSwitcher(true)}
+                </div>
+                <span
+                  data-testid="blueprint-modal-view-mode-status"
+                  aria-live="polite"
+                  title={viewModeHint}
+                  className="hidden sm:inline text-[10px] text-[var(--text-3)] truncate text-right select-none"
+                >
+                  {viewModeHint}
+                </span>
+              </div>
+
               {/* Modal Body Canvas */}
               <div
                 ref={modalCanvasRef}
-                className="relative flex-1 w-full overflow-hidden select-none"
+                role="region"
+                data-testid="blueprint-modal-viewport"
+                aria-label="Fullscreen blueprint viewport. Plus and minus zoom, 0 fits the sheet, arrow keys pan."
+                tabIndex={0}
+                onKeyDown={(e) => handleSheetKeyDown(e, true)}
+                className="relative flex-1 w-full overflow-hidden select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]/55"
                 style={{ backgroundColor: 'var(--blueprint-bg)', touchAction: 'none' }}
                 onMouseDown={handleModalMouseDown}
                 onMouseMove={handleModalMouseMove}
@@ -1711,13 +2074,14 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                   className="w-full h-full flex items-center justify-center p-8 transition-transform will-change-transform"
                   style={{
                     transform: `translate(${modalPan.x}px, ${modalPan.y}px) scale(${modalZoom})`,
-                    transformOrigin: 'center center',
+                    transformOrigin: 'top center',
                     transition: isModalPanning ? 'none' : 'transform 0.15s ease-out',
                     cursor: isModalPanning ? 'grabbing' : 'grab',
                   }}
                 >
                   <div
                     ref={modalSheetRef}
+                    data-testid="blueprint-sheet-modal"
                     className="relative flex items-center justify-center w-full h-full drop-shadow-xl"
                     dangerouslySetInnerHTML={{ __html: sanitizedSvg }}
                   />
@@ -1742,7 +2106,10 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                   )}
                 </div>
               ) : currentPlacements.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 p-3 border-t border-[var(--hairline)] bg-[var(--fill)]/20">
+                <div
+                  data-testid="blueprint-modal-legend"
+                  className="flex flex-wrap items-center gap-2 p-3 border-t border-[var(--hairline)] bg-[var(--fill)]/20 max-h-[22vh] overflow-y-auto overscroll-contain"
+                >
                   <div className="flex items-center gap-1 mr-1">
                     <span className="text-[11px] font-semibold text-[var(--text-3)] uppercase tracking-wider">
                       {currentFloor ? `${currentFloor.floor_name} Zones:` : 'Spatial Allocations:'}
@@ -1768,9 +2135,15 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                     const chipZone = isTerraceBand ? 'TERRACE' : (isBalcony ? (p.zone || 'NE') : (meta.zone || p.zone));
 
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={`modal-legend-${p.room_id}-${pIdx}`}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium whitespace-nowrap select-none border ${
+                        data-testid={`modal-room-chip-${p.room_id}`}
+                        aria-pressed={activeRoomId === p.room_id}
+                        onClick={() => setSelectedRoomId((current) => (current === p.room_id ? null : p.room_id))}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium whitespace-nowrap select-none border cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
+                          activeRoomId === p.room_id ? 'ring-2 ring-[var(--accent)]/60 border-[var(--accent)]/60' : ''
+                        } ${
                           p.is_core
                             ? 'bg-purple-500/10 border-purple-500/30 text-purple-700 dark:text-purple-300'
                             : isTerraceBand
@@ -1782,14 +2155,14 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                           className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs"
                           style={{ backgroundColor: chipDotColor }}
                         />
-                        <span className="text-[11px] font-mono font-semibold opacity-75">[{pIdx + 1}]</span>
+                        <span className="text-[11px] font-mono font-semibold">[{pIdx + 1}]</span>
                         <span className="text-[12px] font-medium">{chipLabel}</span>
                         {p.area_sqm !== undefined && (
-                          <span className="text-[11px] font-mono opacity-80">{p.area_sqm.toFixed(1)}m²</span>
+                          <span className="text-[11px] font-mono">{p.area_sqm.toFixed(1)}m²</span>
                         )}
                         <span className="text-[11px] text-[var(--text-3)] font-normal">({chipZone})</span>
                         {p.is_core && (
-                          <span className="text-[9px] px-1 py-0.2 rounded font-bold uppercase bg-purple-500/20 text-purple-600 dark:text-purple-300 tracking-wider">
+                          <span className="text-[9px] px-1 py-0.2 rounded font-bold uppercase bg-purple-500/20 text-purple-800 dark:text-purple-200 tracking-wider">
                             Core
                           </span>
                         )}
@@ -1798,7 +2171,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                             TERRACE / Non-Carpet
                           </span>
                         )}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>

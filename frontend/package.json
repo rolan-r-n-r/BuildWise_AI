@@ -24,7 +24,7 @@
     "test:selection-policy": "node scripts/e2e_selection_policy.cjs",
     "test:ui-closure": "node scripts/e2e_ui_closure.cjs",
     "gates": "npm run build && npm run test:reset-reducer && npm run test:report-surface && npm run test:warning-report && npm run test:plan-advisor && npm run test:validation-guards",
-    "gates:browser": "node scripts/e2e_reset_contract.cjs && node scripts/e2e_selection_policy.cjs && node scripts/e2e_full_funnel.cjs && node scripts/e2e_ui_closure.cjs && node scripts/e2e_warning_overflow.cjs",
+    "gates:browser": "node scripts/gate_browser.cjs",
     "assert:bundle": "node scripts/assert_bundle_split.cjs",
     "lint:css": "node scripts/css_orphans.cjs",
     "lint:material": "node scripts/lint_material.cjs",

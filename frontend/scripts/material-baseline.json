@@ -1,7 +1,7 @@
 {
   "note": "Pinned blur/translucency ledger. Regenerate with: node scripts/lint_material.cjs --update",
   "surfaces": [
-    "src/components/BlueprintViewer.tsx:1475",
+    "src/components/BlueprintViewer.tsx:1804",
     "src/components/map/CaptureSheet.tsx:1458",
     "src/components/map/CaptureSheet.tsx:1512",
     "src/components/map/CaptureSheet.tsx:1533",
