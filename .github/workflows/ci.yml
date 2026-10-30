@@ -76,30 +76,57 @@ jobs:
       - name: Start backend
         working-directory: backend
         run: |
-          python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --log-level warning \
+          # Own process group: the always() cleanup kills exactly this PGID
+          # (uvicorn and any children), never by a broad name pattern.
+          setsid python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --log-level warning \
             > /tmp/backend.log 2>&1 &
+          echo "BACKEND_PID=$!" >> "$GITHUB_ENV"
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:8000/api/health && break
             sleep 1
           done
+          # The loop can expire; a final probe makes a never-ready server fail
+          # this step instead of letting the gate preflight diagnose it later.
+          curl -sf http://127.0.0.1:8000/api/health
       - name: Start frontend
         working-directory: frontend
         run: |
-          npm run dev -- --host 127.0.0.1 --port 5173 > /tmp/frontend.log 2>&1 &
+          setsid npm run dev -- --host 127.0.0.1 --port 5173 > /tmp/frontend.log 2>&1 &
+          echo "FRONTEND_PID=$!" >> "$GITHUB_ENV"
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:5173/app > /dev/null && break
             sleep 1
           done
-      # google-chrome is preinstalled on ubuntu-latest; both scripts accept
+          curl -sf http://127.0.0.1:5173/app > /dev/null
+      # google-chrome is preinstalled on ubuntu-latest; the local gate accepts
       # CHROME_PATH when a runner needs a different binary.
-      - name: Selection-path browser gate
+      - name: Browser regression gate
         working-directory: frontend
         env:
           E2E_URL: http://127.0.0.1:5173/app
+          # The reset contract starts from a shared-site deep link, not /app.
+          E2E_RESET_URL: http://127.0.0.1:5173/app?lat=13.0500&lon=77.6200
+          E2E_API_URL: http://127.0.0.1:8000/api/health
           CHROME_PATH: /usr/bin/google-chrome
-        run: npm run test:selection-policy
+        run: npm run gates:browser
       - name: Server logs on failure
         if: failure()
         run: |
           echo "--- backend ---"; tail -80 /tmp/backend.log || true
           echo "--- frontend ---"; tail -40 /tmp/frontend.log || true
+      - name: Stop test-owned servers
+        if: always()
+        run: |
+          set +e
+          for pid in "${FRONTEND_PID:-}" "${BACKEND_PID:-}"; do
+            [ -z "$pid" ] && continue
+            if kill -0 -- "-$pid" 2>/dev/null; then
+              echo "Stopping test-owned process group $pid"
+              kill -TERM -- "-$pid" 2>/dev/null
+              for i in $(seq 1 20); do
+                kill -0 -- "-$pid" 2>/dev/null || break
+                sleep 0.25
+              done
+              kill -KILL -- "-$pid" 2>/dev/null
+            fi
+          done
