@@ -21,7 +21,19 @@ import type { Map as MlMap, StyleSpecification } from 'maplibre-gl';
 
 let map: MlMap | null = null;
 const holders = new Set<string>();
+/**
+ * Holds that also strip the layer stack, not merely stop repainting.
+ *
+ * Stripping is for a map nobody can see (a report sheet over 96% of it). A
+ * two-frame hold across a visible interaction must NEVER strip: replacing a
+ * visible basemap's layers with an empty stack paints the background alone, and
+ * a measured style switch showed exactly that — one blank frame at 80 ms
+ * (luminance spread 5.9 against 42–60 for the surrounding frames) before the
+ * restore landed. The frame budget is kept; the rebuild is not.
+ */
+const stripHolders = new Set<string>();
 let paused = false;
+let stripped = false;
 
 /**
  * The style captured at freeze time, restored on thaw.
@@ -175,7 +187,8 @@ export function markStyleReplaced(): void {
 function apply(): void {
   if (!map) return;
   const shouldPause = holders.size > 0;
-  if (shouldPause === paused) return;
+  const shouldStrip = stripHolders.size > 0;
+  if (shouldPause === paused && shouldStrip === stripped) return;
   paused = shouldPause;
   try {
     if (shouldPause) {
@@ -183,11 +196,28 @@ function apply(): void {
       // resume by jumping to where an animation would have finished.
       map.stop();
       map.repaint = false;
-      freezeTilePipeline(map);
+      if (shouldStrip && !stripped) {
+        freezeTilePipeline(map);
+        stripped = frozenStyle !== null;
+      } else if (!shouldStrip && stripped) {
+        // A stripped hold ended while another frame hold remains: put the
+        // basemap back now rather than leaving a blank map under a pause.
+        thawTilePipeline(map);
+        stripped = false;
+      }
     } else {
-      thawTilePipeline(map);
+      const wasStripped = stripped;
+      if (stripped) {
+        thawTilePipeline(map);
+        stripped = false;
+      }
       map.repaint = true;
-      map.resize();
+      // Only a long, layer-stripping hold can have left the container a
+      // different shape. A two-frame hold around a visible style switch does
+      // not need a framebuffer reallocation — and that resize is itself a
+      // blank frame on some drivers, which is exactly what the hold exists to
+      // avoid.
+      if (wasStripped) map.resize();
       map.triggerRepaint();
     }
   } catch {
@@ -199,6 +229,7 @@ function apply(): void {
 export function attachMapRenderGate(instance: MlMap | null): void {
   map = instance;
   paused = false;
+  stripped = false;
   frozenStyle = null;
   if (instance) apply();
 }
@@ -209,12 +240,14 @@ export function attachMapRenderGate(instance: MlMap | null): void {
  */
 export function holdMapRender(reason: string): void {
   holders.add(reason);
+  stripHolders.add(reason);
   apply();
 }
 
 /** Let go of a hold. Rendering resumes when no reason is left. */
 export function releaseMapRender(reason: string): void {
   holders.delete(reason);
+  stripHolders.delete(reason);
   apply();
 }
 
@@ -241,12 +274,17 @@ const HOLD_FAILSAFE_MS = 1000;
  */
 export function holdMapRenderAcrossCommit(reason: string): void {
   const key = `${reason}#${++unitSeq}`;
-  holdMapRender(key);
+  // Frame hold only: stop repainting for the commit, but never strip a visible
+  // basemap (see stripHolders).
+  holders.add(key);
+  apply();
   let released = false;
   const release = () => {
     if (released) return;
     released = true;
-    releaseMapRender(key);
+    holders.delete(key);
+    stripHolders.delete(key); // harmless; frame holds never add one
+    apply();
   };
   // Two frames: the first lands in the same frame as the commit, the second
   // after the browser has painted it. Releasing on the first would let a map
