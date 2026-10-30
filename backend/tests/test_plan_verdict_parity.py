@@ -373,6 +373,29 @@ def _pdf_page1_text(plan: dict, pages: int = 2) -> str:
     return " ".join(raw.split())
 
 
+def _pdf_all_text(plan: dict) -> str:
+    """The whole report: page-1 summary plus Appendix A's complete ledger."""
+    data = {
+        "request_id": "BW-TRUTH-LABELS",
+        "timestamp": "2026-10-28T00:00:00Z",
+        "coordinates": {"latitude": 12.97, "longitude": 77.59},
+        "formatted_address": "Truth-label pin",
+        "overall_suitability_score": 80.0,
+        "suitability_verdict": "Suitable",
+        "warnings": [],
+        "factors": [],
+        "cost_estimate": {"base_rate_per_sqft": 100, "base_cost_inr": 200000, "breakdown": []},
+        "recommendation_items": [],
+        "detailed_recommendations": [],
+        "risks": [],
+    }
+    buf = generate_pdf_report(data, floor_plan=plan)
+    raw = "".join(
+        page.extract_text() or "" for page in PdfReader(io.BytesIO(buf.getvalue())).pages
+    )
+    return " ".join(raw.split())
+
+
 def test_certified_plan_reports_zero_certificate_failures():
     plan = _certified_payload()
     labels = plan_truth_labels(plan)
@@ -431,19 +454,27 @@ def test_summary_counts_match_the_groups_exactly():
         )
 
 
-def test_every_page1_row_is_printed_under_its_own_heading():
+def test_page1_summary_keeps_every_row_in_the_complete_ledger():
+    """Page 1 is a summary; no finding is dropped from the report.
+
+    The banner carries the three certificate-owned counts, the top findings and
+    the next actions.  Every page-1 row and certificate failure still survives
+    verbatim in Appendix A.  This replaces the old expectation that a 49-row
+    list had to be forced into the page-1 banner.
+    """
     plan = _fail_stamped_payload()
     labels = plan_truth_labels(plan)
-    text = _pdf_page1_text(plan)
+    page1 = _pdf_page1_text(plan, pages=1)
     for key in ("certificate_failures", "listed_deviations", "unresolved_breaches"):
-        assert labels["headings"][key] in text, f"heading missing from the PDF: {key}"
-    assert labels["summary_line"] in text
-    # Every page-1 row survives on the banner pages, verbatim.
+        assert labels["headings"][key] in page1, f"heading missing from page 1: {key}"
+    assert labels["summary_line"] in page1
+    assert "Recommended next actions" in page1
+
+    text = _pdf_all_text(plan)
     for row in page1_plan_warnings(plan["warnings"]):
-        assert row in text, f"page-1 row missing from the PDF: {row[:80]}"
-    # And so does every certificate failure row.
+        assert row in text, f"page-1 row missing from the report: {row[:80]}"
     for failure in plan["mathematical_certificate"]["failures"]:
-        assert failure in text, f"certificate failure missing from the PDF: {failure}"
+        assert failure in text, f"certificate failure missing from the report: {failure}"
 
 
 def test_pdf_group_headings_are_the_module_headings():

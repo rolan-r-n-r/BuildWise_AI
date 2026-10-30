@@ -424,8 +424,13 @@ def test_pdf_drops_all_clear_verdict_beside_warnings(solved):
     ) + ["GATE-PIN: a surfaced advisory must suppress the all-clear verdict."]
 
     text = _pdf_text(payload)
+    # The certificate block now prints the SAME certificate-owned verdict and
+    # counts as page 1.  An advisory outside the page-1 finding set no longer
+    # invents a second "CERTIFIED - ADVISORIES" severity from a warning total;
+    # the all-clear wording is still gone.
     assert "100% SATISFIED" not in text, "PDF still claims 100% beside a warning"
-    assert "CERTIFIED - ADVISORIES" in text, "PDF did not print the advisory verdict"
+    assert "NOT CERTIFIED -" in text, "PDF did not print the withheld-certificate verdict"
+    assert "9 unresolved breaches" in text, "the certificate block lost its own breach count"
 
 
 def test_pdf_never_claims_all_clear_when_gate_did_not_run(solved):
