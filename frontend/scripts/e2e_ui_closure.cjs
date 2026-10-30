@@ -400,14 +400,38 @@ async function main() {
       await page.setViewport({ width, height: width === 390 ? 844 : 900 });
       await sleep(400);
       for (const theme of ['light', 'dark']) {
-        const current = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
-        if (current !== theme) {
+        for (let i = 0; i < 3; i++) {
+          const current = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+          if (current === theme) break;
           await page.evaluate(() => {
             const btn = document.querySelector('[aria-label="Toggle light / dark theme"]');
             if (btn) btn.click();
           });
-          await sleep(500);
+          try {
+            await page.waitForFunction(
+              (expected) => document.documentElement.getAttribute('data-theme') === expected,
+              { timeout: 3000 },
+              theme,
+            );
+            break;
+          } catch {
+            /* retry toggle click */
+          }
         }
+        await page.waitForFunction(() => {
+          const sheet = document.querySelector('[role="dialog"][aria-label="Site Feasibility Report"]');
+          if (!sheet) return false;
+          const probe = document.createElement('span');
+          document.body.appendChild(probe);
+          probe.style.color = 'var(--text-1)';
+          const expected = getComputedStyle(probe).color;
+          probe.remove();
+          const h1 = sheet.querySelector('h1');
+          if (h1 && getComputedStyle(h1).color !== expected) return false;
+          const anims = typeof sheet.getAnimations === 'function' ? sheet.getAnimations({ subtree: true }) : [];
+          return anims.filter((a) => typeof CSSTransition !== 'undefined' && a instanceof CSSTransition).every((a) => a.playState === 'finished' || a.playState === 'idle');
+        }, { timeout: 5000 }).catch(() => {});
+        await sleep(600);
         const spot = await page.evaluate(() => {
           const probe = document.createElement('span');
           document.body.appendChild(probe);
