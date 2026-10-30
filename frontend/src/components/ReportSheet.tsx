@@ -1011,7 +1011,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                   </h2>
 
                   {/* Degradation warnings: persistent banner, report top */}
-                  <WarningsBanner data={bannerData} />
+                  <WarningsBanner data={bannerData} planVerdict={floorPlanData?.plan_verdict ?? null} />
 
                   {/* Hero summary: score, identity chips, headline tiles, data health */}
                   <section data-report-section="summary" id="sec-summary" aria-label="Summary">
@@ -1089,7 +1089,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                   </h2>
 
                   {/* Degradation warnings: same banner the Overview tab renders */}
-                  <WarningsBanner data={bannerData} />
+                  <WarningsBanner data={bannerData} planVerdict={floorPlanData?.plan_verdict ?? null} />
 
                   {/* 3-col grid with Seismic / Hydrological / Storm side by side */}
                   <section data-report-section="profiles" aria-label="Hazard profiles">
@@ -1478,7 +1478,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
               {/* Warnings print on page 1, before the first section.  This is
                   the SAME merged list (analysis + page-1 plan warnings) the
                   downloaded PDF prints. */}
-              <WarningsBanner data={bannerData} />
+              <WarningsBanner data={bannerData} planVerdict={floorPlanData?.plan_verdict ?? null} />
 
               {/* SECTION 1: OVERVIEW */}
               <div className="report-print-section space-y-4">

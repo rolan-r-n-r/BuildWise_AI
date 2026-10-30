@@ -275,6 +275,9 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
   // Canonical single source of truth: parent-managed activeFloorPlan if provided, falling back to local state
   const floorPlan = activeFloorPlan !== undefined ? activeFloorPlan : localFloorPlan;
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Field-level 422 detail, kept separate so the message stays readable and
+  // each rejected input can be named (e.g. "floors: needs an even number").
+  const [validationIssues, setValidationIssues] = useState<string[]>([]);
 
   /**
    * Chunked arrival: the plan commits, the SVG body follows in its own slice.
@@ -466,17 +469,20 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
   ) => {
     if (selectedRooms.length < 3) {
       setErrorMessage('Please select at least 3 rooms to generate an architectural floor plan.');
+      setValidationIssues([]);
       return;
     }
 
     if (siteMode === 'irregular' && !polyMetrics.isValid) {
       setErrorMessage(`Invalid plot polygon: ${polyMetrics.reason}`);
+      setValidationIssues([]);
       return;
     }
 
     const activeSchemeProfile = profileOverride !== undefined ? profileOverride : schemeProfile;
     setIsGenerating(true);
     setErrorMessage(null);
+    setValidationIssues([]);
     setPendingSchemeProfile(activeSchemeProfile || null);
 
     // A captured boundary is authoritative: send its real bounding box. The
@@ -543,7 +549,26 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
     // A remediation applies ONLY validated inputs, on top of the request the
     // controls produced. No coordinate, area or verdict is written here.
     const finalReq: FloorPlanRequest = requestPatch ? { ...req, ...requestPatch } : req;
-    setLastRequest(finalReq);
+
+    // Mirror the request schema's one structural rule that a UI action can
+    // violate: V3 pairs every dwelling with an upper level, so an odd storey
+    // count cannot be drawn.  Refuse locally with the same explanation instead
+    // of sending a request the API will reject.
+    if (
+      finalReq.partition_variant === 'duplex' &&
+      typeof finalReq.floors === 'number' &&
+      finalReq.floors % 2 === 1
+    ) {
+      setErrorMessage(
+        `The two-storey duplex variant needs an even number of storeys; this request has ${finalReq.floors}. Add or remove a storey, or choose another strategy.`,
+      );
+      setValidationIssues([
+        `floors: duplex needs an even number of storeys (received ${finalReq.floors}).`,
+      ]);
+      setIsGenerating(false);
+      setPendingSchemeProfile(null);
+      return;
+    }
 
     const controller = new AbortController();
     const timeoutMs = generationTimeoutMs();
@@ -607,15 +632,24 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
         generated_at: Date.now(),
         params_snapshot: snapshot,
       };
+      // Only a SUCCESSFUL generation may become the request snapshot the
+      // advisor/remediation panel reads.  Writing it before the response made
+      // a rejected request trigger a second 422 from the remediation endpoint
+      // against the same invalid payload.
+      setLastRequest(finalReq);
       setLocalFloorPlan(freshPlan);
       if (onFloorPlanGenerated) {
         onFloorPlanGenerated(freshPlan);
       }
     } catch (err: any) {
+      const issues = Array.isArray(err?.issues) ? err.issues.map(String) : [];
+      setValidationIssues(issues);
       setErrorMessage(
         timedOut
           ? `Generation timed out after ${Math.round(timeoutMs / 1000)} s — the engine did not answer. Nothing was drawn; the previous plan is unchanged. Retry when the engine is responsive.`
-          : err.message || 'Failed to generate floor plan.'
+          : err?.status === 422
+            ? `The engine rejected this design: ${err.message}. Correct the named inputs and generate again. The previous plan is unchanged.`
+            : err?.message || 'Failed to generate floor plan.'
       );
     } finally {
       window.clearTimeout(timeoutTimer);
@@ -796,10 +830,25 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
       {errorMessage && (
         <div
           data-testid="floorplan-generate-error"
-          className="p-2.5 rounded-[10px] bg-[var(--fill)] text-[12px] text-[var(--semantic-red-ink)] flex items-center gap-2"
+          role="alert"
+          className="p-2.5 rounded-[10px] bg-[var(--fill)] text-[12px] text-[var(--semantic-red-ink)] space-y-1"
         >
-          <Icon name="alert-triangle" size={14} className="shrink-0" />
-          <span>{errorMessage}</span>
+          <div className="flex items-start gap-2">
+            <Icon name="alert-triangle" size={14} className="shrink-0 mt-0.5" />
+            <span className="min-w-0 break-words">{errorMessage}</span>
+          </div>
+          {validationIssues.length > 0 && (
+            <ul
+              data-testid="floorplan-validation-issues"
+              className="list-disc space-y-0.5 pl-8 text-[11px] leading-snug"
+            >
+              {validationIssues.map((issue) => (
+                <li key={issue} className="break-words">
+                  {issue}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

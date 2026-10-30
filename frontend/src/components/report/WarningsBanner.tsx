@@ -5,6 +5,9 @@ import { isCriticalPlanWarning, page1PlanWarnings } from '../../services/planWar
 
 interface WarningsBannerProps {
   data: AnalysisResponse;
+  /** The SERVER's plan verdict.  Warning text alone cannot tell a listed,
+   * within-cap deviation from a certification-blocking breach. */
+  planVerdict?: string | null;
 }
 
 /**
@@ -18,7 +21,7 @@ interface WarningsBannerProps {
  * programme non-compliance" headline overstated the plan's defects and hid the
  * provenance caveats.
  */
-export const WarningsBanner: React.FC<WarningsBannerProps> = ({ data }) => {
+export const WarningsBanner: React.FC<WarningsBannerProps> = ({ data, planVerdict }) => {
   const warnings = data.warnings ?? [];
   if (warnings.length === 0) return null;
 
@@ -28,12 +31,15 @@ export const WarningsBanner: React.FC<WarningsBannerProps> = ({ data }) => {
     .map((w) => String(w))
     .filter((w) => !planSet.has(w.trim()));
 
-  // Refusal: a proportion/programme FAIL is drawn, not refused - so the banner
-  // must be the loudest thing on the sheet when one is present.  It switches to
-  // the red treatment and never hides the list behind a count.
-  // ROOM-MIN / PLATE-SHORT are the named squeezed-room lines: a deficit with
-  // only those (no PROP-HARD) still has to read as a FAIL, not an advisory.
-  const critical = planWarnings.some((w) => isCriticalPlanWarning(String(w)));
+  // The verdict decides the treatment when the server published one.  A
+  // certified plan can carry ROOM-MIN rows that the certificate lists as
+  // within-cap deviations; painting those red with a FAIL-stamp badge made the
+  // report contradict its own page-1 verdict.  The warning heuristic remains
+  // only as a legacy fallback for payloads with no verdict field.
+  const critical =
+    planVerdict != null
+      ? planVerdict === 'NOT-CERTIFIED-FAIL-STAMP'
+      : planWarnings.some((w) => isCriticalPlanWarning(String(w)));
   const tone = critical
     ? {
         section: 'bg-[var(--semantic-red)]/10 border-[var(--semantic-red)]',
@@ -75,6 +81,12 @@ export const WarningsBanner: React.FC<WarningsBannerProps> = ({ data }) => {
           <p className="text-[11px] text-[var(--semantic-red-ink)] leading-snug pl-6">
             The plan is still drawn and exported with a FAIL stamp. The squeezed rooms are named
             individually below; refusal is reserved for statutory, egress and stacking failures.
+          </p>
+        )}
+        {!critical && planVerdict === 'CERTIFIED' && planWarnings.length > 0 && (
+          <p className="text-[11px] text-[var(--text-2)] leading-snug pl-6">
+            These are disclosed findings, not certification failures. The certificate is
+            not withheld by a listed, within-cap deviation.
           </p>
         )}
       </div>
