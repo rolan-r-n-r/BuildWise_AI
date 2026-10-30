@@ -260,6 +260,62 @@ async function main() {
       'slope card consumes the generated text',
     );
     check(!cardSource.includes('100 at ≤2%'), 'old hand-copied slope table is gone');
+
+    // ----------------------------------------------------------------------- //
+    console.log('\n[5] A 422 keeps its field-level detail');
+    const { parseApiErrorDetail } = await server.ssrLoadModule('/src/services/api.ts');
+    const detailed = parseApiErrorDetail(
+      [
+        {
+          type: 'value_error',
+          loc: ['body'],
+          msg: "Value error, partition_variant='duplex' needs an even number of storeys so every dwelling has its paired upper level.",
+          input: { floors: 3 },
+        },
+      ],
+      'Fallback message',
+    );
+    check(
+      detailed.message.includes('even number of storeys'),
+      'the validation message is readable, not [object Object]',
+      detailed.message,
+    );
+    check(!detailed.message.includes('[object Object]'), 'the detail array is never stringified raw');
+    check(detailed.issues.length === 1, 'one rejected rule becomes one issue');
+
+    const nested = parseApiErrorDetail(
+      [{ loc: ['body', 'request', 'floors'], msg: 'Input should be a valid integer' }],
+      'Fallback',
+    );
+    check(nested.issues[0].startsWith('request.floors:'), 'nested field path is preserved', nested.issues[0]);
+    check(
+      parseApiErrorDetail('Plain server message', 'Fallback').message === 'Plain server message',
+      'a plain string detail is preserved verbatim',
+    );
+
+    // Structural pins for the two behaviours that cannot be exercised without
+    // a live 422: the request snapshot is committed only on success, and the
+    // rejected field list renders for the user.
+    const generatorSource = fs.readFileSync(
+      path.join(ROOT, 'src/components/FloorPlanGeneratorCard.tsx'),
+      'utf8',
+    );
+    const successIndex = generatorSource.indexOf('const resp = await generateFloorPlan');
+    const snapshotIndex = generatorSource.indexOf('setLastRequest(finalReq)');
+    check(successIndex > 0 && snapshotIndex > successIndex, 'lastRequest is written after a successful solve');
+    check(
+      !/setLastRequest\(finalReq\);\s*const controller = new AbortController/.test(generatorSource),
+      'a failed generation no longer becomes the remediation request snapshot',
+    );
+    check(
+      generatorSource.includes('floorplan-validation-issues'),
+      'the rejected field list is rendered to the user',
+    );
+    check(
+      generatorSource.includes("finalReq.partition_variant === 'duplex'") &&
+        generatorSource.includes('finalReq.floors % 2 === 1'),
+      'the card refuses an odd-storey duplex before sending a 422',
+    );
   } finally {
     await server.close();
   }

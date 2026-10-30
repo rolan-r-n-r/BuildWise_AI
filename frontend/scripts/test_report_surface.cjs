@@ -161,6 +161,34 @@ async function main() {
     check(/data-critical="false"/.test(bannerWarn), 'a listed PROP-ASPECT advisory is not critical');
     check(!bannerWarn.includes('FAIL stamp'), 'WARN/advisory banner never shows the FAIL stamp');
 
+    // A CERTIFIED plan can carry ROOM-MIN rows that its certificate lists as
+    // within-cap deviations.  The verdict, not the warning prefix, decides the
+    // banner treatment: this used to paint a red FAIL-stamp panel beside the
+    // page-1 CERTIFIED verdict.
+    const certifiedSqueeze = renderToStaticMarkup(
+      React.createElement(WarningsBanner, {
+        planVerdict: 'CERTIFIED',
+        data: {
+          warnings: [
+            'ROOM-MIN: t2_unitA_kitchen_F0 is 8.6 m², below its 9.0 m² catalogue minimum on floor 0.',
+            'PROGRAMME-SQUEEZE: the programme needs 123.2 m²; the plate provides 123.2 m².',
+          ],
+        },
+      }),
+    );
+    check(
+      /data-critical="false"/.test(certifiedSqueeze),
+      'a certified plan keeps the banner non-critical even with ROOM-MIN rows',
+    );
+    check(
+      !certifiedSqueeze.includes('FAIL stamp'),
+      'a certified plan never renders a FAIL-stamp badge',
+    );
+    check(
+      certifiedSqueeze.includes('disclosed findings, not certification failures'),
+      'the certified banner explains why the findings do not withhold the certificate',
+    );
+
     const bannerSplit = renderToStaticMarkup(
       React.createElement(WarningsBanner, {
         data: {

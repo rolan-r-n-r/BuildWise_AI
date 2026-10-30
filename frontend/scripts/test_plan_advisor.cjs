@@ -257,6 +257,37 @@ async function main() {
     const hashA = hashPlan(plan, request);
     const hashB = hashPlan({ ...plan }, { ...request });
     check(hashA === hashB && /^[0-9a-f]{16}$/.test(hashA), 'plan hash is stable and opaque', hashA);
+
+    console.log('\n[7] Constraint cards are not apply buttons');
+    const constraint = {
+      id: 'duplex',
+      title: 'Two-storey dwellings (V3) unavailable',
+      description: 'V3 needs an even number of storeys.',
+      patch: {},
+      available: false,
+      constraint_reason:
+        'The duplex variant needs an even number of storeys; this request has 3.',
+      basis: {
+        type: 'constraint',
+        codes: ['PROGRAMME-SQUEEZE', 'ROOM-MIN'],
+        rooms: ['t2_unitA_kitchen_F0'],
+        input_change: 'floors',
+      },
+      effect: null,
+      error: null,
+      details: { constraint: true, requires_input_change: 'floors' },
+    };
+    const constrained = render({ ...baseProps, testOptions: [constraint] });
+    check(constrained.includes('data-available="false"'), 'constraint card is marked unavailable');
+    check(constrained.includes('remediation-constraint'), 'constraint reason renders');
+    check(constrained.includes('even number of storeys'), 'reason names the limiting input');
+    check(constrained.includes('Not available'), 'no apply affordance is shown');
+    check(!constrained.includes('apply-duplex'), 'constraint never renders an apply button');
+    check(constrained.includes('Basis: PROGRAMME-SQUEEZE, ROOM-MIN'), 'basis names the findings');
+    check(constrained.includes('1 affected room'), 'basis names the affected room count');
+    check(constrained.includes('aria-labelledby='), 'the section is labelled by its heading');
+    check(constrained.includes('<h3'), 'the section heading is a real heading');
+    check(constrained.includes('data-options-state="ready"'), 'constraint state is ready, not loading');
   } finally {
     await server.close();
   }
