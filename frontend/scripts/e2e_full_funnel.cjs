@@ -1181,6 +1181,20 @@ async function main() {
         }),
       { timeout: 25000 },
     );
+    // `load` can fire just before a style re-settle (a resize or a source
+    // reconciliation flips isStyleLoaded() false for a frame). Poll the map's
+    // own settled predicate before reading the final state; the assertion below
+    // is unchanged and still fails if the style never becomes ready.
+    const styleSettled = await mobilePage
+      .waitForFunction(
+        () => {
+          const m = window.__maplibreMap;
+          return Boolean(m && m.isStyleLoaded() && (m.getStyle().layers || []).length > 0);
+        },
+        { timeout: 10000 }
+      )
+      .then(() => true)
+      .catch(() => false);
     const mobileAfter = await mobilePage.evaluate(() => {
       const m = window.__maplibreMap;
       const section = document.getElementById('center-map-section');
@@ -1199,9 +1213,9 @@ async function main() {
       `engineRequests=${mobileEngineRequests.length} canvas=${mobileAfter.canvas} placeholder=${mobileAfter.placeholder}`,
     );
     check(
-      styleReady === true && mobileAfter.styleLoaded === true && mobileAfter.layers > 0,
+      styleReady === true && styleSettled && mobileAfter.styleLoaded === true && mobileAfter.layers > 0,
       'mobile: the map that came up is a real style',
-      `styleEvent=${styleReady} styleLoaded=${mobileAfter.styleLoaded} layers=${mobileAfter.layers}`,
+      `styleEvent=${styleReady} styleSettled=${styleSettled} styleLoaded=${mobileAfter.styleLoaded} layers=${mobileAfter.layers}`,
     );
     check(
       JSON.stringify(mobileBefore.box) === JSON.stringify(mobileAfter.box),

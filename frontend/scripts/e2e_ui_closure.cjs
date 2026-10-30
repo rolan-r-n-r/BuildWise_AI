@@ -72,6 +72,25 @@ async function clickTab(page, label) {
   }, label);
 }
 
+/**
+ * The report sheet is a nested scroller and the viewer sits far below the
+ * document top. Puppeteer's page.click() auto-scroll only the top-level page,
+ * so a real floor-tab/ghost-toggle click could land off-screen while the test
+ * silently clicked nothing. Scroll the control into view in its own container
+ * first, then click it for real. No assertion is relaxed.
+ */
+async function scrollAndClick(page, selector) {
+  const ready = await page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return false;
+    el.scrollIntoView({ block: 'center', inline: 'nearest' });
+    return true;
+  }, selector);
+  if (!ready) throw new Error(`control not found: ${selector}`);
+  await sleep(250);
+  await page.click(selector);
+}
+
 async function main() {
   console.log('=== E2E: UI closure ===');
   const browser = await puppeteer.launch({
@@ -225,7 +244,7 @@ async function main() {
     check(storey.tabs === 2, 'both storey plates are listed', `${storey.tabs} tabs`);
     check(storey.ghostDisabledOnGround === true, 'ghost toggle is disabled on the ground floor');
 
-    await page.click('[data-testid="tab-floor-1"]');
+    await scrollAndClick(page, '[data-testid="tab-floor-1"]');
     await sleep(900);
     const upper = await page.evaluate(() => {
       const toggle = document.querySelector('[data-testid="ghost-overlay-toggle"]');
@@ -241,7 +260,7 @@ async function main() {
     check(upper.ghost === 'true' && upper.pressed === 'true', 'upper floor starts with the F0 core ghost ON', JSON.stringify(upper));
     check(/G\+1|First|Level 1/i.test(upper.heading), 'floor switch changed the plate heading', upper.heading.trim());
 
-    await page.click('[data-testid="ghost-overlay-toggle"]');
+    await scrollAndClick(page, '[data-testid="ghost-overlay-toggle"]');
     await sleep(500);
     const ghostOff = await page.evaluate(() => {
       const svg = document.querySelector('#blueprint-viewer-container svg.bw-sheet-fit');
@@ -250,7 +269,7 @@ async function main() {
     });
     check(ghostOff.ghost === 'false' && ghostOff.pressed === 'false', 'ghost toggle OFF flips the injected sheet in place', JSON.stringify(ghostOff));
 
-    await page.click('[data-testid="ghost-overlay-toggle"]');
+    await scrollAndClick(page, '[data-testid="ghost-overlay-toggle"]');
     await sleep(400);
     const ghostOn = await page.evaluate(() => {
       const svg = document.querySelector('#blueprint-viewer-container svg.bw-sheet-fit');

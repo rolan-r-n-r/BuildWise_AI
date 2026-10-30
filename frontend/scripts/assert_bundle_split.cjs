@@ -252,7 +252,13 @@ function main() {
   /* The pre-hero graphs, gzipped — the sizes the landing rewrite was measured
      against, kept here so the gate is reproducible from a clean checkout. */
   const PINNED_LANDING_BASE_KB = 135.07;
-  const PINNED_APP_BASE_KB = 112.35;
+  // 112.35 → 114.80: the progressive blueprint reveal. BlueprintViewer is in
+  // the /app graph because the report/cost-plan card is part of the route, so
+  // the phase controller + inert phase CSS are initial-route bytes. The module
+  // set is unchanged apart from the new report/blueprintReveal.ts; this base is
+  // the measured shipped build after that feature, not a hand-raised ceiling —
+  // the +2 KB allowance below still catches future drift.
+  const PINNED_APP_BASE_KB = 114.8;
 
   let baseLandingKb = PINNED_LANDING_BASE_KB;
   let baseAppKb = PINNED_APP_BASE_KB;
