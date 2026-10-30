@@ -178,7 +178,9 @@ export function truthLabels(
       const rooms = rowNamedRooms(row);
       listedDeviations.push({
         roomId: rooms[0] ?? '',
-        ruleId: String(row.split(':', 1)[0] ?? '').trim(),
+        // Mirror plan_verdict: the rule column is the CODE, not the code plus
+        // the room id (a row without a colon used to repeat the room there).
+        ruleId: String(row.split(':', 1)[0] ?? '').trim().split(/\s+/)[0],
         reason: row,
         page1Row: row,
         source: 'page1',

@@ -1210,6 +1210,17 @@ export interface RemediationOption {
   description: string;
   /** Only validated generator inputs: floors, rooms, coverage, polygon, scheme id. */
   patch: Partial<FloorPlanRequest> & Record<string, any>;
+  /** False for a named constraint with no valid patch for this request. */
+  available?: boolean;
+  /** Why the alternative cannot be applied; required when available is false. */
+  constraint_reason?: string | null;
+  /** Engine evidence behind the recommendation (finding codes, rooms). */
+  basis?: {
+    type?: string;
+    codes?: string[];
+    rooms?: string[];
+    [key: string]: any;
+  };
   effect: MeasuredEffect | null;
   error: string | null;
   details: Record<string, any>;

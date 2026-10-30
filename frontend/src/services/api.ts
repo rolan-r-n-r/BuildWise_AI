@@ -12,6 +12,69 @@ import type {
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+/**
+ * A non-2xx response with the server's validation detail preserved.
+ *
+ * FastAPI returns 422 `detail` as an array of {loc, msg, type} objects.  The
+ * old callers passed that array to `new Error(...)`, which stringified it as
+ * "[object Object]" and hid every actionable field from the user.
+ */
+export class ApiRequestError extends Error {
+  readonly status: number;
+  readonly issues: string[];
+  readonly detail: unknown;
+
+  constructor(status: number, message: string, issues: string[], detail: unknown) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+    this.issues = issues;
+    this.detail = detail;
+  }
+}
+
+function formatIssue(entry: any): string {
+  if (!entry || typeof entry !== 'object') return String(entry ?? '').trim();
+  const loc = Array.isArray(entry.loc)
+    ? entry.loc
+        .filter((part: unknown) => part !== 'body' && part !== 'query' && part !== 'path')
+        .map((part: unknown) => String(part))
+        .join('.')
+    : '';
+  const msg = String(entry.msg ?? entry.message ?? entry.type ?? '').trim();
+  return [loc, msg].filter(Boolean).join(': ');
+}
+
+/** Readable message + field issues from any FastAPI error `detail`. */
+export function parseApiErrorDetail(detail: unknown, fallback: string): {
+  message: string;
+  issues: string[];
+} {
+  if (typeof detail === 'string' && detail.trim()) {
+    return { message: detail.trim(), issues: [detail.trim()] };
+  }
+  if (Array.isArray(detail)) {
+    const issues = detail.map(formatIssue).filter(Boolean);
+    if (issues.length > 0) {
+      return {
+        message: issues.length === 1 ? issues[0] : `The engine rejected ${issues.length} inputs: ${issues.join('; ')}`,
+        issues,
+      };
+    }
+  }
+  if (detail && typeof detail === 'object') {
+    const message = String((detail as any).message ?? (detail as any).msg ?? '').trim();
+    if (message) return { message, issues: [message] };
+  }
+  return { message: fallback, issues: [fallback] };
+}
+
+async function apiErrorFromResponse(resp: Response, fallback: string): Promise<ApiRequestError> {
+  const errorData = await resp.json().catch(() => ({}));
+  const parsed = parseApiErrorDetail((errorData as any)?.detail, fallback);
+  return new ApiRequestError(resp.status, parsed.message, parsed.issues, (errorData as any)?.detail);
+}
+
 export async function downloadFloorplanDossier(
   payload: Record<string, any>
 ): Promise<void> {
@@ -82,8 +145,10 @@ export async function generateFloorPlan(
   });
 
   if (!resp.ok) {
-    const errorData = await resp.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Floor plan generation failed with status: ${resp.status}`);
+    throw await apiErrorFromResponse(
+      resp,
+      `Floor plan generation failed with status: ${resp.status}`,
+    );
   }
 
   return resp.json();
@@ -116,8 +181,10 @@ export async function fetchRemediationOptions(
     signal,
   });
   if (!resp.ok) {
-    const errorData = await resp.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Remediation dry-run failed with status: ${resp.status}`);
+    throw await apiErrorFromResponse(
+      resp,
+      `Remediation dry-run failed with status: ${resp.status}`,
+    );
   }
   return resp.json();
 }
