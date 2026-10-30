@@ -892,8 +892,24 @@ async function main() {
         const btn = Array.from(document.querySelectorAll('button')).find((b) => (b.textContent || '').includes('Update Pin'));
         if (!btn) return false;
         btn.click();
-        await sleep(1100);
+        await sleep(600);
         return true;
+      };
+      const waitForDialog = async (maxMs = 6000) => {
+        const t0 = Date.now();
+        while (Date.now() - t0 < maxMs) {
+          if (document.querySelector('[data-testid="site-move-dialog"]')) return true;
+          await sleep(50);
+        }
+        return false;
+      };
+      const waitForDialogClosed = async (maxMs = 6000) => {
+        const t0 = Date.now();
+        while (Date.now() - t0 < maxMs) {
+          if (!document.querySelector('[data-testid="site-move-dialog"]')) return true;
+          await sleep(50);
+        }
+        return false;
       };
       const latEl = inputs().find((i) => i.id === 'lat-input') || inputs()[0];
       if (!latEl) return { ok: false, reason: 'coordinate inputs missing' };
@@ -906,6 +922,7 @@ async function main() {
       // (a) Asking: the dialog appears and NOTHING has moved yet.
       await typeCoords(nextLat, nextLon);
       await pressUpdatePin();
+      await waitForDialog();
       const asked = {
         dialog: Boolean(document.querySelector('[data-testid="site-move-dialog"]')),
         options: Array.from(document.querySelectorAll('[data-testid="site-move-dialog"] button')).map((b) => b.textContent.trim()),
@@ -917,7 +934,8 @@ async function main() {
       // (b) Keep the current plot: nothing changes and the inputs resync.
       const cancelBtn = document.querySelector('[data-testid="site-move-cancel"]');
       if (cancelBtn) cancelBtn.click();
-      await sleep(1200);
+      await waitForDialogClosed();
+      await sleep(600);
       const afterCancel = {
         dialog: Boolean(document.querySelector('[data-testid="site-move-dialog"]')),
         preview: previewAnchor(),
@@ -927,8 +945,10 @@ async function main() {
       // (c) Take the plot to the new site: the plot (and its preview) move.
       await typeCoords(nextLat, nextLon);
       await pressUpdatePin();
+      await waitForDialog();
       const applyBtn = document.querySelector('[data-testid="site-move-apply"]');
       if (applyBtn) applyBtn.click();
+      await waitForDialogClosed();
       await sleep(2500);
       const afterApply = {
         preview: previewAnchor(),
@@ -942,8 +962,10 @@ async function main() {
       // (d) Drop it and re-capture: the plot clears and the wizard opens.
       await typeCoords((Number(nextLat) + 0.002).toFixed(5), (Number(nextLon) + 0.002).toFixed(5));
       await pressUpdatePin();
+      await waitForDialog();
       const recaptureBtn = document.querySelector('[data-testid="site-move-recapture"]');
       if (recaptureBtn) recaptureBtn.click();
+      await waitForDialogClosed();
       await sleep(1400);
       const afterRecapture = {
         // "Plot cleared" is read from the wizard's own loaded ring, not from the

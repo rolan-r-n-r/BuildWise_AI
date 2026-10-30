@@ -1044,7 +1044,7 @@ const AppShell: React.FC = () => {
    */
   const captureMounted = useEverMounted(captureOpen);
   const methodologyMounted = useEverMounted(isMethodologyOpen);
-  const siteMoveMounted = useEverMounted(pendingSiteMove !== null);
+  const siteMoveMounted = useEverMounted(pendingSiteMove !== null || boundary !== null);
 
   // Reusable Results Content Renderer (Summary Preview Only)
   const renderResultsContent = () => {
