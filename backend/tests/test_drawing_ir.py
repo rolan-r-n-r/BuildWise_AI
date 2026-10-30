@@ -1,5 +1,6 @@
 import pytest
 import math
+import xml.etree.ElementTree as ET
 from typing import Dict, Any, List
 
 from app.schemas.floorplan import FloorPlanRequest
@@ -18,6 +19,24 @@ from app.services.floorplan.drawing_ir import (
     AnnotationPrimitive,
 )
 from reportlab.graphics.shapes import Drawing, Rect, Circle, Line, String, Polygon, Group
+
+
+# The viewer's progressive reveal addresses these groups in this order. The
+# title block / validation gate group (`sheet`) is deliberately last and is
+# never animated: the verdict must be visible from the first frame.
+SVG_PHASE_ORDER = [
+    "envelope",
+    "site",
+    "rooms",
+    "ghost",
+    "walls",
+    "cores",
+    "openings",
+    "labels",
+    "dims",
+    "annotations",
+    "sheet",
+]
 
 
 TYPOLOGIES = [
@@ -407,3 +426,60 @@ def test_drawn_door_leaf_opens_into_its_room_and_the_wall_it_shares():
         assert -0.05 <= op.hinge_y <= ir.envelope_d + 0.05
 
     assert checked >= 4, f"Expected several interior doors on the plate, checked {checked}"
+
+
+def test_svg_presentation_phases_are_additive_and_room_addressable():
+    """
+    The viewer's progressive reveal depends on inert, presentation-only groups.
+
+    This pins the contract on REAL solver output:
+      1. every expected phase exists exactly once, in drawing order;
+      2. each is a plain <g> with no geometry of its own;
+      3. room fills count once per room and expose that room's id;
+      4. the sheet group (title block + validation gate + status stamp) exists
+         and is last, so the viewer can keep the verdict outside the animation.
+
+    Geometry is the solver's; these attributes only make existing layers
+    addressable. The count/coordinate parity tests above remain the geometry
+    authority.
+    """
+    req = FloorPlanRequest(
+        plot_width_m=20.0,
+        plot_depth_m=18.0,
+        floors=2,
+        building_typology="T2_FAMILY_APARTMENT",
+        vastu_strictness="medium",
+        required_rooms=["living", "kitchen", "master_bed", "bath_1", "dining", "stairs"],
+    )
+    res = generate_floor_plan(req)
+    assert res.multi_storey is not None
+    multi = res.multi_storey
+
+    for f_idx, fl in enumerate(multi.floors):
+        ir = build_drawing_ir(
+            floor_data=fl,
+            building_model=multi,
+            gen_id=multi.seed,
+            typology=multi.building_typology,
+            elevation_m=f_idx * 3.0,
+        )
+        svg = render_svg_from_ir(ir, theme="cad")
+        root = ET.fromstring(svg)
+        groups = [el for el in root.iter() if "data-bw-phase" in el.attrib]
+        phases = [el.attrib["data-bw-phase"] for el in groups]
+
+        assert phases == SVG_PHASE_ORDER, f"phase order drifted on floor {f_idx}: {phases}"
+        assert all(el.tag.endswith("g") for el in groups)
+
+        rooms_group = groups[phases.index("rooms")]
+        room_fills = [el for el in rooms_group if "data-room-id" in el.attrib]
+        assert len(room_fills) == len(fl.rooms), (
+            f"floor {f_idx}: {len(room_fills)} addressable fills for {len(fl.rooms)} rooms"
+        )
+        assert {el.attrib["data-room-id"] for el in room_fills} == {
+            r.room_id for r in fl.rooms
+        }
+        assert all(el.attrib.get("class") == "bw-room-fill" for el in room_fills)
+
+        sheet = groups[phases.index("sheet")]
+        assert "NOT FOR CONSTRUCTION" in "".join(sheet.itertext())

@@ -130,7 +130,7 @@ COLOR_RED_BORDER = colors.HexColor("#FF3B30")
 #   * the key is request-scoped by content, not by client/session, so one
 #     design cannot receive another design's document;
 #   * returning a copy keeps each caller's stream independent.
-REPORT_TEMPLATE_VERSION = "2026-10-29.finding-ledger-v1"
+REPORT_TEMPLATE_VERSION = "2026-10-30.dim-rotation-v2"
 REPORT_CACHE_MAX_ENTRIES = 8
 _REPORT_CACHE: "OrderedDict[str, bytes]" = OrderedDict()
 _REPORT_CACHE_LOCK = threading.Lock()
@@ -1803,13 +1803,20 @@ def make_land_economics_table(land: Optional[Dict[str, Any]]) -> List[Any]:
         v = _safe_float(land.get(key), None)
         return f"{v:.{digits}f}" if v is not None else "-"
 
+    # FOUR KPI cells per row, so the table must have FOUR columns. With three
+    # declared widths ReportLab invented a fourth column to hold the extra
+    # cell: the table grew past the A4 frame and was centred off-page, clipping
+    # the first and last columns on continuation pages (seen on p.3 of every
+    # dossier). Declaring the fourth width keeps the table inside CONTENT_WIDTH.
     rows = [
         [
             Paragraph("<b>LAND ECONOMICS &amp; SPACE EFFICIENCY</b>", head),
             Paragraph("", cell),
+            Paragraph("", cell),
             Paragraph(f"<b>SPACE-EFFICIENCY: {status}</b>", status_style),
         ],
     ]
+    full_width_rows: List[int] = []
     kpi_pairs = [
         ("Land-use efficiency", f"{_f('land_use_efficiency_pct')}%"),
         ("Circulation ratio", f"{_f('circulation_ratio_pct')}%"),
@@ -1835,7 +1842,8 @@ def make_land_economics_table(land: Optional[Dict[str, Any]]) -> List[Any]:
         summary = f"{len(checks) - len(failing)}/{len(checks)} checks pass"
         if failing:
             summary += " - failing: " + ", ".join(failing[:6])
-        rows.append([Paragraph(html.escape(summary), cell), "", ""])
+        full_width_rows.append(len(rows))
+        rows.append([Paragraph(html.escape(summary), cell), "", "", ""])
 
     slivers = land.get("slivers") or []
     if slivers:
@@ -1844,22 +1852,29 @@ def make_land_economics_table(land: Optional[Dict[str, Any]]) -> List[Any]:
             f"-> {s.get('absorbed_as') or 'unassigned'}"
             for s in slivers[:6]
         )
-        rows.append([Paragraph("<b>Residuals:</b> " + html.escape(sliver_text), cell), "", ""])
+        full_width_rows.append(len(rows))
+        rows.append([Paragraph("<b>Residuals:</b> " + html.escape(sliver_text), cell), "", "", ""])
 
     for warning in list(land.get("warnings") or []) + list((cert or {}).get("warnings") or []):
         if not warning:
             continue
+        full_width_rows.append(len(rows))
         rows.append([
             Paragraph(html.escape(str(warning)[:200]), ParagraphStyle(
                 'LandWarn', fontName=FONT_REGULAR, fontSize=6.5, leading=8.0, textColor=COLOR_AMBER_TEXT
             )),
             "",
             "",
+            "",
         ])
 
-    table = Table(rows, colWidths=[162.0, 162.0, 156.23], repeatRows=1)
-    table.setStyle(TableStyle([
-        ('SPAN', (0, 0), (1, 0)),
+    table = Table(
+        rows,
+        colWidths=[120.06, 120.06, 120.06, 120.05],
+        repeatRows=1,
+    )
+    table_style = [
+        ('SPAN', (0, 0), (2, 0)),
         ('BACKGROUND', (0, 0), (-1, 0), COLOR_BG_SUBTLE),
         ('LINEBELOW', (0, 0), (-1, 0), 1.0, COLOR_ACCENT),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 3.0),
@@ -1868,7 +1883,10 @@ def make_land_economics_table(land: Optional[Dict[str, Any]]) -> List[Any]:
         ('RIGHTPADDING', (0, 0), (-1, -1), 4.0),
         ('BOX', (0, 0), (-1, -1), 1.0, COLOR_ACCENT),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-    ]))
+    ]
+    for row_index in full_width_rows:
+        table_style.append(('SPAN', (0, row_index), (-1, row_index)))
+    table.setStyle(TableStyle(table_style))
     flowables.append(table)
     flowables.append(Spacer(1, 8))
     return flowables

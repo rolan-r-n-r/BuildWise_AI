@@ -1,7 +1,12 @@
 import io
 import pytest
 import pypdf
-from app.services.report_service import generate_pdf_report, draw_floorplan_reportlab
+from app.services.report_service import (
+    CONTENT_WIDTH_PT,
+    draw_floorplan_reportlab,
+    generate_pdf_report,
+    make_land_economics_table,
+)
 from app.schemas.floorplan import FloorPlanRequest
 from app.services.floorplan.floorplan_service import generate_floor_plan
 from app.schemas.site_vision import SiteVisionResponse, PreservationItem
@@ -366,5 +371,40 @@ def test_pdf_report_multi_storey_dossier():
     for idx, pt in enumerate(pages_text):
         expected_footer = f"Page {idx+1} of {num_pages}"
         assert expected_footer in pt, f"Footer '{expected_footer}' missing on page {idx+1}"
+
+
+def test_land_economics_table_is_four_columns_and_stays_inside_the_frame():
+    """Four KPI cells must not make ReportLab invent a fifth, off-page column.
+
+    Regression: the table declared three widths but appended four KPI cells.
+    ReportLab padded every row to four columns, grew the table to 636 pt and
+    centred it off-page, so the first and last columns were clipped on the
+    continuation page of every dossier ("D ECONOMICS...", "-use efficiency").
+    """
+    land = {
+        "land_use_efficiency_pct": 90.0,
+        "circulation_ratio_pct": 12.0,
+        "waste_area_sqm": 0.0,
+        "waste_pct": 0.0,
+        "footprint_utilization_pct": 99.0,
+        "footprint_area_sqm": 108.0,
+        "footprint_source": "coverage",
+        "program_deficit_sqm": 0.0,
+        "floor_area_ratio": 0.6,
+        "sliver_count": 0,
+        "absorbed_residual_count": 0,
+        "certificate": {
+            "status": "WARN",
+            "checks": {"land_use": True, "circulation": False},
+            "warnings": ["LAND-03 Circulation ratio 21.5% is outside the 12-20% target band."],
+        },
+    }
+    flowables = make_land_economics_table(land)
+    table = next(flowable for flowable in flowables if hasattr(flowable, "_cellvalues"))
+    assert [len(row) for row in table._cellvalues] == [4, 4, 4, 4, 4]
+    table.wrap(CONTENT_WIDTH_PT, 1000.0)
+    assert table._width <= CONTENT_WIDTH_PT + 0.01, (
+        f"land table {table._width:.2f} pt exceeds the A4 frame {CONTENT_WIDTH_PT:.2f} pt"
+    )
 
 

@@ -65,7 +65,7 @@ from app.services.floorplan.identity import (
 
 # ReportLab imports (lazy or guarded if needed)
 try:
-    from reportlab.graphics.shapes import Drawing, Rect, Line, String, ArcPath, Circle, Polygon, PolyLine
+    from reportlab.graphics.shapes import Drawing, Rect, Line, String, ArcPath, Circle, Polygon, PolyLine, Group
     from reportlab.lib import colors
 except ImportError:
     Drawing = Rect = Line = String = ArcPath = Circle = Polygon = PolyLine = colors = None
@@ -2815,12 +2815,23 @@ def render_svg_from_ir(ir: FloorDrawingIR, theme: str = "cad") -> str:
 
     svg.append(f'  <rect width="{svg_w}" height="{svg_h}" fill="{bg_color}" />')
     svg.append(f'  <rect x="{margin_x}" y="{margin_y}" width="{content_w}" height="{content_h}" fill="url(#mf-grid-{theme})" />')
+
+    # PRESENTATION PHASES (data-bw-phase)
+    # ------------------------------------------------------------------
+    # The sheet is emitted layer by layer already; these inert groups make
+    # that layer order addressable by the viewer's progressive reveal. They
+    # carry no geometry, no style and no validation meaning — the SVG renders
+    # identically with or without them (groups are transparent). Certification,
+    # solver output and every drawn coordinate are untouched.
+    svg.append('  <g data-bw-phase="envelope">')
     if getattr(ir, "has_stepped_envelope", False):
         svg.append(f'  <rect x="{margin_x}" y="{margin_y}" width="{content_w}" height="{content_h}" fill="none" stroke="{text_dim}" stroke-width="0.8" stroke-dasharray="4 4" />')
     else:
         svg.append(f'  <rect x="{margin_x}" y="{margin_y}" width="{content_w}" height="{content_h}" fill="none" stroke="{ext_wall_stroke}" stroke-width="4.5" stroke-linecap="square" />')
+    svg.append('  </g>')
 
     # 0. Site & Irregular Polygon Layer (If present)
+    svg.append('  <g data-bw-phase="site">')
     for p in [prim for prim in ir.primitives if isinstance(prim, (PolygonPrimitive, PathPrimitive))]:
         if isinstance(p, PolygonPrimitive) and p.points:
             pts_str = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in p.points)
@@ -2836,16 +2847,32 @@ def render_svg_from_ir(ir: FloorDrawingIR, theme: str = "cad") -> str:
             dash_str = f' stroke-dasharray="{" ".join(str(d) for d in p.dash_array)}"' if p.dash_array else ""
             svg.append(f'  <polyline points="{pts_str}" fill="{p.fill_color or "none"}" stroke="{p.stroke_color}" stroke-width="{stroke_w:.1f}"{dash_str} />')
 
+    svg.append('  </g>')
+
     # 1. Fills Layer
+    svg.append('  <g data-bw-phase="rooms">')
     for f in ir.primitives_by_layer("fills"):
         if isinstance(f, FillPrimitive):
             rx_svg = px(f.x)
             ry_svg = py(f.y + f.h)
             rw_svg = f.w * scale
             rh_svg = f.h * scale
-            svg.append(f'  <rect x="{rx_svg:.1f}" y="{ry_svg:.1f}" width="{rw_svg:.1f}" height="{rh_svg:.1f}" fill="{f.fill_color}" fill-opacity="0.15" />')
+            # Room identity is presentation metadata only: it lets the viewer
+            # highlight the selected room in place. Geometry, layer order and
+            # the validation gate are untouched.
+            room_attrs = ""
+            if f.room_id:
+                room_attrs = (
+                    f' class="bw-room-fill"'
+                    f' data-room-id="{html.escape(f.room_id, quote=True)}"'
+                    f' data-room-name="{html.escape(f.room_name or "", quote=True)}"'
+                    f' data-zone="{html.escape(f.zone or "", quote=True)}"'
+                )
+            svg.append(f'  <rect x="{rx_svg:.1f}" y="{ry_svg:.1f}" width="{rw_svg:.1f}" height="{rh_svg:.1f}" fill="{f.fill_color}" fill-opacity="0.15"{room_attrs} />')
+    svg.append('  </g>')
 
     # 2. Ghost Layer
+    svg.append('  <g data-bw-phase="ghost">')
     for g in ir.primitives_by_layer("ghost"):
         if isinstance(g, GhostPrimitive):
             svg.append('  <!-- GHOST CORE OVERLAY -->')
@@ -2868,7 +2895,10 @@ def render_svg_from_ir(ir: FloorDrawingIR, theme: str = "cad") -> str:
                 svg.append(f'    <line x1="{px(dsx + dsw):.1f}" y1="{py(dsy + dsh):.1f}" x2="{px(dsx):.1f}" y2="{py(dsy):.1f}" stroke="#F59E0B" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.5" />')
             svg.append('  </g>')
 
+    svg.append('  </g>')
+
     # 3. Walls Layer
+    svg.append('  <g data-bw-phase="walls">')
     for w in ir.primitives_by_layer("walls"):
         if isinstance(w, WallPrimitive):
             x1_s = px(w.x1)
@@ -2904,7 +2934,10 @@ def render_svg_from_ir(ir: FloorDrawingIR, theme: str = "cad") -> str:
                 dash = ""
             svg.append(f'  <line x1="{x1_s:.1f}" y1="{y1_s:.1f}" x2="{x2_s:.1f}" y2="{y2_s:.1f}" stroke="{w_strk}" stroke-width="{w_w:.1f}" {dash} stroke-linecap="square" />')
 
+    svg.append('  </g>')
+
     # 4. Cores Layer (Staircase)
+    svg.append('  <g data-bw-phase="cores">')
     for st in ir.primitives_by_layer("cores"):
         if isinstance(st, StairPrimitive):
             bx, by, bw, bh = st.boundary
@@ -3030,7 +3063,10 @@ def render_svg_from_ir(ir: FloorDrawingIR, theme: str = "cad") -> str:
         _badge_obstacles.append(box)
         return x, y
 
+    svg.append('  </g>')
+
     # 5. Openings Layer (Doors & Windows)
+    svg.append('  <g data-bw-phase="openings">')
     for op in ir.primitives_by_layer("openings"):
         if isinstance(op, OpeningPrimitive):
             if op.opening_type == "door":
@@ -3070,7 +3106,10 @@ def render_svg_from_ir(ir: FloorDrawingIR, theme: str = "cad") -> str:
                 svg.append(f'  <rect x="{pwtag_x - 7.5:.1f}" y="{pwtag_y - 5.5:.1f}" width="15.0" height="11.0" rx="3" fill="{bg_color}" stroke="{window_stroke}" stroke-width="0.8" />')
                 svg.append(f'  <text x="{pwtag_x:.1f}" y="{pwtag_y + 2.5:.1f}" font-size="6.0" font-weight="700" fill="{window_stroke}" text-anchor="middle">{op.tag}</text>')
 
+    svg.append('  </g>')
+
     # 6. Text & Typography Layer
+    svg.append('  <g data-bw-phase="labels">')
     for t in ir.primitives_by_layer("text"):
         if isinstance(t, TextPrimitive):
             tx_s = px(t.x)
@@ -3115,7 +3154,10 @@ def render_svg_from_ir(ir: FloorDrawingIR, theme: str = "cad") -> str:
                     y_dims = top_y + len(lines) * line_step + 3.0 + 0.85 * t.subtext_pt
                     svg.append(f'  <text x="{tx_s:.1f}" y="{y_dims:.1f}" font-size="{t.subtext_pt:.1f}" font-weight="500" fill="{text_secondary}" text-anchor="middle">{html.escape(t.subtext)}</text>')
 
+    svg.append('  </g>')
+
     # 7. Dimension Chains Layer
+    svg.append('  <g data-bw-phase="dims">')
     def draw_slash_tick_svg(tx: float, ty: float):
         svg.append(f'  <line x1="{tx - 3.0:.1f}" y1="{ty + 3.0:.1f}" x2="{tx + 3.0:.1f}" y2="{ty - 3.0:.1f}" stroke="{ext_wall_stroke}" stroke-width="1.6" />')
 
@@ -3143,7 +3185,10 @@ def render_svg_from_ir(ir: FloorDrawingIR, theme: str = "cad") -> str:
                     lbl_y += offset
                     svg.append(f'  <text x="{lbl_x:.1f}" y="{lbl_y:.1f}" font-size="{fs:.1f}" font-weight="700" fill="{text_primary}" text-anchor="middle">{lbl_txt}</text>')
 
+    svg.append('  </g>')
+
     # 8. Annotations Layer
+    svg.append('  <g data-bw-phase="annotations">')
     for annot in ir.primitives_by_layer("annotations"):
         if isinstance(annot, AnnotationPrimitive):
             if annot.compass:
@@ -3183,6 +3228,13 @@ def render_svg_from_ir(ir: FloorDrawingIR, theme: str = "cad") -> str:
                 svg.append(f'  <line x1="{px(ep1[0]):.1f}" y1="{py(ep1[1]):.1f}" x2="{px(ep2[0]):.1f}" y2="{py(ep2[1]):.1f}" stroke="#10B981" stroke-width="2.6" marker-end="url(#entry-arrow)" />')
                 lbl_pos = ep["label_pos"]
                 svg.append(f'  <text x="{px(lbl_pos[0]):.1f}" y="{py(lbl_pos[1]):.1f}" font-size="8.5" font-weight="800" stroke="{bg_color}" stroke-width="3.2" stroke-linejoin="round" fill="#047857" paint-order="stroke fill" text-anchor="middle" letter-spacing="0.8">{ep["label"]}</text>')
+
+    svg.append('  </g>')
+
+    # Sheet furniture: title block, specification legend, schedules, validation
+    # gate, watermark. The authoritative verdict itself is rendered in the
+    # app chrome (PlanVerdictChip), outside this or any animated group.
+    svg.append('  <g data-bw-phase="sheet">')
 
     typology_tag = f"TYPOLOGY: {ir.header.typology} | {ir.header.freshness_token}"
     svg.append(f'  <g transform="translate({margin_x}, {banner_y})">')
@@ -3542,6 +3594,7 @@ def render_svg_from_ir(ir: FloorDrawingIR, theme: str = "cad") -> str:
     wm_x = svg_w - 14.0
     wm_y = svg_h - 8.0
     svg.append(f'  <text x="{wm_x:.1f}" y="{wm_y:.1f}" font-size="8.0" font-weight="600" fill="{text_dim}" text-anchor="end" letter-spacing="0.5">BUILDWISE GENERATIVE CAD ENGINE</text>')
+    svg.append('  </g>')
 
     svg.append('</svg>')
     return "\n".join(svg)
@@ -3869,7 +3922,20 @@ def render_reportlab_from_ir(
                 lbl_y = y_pt(seg["center_y"])
                 lbl_txt = seg["label"]
                 fs = seg.get("font_size_pt", 7.0)
-                drawing.add(String(lbl_x, lbl_y, lbl_txt, textAnchor="middle", fontSize=fs, fontName="Helvetica-Bold", fillColor=colors.HexColor("#0F172A")))
+                # Vertical chains read bottom-to-top on the SVG sheet. The PDF
+                # renderer used horizontal text for them, so the overall and
+                # clear-chain labels piled into one unreadable run at the left
+                # edge. Rotate the String, preserving the same anchor point.
+                label = String(0, 0, lbl_txt, textAnchor="middle", fontSize=fs, fontName="Helvetica-Bold", fillColor=colors.HexColor("#0F172A"))
+                if seg.get("is_vertical"):
+                    group = Group(label)
+                    group.translate(lbl_x, lbl_y)
+                    group.rotate(90)
+                    drawing.add(group)
+                else:
+                    label.x = lbl_x
+                    label.y = lbl_y
+                    drawing.add(label)
 
     # 8. Annotations Layer
     for annot in ir.primitives_by_layer("annotations"):
