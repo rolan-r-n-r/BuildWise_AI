@@ -11,6 +11,13 @@
  *   F1+ renders false.
  */
 
+import { MOTION } from '../../design/tokens';
+import {
+  BLUEPRINT_PHASE_DELAY_MS,
+  BLUEPRINT_PHASE_DURATION_MS,
+  BLUEPRINT_REVEAL_PHASES,
+} from './blueprintReveal';
+
 /** The gate. True only when the toggle is on AND an upper floor is active. */
 export function isGhostOverlayVisible(showGhostOverlay: boolean, safeFloorIndex: number): boolean {
   return Boolean(showGhostOverlay) && safeFloorIndex > 0;
@@ -106,10 +113,53 @@ function sanitizeBlueprintSvgUncached(
   // tall); the preview box and the modal are both shorter than that, so the lower
   // half of a tall sheet used to be cut off even at the smallest zoom. Constrain
   // the sheet to its container instead: it scales down to fit and the ratio holds.
+  //
+  // The reveal rules are inert unless the viewer puts `data-bw-reveal="run"` on
+  // the root (startSheetReveal owns that switch). The `sheet` group — title
+  // block, spec legend, validation gate and status stamp — is explicitly
+  // excluded: the authoritative verdict must never fade in with the drawing.
+  // Delays come from blueprintReveal.ts so the JS bound and the CSS cannot drift.
+  // The delay selector needs at least the specificity of the shorthand above:
+  // `[data-bw-reveal] [data-bw-phase]:not(...)` is (0,3,0), so a two-attribute
+  // delay rule lost and the shorthand's `animation-delay: 0s` won. Every phase
+  // then faded at once. Repeating both attributes on the delay rule makes the
+  // intended stagger win deterministically.
+  const phaseDelayCss = BLUEPRINT_REVEAL_PHASES.map(
+    (phase) =>
+      `        [data-bw-reveal="run"] [data-bw-phase]:not([data-bw-phase="sheet"])[data-bw-phase="${phase}"] { animation-delay: ${BLUEPRINT_PHASE_DELAY_MS[phase]}ms; }`
+  ).join('\n');
   const styleInjection = `
       <style>
         ${ghostVisible ? GHOST_CSS_VISIBLE : GHOST_CSS_HIDDEN}
         .bw-sheet-fit { max-width: 100%; max-height: 100%; width: auto; height: auto; }
+        /* Fit Width: the viewport width becomes the sheet width and the top of
+           the sheet (the plan) starts at the top of the viewer. The viewer pans
+           vertically over the rest. data-bw-view is set by the viewer only;
+           a static export carries no such attribute and stays a full sheet. */
+        svg[data-bw-view="width"] {
+          position: absolute;
+          top: 0;
+          left: 50%;
+          width: 100%;
+          height: auto;
+          max-width: none;
+          max-height: none;
+          transform: translateX(-50%);
+          transform-origin: top center;
+        }
+        .bw-room-fill { transition: fill-opacity ${MOTION.duration.popover}ms ${MOTION.ease.out}; }
+        svg[data-room-focus="on"] .bw-room-fill { fill-opacity: 0.04 !important; }
+        svg[data-room-focus="on"] .bw-room-fill.bw-room-selected { fill-opacity: 0.42 !important; }
+        [data-bw-reveal="run"] [data-bw-phase]:not([data-bw-phase="sheet"]) {
+          opacity: 0;
+          animation: bwSheetPhaseIn ${BLUEPRINT_PHASE_DURATION_MS}ms ${MOTION.ease.spatial} both;
+        }
+${phaseDelayCss}
+        @keyframes bwSheetPhaseIn { from { opacity: 0; } to { opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) {
+          .bw-room-fill { transition: none; }
+          [data-bw-reveal="run"] [data-bw-phase] { opacity: 1; animation: none; }
+        }
       </style>
     `;
 
