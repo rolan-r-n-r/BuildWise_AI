@@ -110,7 +110,7 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
 
   return (
     <div
-      className="rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px] space-y-3 w-full min-w-0"
+      className="bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px] space-y-3 w-full min-w-0"
       data-testid="orientation-compass-card"
     >
       {/* 1. Section Header */}

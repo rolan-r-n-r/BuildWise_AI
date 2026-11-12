@@ -4,9 +4,13 @@ import { Icon } from './Icon';
 
 interface VastuAdvisoryCardProps {
   advisory: VastuAdvisory;
+  showReconciliation?: boolean;
 }
 
-export const VastuAdvisoryCard: React.FC<VastuAdvisoryCardProps> = ({ advisory }) => {
+export const VastuAdvisoryCard: React.FC<VastuAdvisoryCardProps> = ({
+  advisory,
+  showReconciliation = false,
+}) => {
   const { ranked_entrances, room_grid, slope_reading, reconciliation_notes, road_approach } = advisory;
   const [selectedZone, setSelectedZone] = useState<RoomGridZone | null>(null);
   // Backend ranks up to four portals; show the top three by default and let the
@@ -21,9 +25,9 @@ export const VastuAdvisoryCard: React.FC<VastuAdvisoryCardProps> = ({ advisory }
   const gridMap = new Map((room_grid || []).map((z) => [z.zone, z]));
 
   return (
-    <div className="rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px] space-y-3 w-full min-w-0">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-2 min-w-0 sticky top-0 bg-[var(--card-bg-subtle)] z-10">
+    <div className="bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px] space-y-3 w-full min-w-0">
+      {/* Header — natural flow, never sticky to viewport */}
+      <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-2 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
           <Icon name="layout-grid" size={15} className="text-[var(--text-2)] shrink-0" />
           <h3 className="text-[14px] font-semibold text-[var(--text-1)] tracking-tight">
@@ -185,8 +189,8 @@ export const VastuAdvisoryCard: React.FC<VastuAdvisoryCardProps> = ({ advisory }
         )}
       </div>
 
-      {/* Reconciliation Notes */}
-      {reconciliation_notes && reconciliation_notes.length > 0 && (
+      {/* Reconciliation Notes (rendered here only if showReconciliation is explicitly true; otherwise placed as a full-width section) */}
+      {showReconciliation && reconciliation_notes && reconciliation_notes.length > 0 && (
         <div className="space-y-2 pt-1">
           <span className="text-[12px] font-normal text-[var(--text-3)] block">
             Vastu & building physics reconciliation
