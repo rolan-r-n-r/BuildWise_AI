@@ -84,12 +84,12 @@ const CapabilityCard: React.FC<{ feature: Feature }> = ({ feature }) => (
       >
         {feature.icon}
       </span>
-      <span className="mt-1 text-[10.5px] font-semibold uppercase text-bw-ink-3" style={{ letterSpacing: '0.1em' }}>
+      <span className="mt-1 text-[11px] font-semibold uppercase text-bw-ink-3" style={{ letterSpacing: '0.1em' }}>
         {feature.meta}
       </span>
     </div>
     <h3 className="mt-4 text-[15px] font-bold tracking-[-0.015em] text-bw-ink">{feature.title}</h3>
-    <p className="mt-1.5 text-[13.5px] leading-[1.55] text-bw-ink-2">{feature.copy}</p>
+    <p className="mt-1.5 text-[14px] leading-[1.55] text-bw-ink-2">{feature.copy}</p>
   </motion.article>
 );
 

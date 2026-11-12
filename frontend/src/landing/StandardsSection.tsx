@@ -57,7 +57,7 @@ const SpecList: React.FC<{ group: SourceGroup; rows: ReadonlyArray<Source> }> = 
         white). Axe flagged these three captions at every width. */}
     <motion.h3
       variants={fadeRise}
-      className="text-[10.5px] font-semibold uppercase text-bw-ink-2"
+      className="text-[11px] font-semibold uppercase text-bw-ink-2"
       style={{ letterSpacing: '0.14em' }}
     >
       {GROUP_LABELS[group]}
@@ -73,9 +73,9 @@ const SpecList: React.FC<{ group: SourceGroup; rows: ReadonlyArray<Source> }> = 
              keeps it reading as a table. */
           className="border-b border-bw-line-soft py-3.5"
         >
-          <dt className="text-[13.5px] font-semibold text-bw-ink">{row.name}</dt>
+          <dt className="text-[14px] font-semibold text-bw-ink">{row.name}</dt>
           <dd className="mt-0.5 text-[13px] leading-[1.5] text-bw-ink-2">{row.role}</dd>
-          <dd className="mt-1.5 text-[11.5px] leading-[1.5] text-bw-ink-3">{row.credit}</dd>
+          <dd className="mt-1.5 text-[12px] leading-[1.5] text-bw-ink-3">{row.credit}</dd>
         </motion.div>
       ))}
     </dl>
@@ -146,7 +146,7 @@ export const StandardsSection: React.FC = () => {
         <ScrollRule className="mt-10" />
         <p
           data-testid="landing-certified-definition"
-          className="mt-4 max-w-3xl text-[12.5px] leading-relaxed text-[var(--text-2)]"
+          className="mt-4 max-w-3xl text-[13px] leading-relaxed text-[var(--text-2)]"
         >
           {CERTIFIED_DEFINITION}
         </p>
@@ -159,7 +159,7 @@ export const StandardsSection: React.FC = () => {
             obligations are discharged in the product — the map's own attribution
             bar (MapCanvas) and each dossier's data sources panel
             (DataSourcesDisclosure, rendered per analysis tab in ReportSheet). */}
-        <motion.p variants={fadeRise} className="mt-9 text-[12.5px] leading-[1.6] text-bw-ink-3">
+        <motion.p variants={fadeRise} className="mt-9 text-[13px] leading-[1.6] text-bw-ink-3">
           Attribution travels with the data: the map carries its own basemap credits, and every
           dossier carries a data sources panel.
         </motion.p>

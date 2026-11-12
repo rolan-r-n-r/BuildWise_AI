@@ -1347,7 +1347,7 @@ export const HeroModel: React.FC = () => {
         <dl className="grid max-w-3xl grid-cols-2 gap-x-8 gap-y-4 border-t border-bw-line pt-4 sm:grid-cols-4">
           {figure.map((cell) => (
             <div key={cell.label}>
-              <dt className="text-[10.5px] font-semibold uppercase text-bw-ink-2" style={{ letterSpacing: '0.14em' }}>
+              <dt className="text-[11px] font-semibold uppercase text-bw-ink-2" style={{ letterSpacing: '0.14em' }}>
                 {cell.label}
               </dt>
               <dd className="mt-1 ui-font-tabular text-[15px] font-semibold text-bw-ink">{cell.value}</dd>

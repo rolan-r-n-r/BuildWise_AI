@@ -237,10 +237,10 @@ export const Hero: React.FC = () => {
                     `--bw-ink-2` (#46536a) is 6.9:1 on the same ground and is already the
                     colour of the values beside these labels, so the pair still reads as
                     one unit rather than as two. */}
-                <dt className="text-[10.5px] font-semibold uppercase text-bw-ink-2" style={{ letterSpacing: '0.14em' }}>
+                <dt className="text-[11px] font-semibold uppercase text-bw-ink-2" style={{ letterSpacing: '0.14em' }}>
                   {spec.label}
                 </dt>
-                <dd className="mt-1.5 text-[13.5px] font-medium leading-[1.5] text-bw-ink-2">{spec.value}</dd>
+                <dd className="mt-1.5 text-[14px] font-medium leading-[1.5] text-bw-ink-2">{spec.value}</dd>
               </div>
             ))}
           </motion.dl>

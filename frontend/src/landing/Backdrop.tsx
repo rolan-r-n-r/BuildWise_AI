@@ -189,7 +189,7 @@ export const Backdrop: React.FC = () => {
 
       {/* Surveyor coordinate annotations — left gutter */}
       <motion.div
-        className="absolute left-8 top-[38%] hidden flex-col gap-5 font-mono text-[10.5px] font-medium text-[#2f6fed] 2xl:flex"
+        className="absolute left-8 top-[38%] hidden flex-col gap-5 font-mono text-[11px] font-medium text-[#2f6fed] 2xl:flex"
         style={{ y: coordsLeft, opacity: 0.32 }}
       >
         <div>
@@ -206,7 +206,7 @@ export const Backdrop: React.FC = () => {
         </div>
       </motion.div>
       <motion.div
-        className="absolute bottom-[12%] right-10 hidden flex-col items-end gap-3 font-mono text-[10.5px] font-medium text-[#2f6fed] 2xl:flex"
+        className="absolute bottom-[12%] right-10 hidden flex-col items-end gap-3 font-mono text-[11px] font-medium text-[#2f6fed] 2xl:flex"
         style={{ y: coordsRight, opacity: 0.3 }}
       >
         <span>SCALE 1 : 500</span>

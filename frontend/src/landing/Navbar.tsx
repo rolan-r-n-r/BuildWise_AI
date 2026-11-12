@@ -187,7 +187,7 @@ export const Navbar: React.FC = () => {
               className="rounded-[8px]"
               decoding="async"
             />
-            <span className="text-[14.5px] font-bold tracking-[-0.02em] text-bw-ink max-[420px]:hidden">
+            <span className="text-[15px] font-bold tracking-[-0.02em] text-bw-ink max-[420px]:hidden">
               BuildWise AI
             </span>
           </a>
@@ -207,7 +207,7 @@ export const Navbar: React.FC = () => {
                       go(l.target);
                     }}
                     aria-current={isActive ? 'true' : undefined}
-                    className="bw-nav-link inline-flex h-11 items-center rounded-full px-3 text-[13.5px] font-medium text-bw-ink-2 transition-colors duration-150 hover:text-bw-ink"
+                    className="bw-nav-link inline-flex h-11 items-center rounded-full px-3 text-[14px] font-medium text-bw-ink-2 transition-colors duration-150 hover:text-bw-ink"
                   >
                     {isActive && (
                       <motion.span layoutId="bw-nav-active" className="bw-nav-active" transition={SPRING_SOFT} />

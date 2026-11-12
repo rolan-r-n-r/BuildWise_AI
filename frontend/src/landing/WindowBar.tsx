@@ -32,7 +32,7 @@ export const WindowBar: React.FC<WindowBarProps> = ({ title, subtitle, toolbar }
     </span>
 
     <p className="flex min-w-0 flex-1 items-baseline justify-center gap-2">
-      <span className="truncate text-[12.5px] font-semibold tracking-[-0.01em] text-bw-ink">{title}</span>
+      <span className="truncate text-[13px] font-semibold tracking-[-0.01em] text-bw-ink">{title}</span>
       {subtitle && <span className="hidden truncate text-[12px] text-bw-ink-3 sm:inline">{subtitle}</span>}
     </p>
 

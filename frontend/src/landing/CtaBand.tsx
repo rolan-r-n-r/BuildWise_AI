@@ -126,8 +126,8 @@ export const CtaBand: React.FC = () => {
               subtitle="Bengaluru · 2,450 m²"
               toolbar={
                 <span className="bw-window-chip gap-1.5">
-                  <span className="text-[10.5px] font-bold tabular-nums text-bw-accent">87</span>
-                  <span className="text-[10.5px] font-semibold uppercase text-bw-ink-3" style={{ letterSpacing: '0.06em' }}>
+                  <span className="text-[11px] font-bold tabular-nums text-bw-accent">87</span>
+                  <span className="text-[11px] font-semibold uppercase text-bw-ink-3" style={{ letterSpacing: '0.06em' }}>
                     score
                   </span>
                 </span>
@@ -149,15 +149,15 @@ export const CtaBand: React.FC = () => {
                       <span className="flex h-4 w-4 items-center justify-center rounded-full bg-bw-accent-tint text-bw-accent" aria-hidden>
                         <Icon name="check" size={10} strokeWidth={2.4} />
                       </span>
-                      <span className="text-[12.5px] font-semibold text-bw-ink">{row.label}</span>
+                      <span className="text-[13px] font-semibold text-bw-ink">{row.label}</span>
                     </span>
-                    <span className="text-[10.5px] font-semibold uppercase text-bw-ink-3" style={{ letterSpacing: '0.08em' }}>
+                    <span className="text-[11px] font-semibold uppercase text-bw-ink-3" style={{ letterSpacing: '0.08em' }}>
                       {row.meta}
                     </span>
                   </motion.li>
                 ))}
               </ul>
-              <p className="mt-3 flex items-center justify-between rounded-[9px] px-1 text-[11.5px] text-bw-ink-3">
+              <p className="mt-3 flex items-center justify-between rounded-[9px] px-1 text-[12px] text-bw-ink-3">
                 <span>PDF · Vector drawings · Room schedule</span>
                 <span className="font-semibold text-bw-green-ink">Ready to print</span>
               </p>
@@ -211,7 +211,7 @@ export const Footer: React.FC = () => (
             the sheet renders in full. */}
         {GROUP_ORDER.map((group) => (
           <div key={group}>
-            <p className="text-[10.5px] font-semibold uppercase text-bw-ink-2" style={{ letterSpacing: '0.14em' }}>
+            <p className="text-[11px] font-semibold uppercase text-bw-ink-2" style={{ letterSpacing: '0.14em' }}>
               {GROUP_LABELS[group]}
             </p>
             <ul className="mt-3 flex flex-col gap-2">
@@ -229,7 +229,7 @@ export const Footer: React.FC = () => (
         <p>© 2026 BuildWise AI · MIT License</p>
         <p>
           Press{' '}
-          <kbd className="rounded-[5px] border border-bw-line bg-bw-surface px-1.5 py-0.5 text-[10.5px] font-semibold text-bw-ink-2">
+          <kbd className="rounded-[5px] border border-bw-line bg-bw-surface px-1.5 py-0.5 text-[11px] font-semibold text-bw-ink-2">
             ?
           </kbd>{' '}
           inside the app for keyboard shortcuts.
