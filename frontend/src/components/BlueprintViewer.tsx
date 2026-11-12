@@ -1123,7 +1123,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             <span
               data-testid="stale-plan-chip"
               title="Parameters have changed since this blueprint was generated. Please regenerate."
-              className="font-mono text-[10px] sm:text-[11px] font-semibold text-amber-800 dark:text-amber-200 bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 rounded-[6px] whitespace-nowrap flex items-center gap-1.5 select-none animate-pulse shadow-xs"
+              className="font-mono text-[10px] sm:text-[11px] font-semibold text-amber-800 dark:text-amber-200 bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 rounded-[6px] whitespace-nowrap flex items-center gap-1.5 select-none shadow-xs"
             >
               <Icon name="alert-triangle" size={12} className="text-[var(--semantic-amber-ink)] shrink-0" />
               <span>Parameters changed - regenerate</span>
@@ -1208,14 +1208,14 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
       {renderFloorSwitcher(false)}
 
       {/* 3. Toolbar row below header */}
-      <div className="flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 border-b border-[var(--hairline)] bg-[var(--fill)]/30 flex-wrap sm:flex-nowrap">
-        <div className="flex items-center gap-1.5 sm:gap-2">
+      <div className="flex items-center justify-between gap-1 sm:gap-2 px-2 sm:px-3.5 py-1.5 sm:py-2 border-b border-[var(--hairline)] bg-[var(--fill)]/30 flex-nowrap overflow-x-auto scrollbar-none">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Mode Selector: CAD vs Paper */}
           <div className="flex items-center bg-[var(--fill)] rounded-[8px] sm:rounded-[9px] p-[2px] sm:p-[3px] shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)]">
             <button
               type="button"
               onClick={() => setMode('cad')}
-              className={`h-6 px-2 sm:px-2.5 rounded-[6px] sm:rounded-[7px] text-[10px] sm:text-[11px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
+              className={`h-6 px-1.5 sm:px-2.5 rounded-[6px] sm:rounded-[7px] text-[10px] sm:text-[11px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
                 mode === 'cad'
                   ? 'bg-[var(--segmented-active-bg)] text-[var(--segmented-active-label)] bw-segmented-active-shadow'
                   : 'text-[var(--text-2)] hover:text-[var(--text-1)]'
@@ -1226,7 +1226,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             <button
               type="button"
               onClick={() => setMode('paper')}
-              className={`h-6 px-2 sm:px-2.5 rounded-[6px] sm:rounded-[7px] text-[10px] sm:text-[11px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
+              className={`h-6 px-1.5 sm:px-2.5 rounded-[6px] sm:rounded-[7px] text-[10px] sm:text-[11px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
                 mode === 'paper'
                   ? 'bg-[var(--segmented-active-bg)] text-[var(--segmented-active-label)] bw-segmented-active-shadow'
                   : 'text-[var(--text-2)] hover:text-[var(--text-1)]'
@@ -1251,7 +1251,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                   ? 'Hide F0 Core Ghost Overlay'
                   : 'Show F0 Core Ghost Overlay (Verifying vertical stacking alignment)'
               }
-              className={`h-6 sm:h-7 px-2 sm:px-2.5 rounded-[7px] sm:rounded-[9px] text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out cursor-pointer select-none active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 disabled:active:scale-100 ${
+              className={`h-6 sm:h-7 px-1.5 sm:px-2.5 rounded-[7px] sm:rounded-[9px] text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out cursor-pointer select-none active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 disabled:active:scale-100 ${
                 activeFloorIndex === 0
                   ? 'opacity-50 cursor-not-allowed bg-[var(--fill)] text-[var(--text-3)]'
                   : showGhostOverlay
@@ -1262,7 +1262,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
               <Icon
                 name="layers"
                 size={12}
-                className={showGhostOverlay && safeFloorIndex > 0 ? 'text-[var(--semantic-amber-ink)] animate-pulse' : ''}
+                className={showGhostOverlay && safeFloorIndex > 0 ? 'text-[var(--semantic-amber-ink)]' : ''}
               />
               <span className="hidden sm:inline">{safeFloorIndex === 0 ? 'F0 Anchor' : showGhostOverlay ? 'Ghost Core: ON' : 'Ghost Core: OFF'}</span>
               <span className="inline sm:hidden">{safeFloorIndex === 0 ? 'Anchor' : showGhostOverlay ? 'Ghost: ON' : 'Ghost: OFF'}</span>
@@ -1271,7 +1271,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
         </div>
 
         {/* Zoom Controls & Expand Action (segmented cluster) */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <div className="flex items-center gap-0.5 bg-[var(--fill)] rounded-[8px] sm:rounded-[9px] p-[2px] sm:p-[3px] shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)]">
             <button
               type="button"
@@ -1285,7 +1285,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             </button>
             <span
               data-testid="blueprint-zoom-value"
-              className="font-mono text-[11px] sm:text-[12px] text-[var(--text-2)] tabular-nums min-w-[32px] sm:min-w-[38px] text-center font-semibold select-none"
+              className="font-mono text-[10px] sm:text-[12px] text-[var(--text-2)] tabular-nums min-w-[28px] sm:min-w-[38px] text-center font-semibold select-none"
             >
               {Math.round(zoom * 100)}%
             </span>
@@ -1322,7 +1322,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                 : 'Export Multi-Page Architectural PDF Dossier (Cover Sheet 10.0 + Floor Sheets 10.1-10.N)'
             }
             aria-label="Export Dossier (PDF)"
-            className={`h-6 sm:h-7 px-2 sm:px-2.5 rounded-[7px] sm:rounded-[9px] text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out select-none ${
+            className={`h-6 sm:h-7 px-1.5 sm:px-2.5 rounded-[7px] sm:rounded-[9px] text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out select-none ${
               isStale
                 ? 'opacity-40 cursor-not-allowed bg-[var(--fill)] text-[var(--text-3)] border border-[var(--hairline)]'
                 : 'bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 text-red-800 dark:text-red-200 border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_1px_2px_rgba(220,38,38,0.12)] cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100'
@@ -1829,7 +1829,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                           <span
                             data-testid="modal-stale-plan-chip"
                             title="Parameters changed — regenerate blueprint before exporting."
-                            className="font-mono text-[10px] sm:text-[11px] font-semibold text-amber-800 dark:text-amber-200 bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.5 rounded-[6px] whitespace-nowrap flex items-center gap-1 select-none animate-pulse"
+                            className="font-mono text-[10px] sm:text-[11px] font-semibold text-amber-800 dark:text-amber-200 bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.5 rounded-[6px] whitespace-nowrap flex items-center gap-1 select-none"
                           >
                             <Icon name="alert-triangle" size={11} className="text-[var(--semantic-amber-ink)] shrink-0" />
                             <span>Parameters changed</span>
@@ -1920,7 +1920,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                       <Icon
                         name="layers"
                         size={12}
-                        className={showGhostOverlay && safeFloorIndex > 0 ? 'text-[var(--semantic-amber-ink)] animate-pulse' : ''}
+                        className={showGhostOverlay && safeFloorIndex > 0 ? 'text-[var(--semantic-amber-ink)]' : ''}
                       />
                       <span className="hidden sm:inline">{safeFloorIndex === 0 ? 'F0 Anchor' : showGhostOverlay ? 'Ghost: ON' : 'Ghost: OFF'}</span>
                       <span className="inline sm:hidden">{safeFloorIndex === 0 ? 'Anchor' : showGhostOverlay ? 'Ghost: ON' : 'Ghost: OFF'}</span>

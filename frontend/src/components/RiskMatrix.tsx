@@ -2,11 +2,12 @@ import React from 'react';
 import type { RiskItem } from '../services/types';
 import { Icon } from './Icon';
 
-interface RiskMatrixProps {
+export interface RiskMatrixProps {
   risks: RiskItem[];
+  showHeader?: boolean;
 }
 
-export const RiskMatrix: React.FC<RiskMatrixProps> = ({ risks }) => {
+export const RiskMatrix: React.FC<RiskMatrixProps> = ({ risks, showHeader = true }) => {
   // Pill TEXT uses the -ink hues: the bright semantic tokens are fill/graphic
   // colours and measure 1.9-3.0:1 as small text on their own 12% tints.
   const getSeverityStyle = (severity: string) => {
@@ -46,17 +47,19 @@ export const RiskMatrix: React.FC<RiskMatrixProps> = ({ risks }) => {
   return (
     <div className="rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 space-y-3.5 w-full min-w-0">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-2 min-w-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <Icon name="shield-alert" size={15} className="text-[var(--text-2)] shrink-0" />
-          <h3 className="text-[14px] font-semibold text-[var(--text-1)] tracking-tight">
-            Site Constraints & Risk Mitigation
-          </h3>
+      {showHeader && (
+        <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Icon name="shield-alert" size={15} className="text-[var(--text-2)] shrink-0" />
+            <h3 className="text-[14px] font-semibold text-[var(--text-1)] tracking-tight">
+              Site Constraints & Mitigation Register
+            </h3>
+          </div>
+          <span className="text-[12px] font-normal text-[var(--text-3)] shrink-0">
+            {risks.length} identified
+          </span>
         </div>
-        <span className="text-[12px] font-normal text-[var(--text-3)] shrink-0">
-          {risks.length} identified
-        </span>
-      </div>
+      )}
 
       {/* Grouped list with hairline dividers */}
       <div className="divide-y divide-[var(--hairline)]">

@@ -1125,7 +1125,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                         </span>
                       }
                     >
-                      <RiskMatrix risks={analysisData.risks} />
+                      <RiskMatrix risks={analysisData.risks} showHeader={false} />
                     </CollapsibleSection>
                   </section>
 
