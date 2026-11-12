@@ -110,7 +110,7 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
 
   return (
     <div
-      className="rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px] space-y-3 w-full min-w-0"
+      className="rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px] space-y-3 w-full min-w-0"
       data-testid="orientation-compass-card"
     >
       {/* 1. Section Header */}
@@ -319,7 +319,7 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
               x={cx}
               y={cy - 22.5}
               textAnchor="middle"
-              className="text-[9.5px] font-semibold tracking-wider fill-[var(--accent-ink)] select-none"
+              className="text-[10px] font-semibold tracking-wider fill-[var(--accent-ink)] select-none"
             >
               NORTH (DAYLIGHT)
             </text>
@@ -327,7 +327,7 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
               x={cx}
               y={cy + 29.5}
               textAnchor="middle"
-              className="text-[9.5px] font-semibold tracking-wider fill-[var(--text-2)] select-none"
+              className="text-[10px] font-semibold tracking-wider fill-[var(--text-2)] select-none"
             >
               SOUTH (SOLAR GAIN)
             </text>
@@ -403,7 +403,7 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
       </div>
 
       {/* 3. Key Performance Insights (Area B) */}
-      <div className="grid grid-cols-3 gap-2 min-w-0">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 min-w-0">
         {/* Metric 1: Building Axis */}
         <div className="bg-[var(--fill)] rounded-[8px] p-2 border border-[var(--hairline)] flex flex-col justify-between min-w-0">
           <div className="flex items-center justify-between gap-1 mb-1">
@@ -420,7 +420,7 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
               {optimal_axis_degrees.toFixed(1)}° True N
             </div>
           </div>
-          <div className="mt-1 pt-1 border-t border-[var(--hairline)] text-[9.5px] text-[var(--text-3)] leading-tight truncate">
+          <div className="mt-1 pt-1 border-t border-[var(--hairline)] text-[10px] text-[var(--text-3)] leading-tight truncate">
             Blocks low sun
           </div>
         </div>
@@ -435,7 +435,7 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
           </div>
           <div className="space-y-0.5 min-w-0">
             <div>
-              <span className={`text-[9.5px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${ventStatus.badgeClass}`}>
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${ventStatus.badgeClass}`}>
                 <span className="w-1.5 h-1.5 rounded-full bg-current" />
                 {cross_ventilation_rating}
               </span>
@@ -444,7 +444,7 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
               {prevailing_wind_direction_degrees.toFixed(0)}° {windCardinal}
             </div>
           </div>
-          <div className="mt-1 pt-1 border-t border-[var(--hairline)] text-[9.5px] text-[var(--text-3)] leading-tight truncate" title={ventStatus.summary}>
+          <div className="mt-1 pt-1 border-t border-[var(--hairline)] text-[10px] text-[var(--text-3)] leading-tight truncate" title={ventStatus.summary}>
             {ventStatus.summary}
           </div>
         </div>
@@ -465,7 +465,7 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
               N–S Glazing
             </div>
           </div>
-          <div className="mt-1 pt-1 border-t border-[var(--hairline)] text-[9.5px] text-[var(--text-3)] leading-tight truncate">
+          <div className="mt-1 pt-1 border-t border-[var(--hairline)] text-[10px] text-[var(--text-3)] leading-tight truncate">
             Solar control
           </div>
         </div>
@@ -473,7 +473,7 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
 
       {/* 4. Streamlined Architectural Insights (Area C) */}
       <div className="space-y-1.5 min-w-0">
-        <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)] block">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)] block">
           Architectural Insights
         </span>
 

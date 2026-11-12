@@ -462,7 +462,7 @@ export function SegmentedControl<T extends string = string>({
     const root = rootRef.current;
     if (!root) return null;
     const boxes = new Map<string, PillBox>();
-    for (const el of root.querySelectorAll<HTMLElement>('[data-seg-id]')) {
+    for (const el of Array.from(root.querySelectorAll<HTMLElement>('[data-seg-id]'))) {
       const id = el.dataset.segId;
       if (id) {
         boxes.set(id, { left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight });

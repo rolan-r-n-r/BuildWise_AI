@@ -60,7 +60,7 @@ export const SiteVisionCard: React.FC<SiteVisionCardProps> = ({
   const strokeDashoffset = circumference - (greenPct / 100) * circumference;
 
   return (
-    <div className={`bw-card rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 space-y-4 w-full min-w-0 ${className}`}>
+    <div className={`bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 space-y-4 w-full min-w-0 ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-2 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
@@ -177,7 +177,7 @@ export const SiteVisionCard: React.FC<SiteVisionCardProps> = ({
 
       {/* Loaded Analysis Data */}
       {!isLoading && data && data.mode !== 'unavailable' && (
-        <div className={isGrid ? 'grid grid-cols-1 xl:grid-cols-2 lg:grid-cols-2 gap-5 items-start' : 'space-y-3.5'}>
+        <div className={isGrid ? 'grid grid-cols-1 md:grid-cols-2 gap-4 items-start' : 'space-y-3.5'}>
           {/* Left Column in Grid mode (Canopy Stats, Water Bodies, Latency) */}
           <div className="space-y-3.5 min-w-0">
             {/* Key-Value Rows with Ring Gauge */}

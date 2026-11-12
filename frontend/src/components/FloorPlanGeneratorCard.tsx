@@ -746,7 +746,7 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
   return (
     <div
       data-testid="floorplan-generator-card"
-      className="rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 space-y-3.5 w-full min-w-0"
+      className="rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 space-y-3.5 w-full min-w-0"
     >
       {/* Header with Title and READ-ONLY Inherited Parameter Summary Chips */}
       <div className="border-b border-[var(--hairline)] pb-2.5 space-y-2 min-w-0">
@@ -938,7 +938,7 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
             size="sm"
             stretch
             value={strictness}
-            onChange={setStrictness}
+            onChange={(val) => setStrictness(val as 'high' | 'medium' | 'low')}
             options={[
               { id: 'high', label: 'High' },
               { id: 'medium', label: 'Medium' },

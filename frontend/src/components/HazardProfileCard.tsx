@@ -135,9 +135,9 @@ export const HazardProfileCard: React.FC<HazardProfileCardProps> = ({ hazard, la
         {getSeverityPill(overall_hazard_level, `${overall_hazard_level} hazard`)}
       </div>
 
-      <div className={isGrid ? 'grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-3 gap-4 items-start' : 'space-y-3'}>
+      <div className={isGrid ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start' : 'space-y-3'}>
         {/* 1. Seismic Vulnerability Card */}
-        <div className="bw-card rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-3.5">
+        <div className="bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-3.5">
         <button
           type="button"
           onClick={() => toggleExpand('seismic')}
@@ -248,7 +248,7 @@ export const HazardProfileCard: React.FC<HazardProfileCardProps> = ({ hazard, la
       </div>
 
       {/* 2. Hydrological Flood Stress Card */}
-      <div className="bw-card rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-3.5">
+      <div className="bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-3.5">
         <button
           type="button"
           onClick={() => toggleExpand('flood')}
@@ -340,7 +340,7 @@ export const HazardProfileCard: React.FC<HazardProfileCardProps> = ({ hazard, la
       </div>
 
       {/* 3. Storm & Wind Exposure Card */}
-      <div className="bw-card rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-3.5">
+      <div className={`bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-3.5 ${isGrid ? 'md:col-span-2 lg:col-span-1' : ''}`}>
         <button
           type="button"
           onClick={() => toggleExpand('storm')}

@@ -1371,7 +1371,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
 
       {/* 4. Canvas Preview */}
       <div
-        className="relative w-full min-h-[320px] h-[360px] overflow-hidden select-none cursor-pointer group"
+        className="relative w-full min-h-[320px] h-[360px] sm:h-[400px] lg:h-[440px] overflow-hidden select-none cursor-pointer group"
         style={{ backgroundColor: 'var(--blueprint-bg)' }}
         onClick={() => {
           // The whole canvas opens the modal — but a drag that ended here is a

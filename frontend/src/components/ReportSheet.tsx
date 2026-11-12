@@ -552,7 +552,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
     const root = contentScrollRef.current;
     if (!root) return;
     const boxes: { id: string; top: number; height: number }[] = [];
-    for (const el of root.querySelectorAll<HTMLElement>('[data-report-section]')) {
+    for (const el of Array.from(root.querySelectorAll<HTMLElement>('[data-report-section]'))) {
       const id = el.getAttribute('data-report-section');
       if (!id) continue;
       // `offsetTop` is relative to the nearest positioned ancestor, and several
@@ -940,7 +940,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
               onClick={handleBackToTop}
               /* --text-2, not --text-3: measured 3.76:1 in the dark sheet at
                  11.5px (below AA); --text-2 clears it at 4.96:1 dark / 4.94:1 light. */
-              className="print-hide ml-auto shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[11.5px] font-medium text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--fill)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40"
+              className="print-hide ml-auto shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[12px] font-medium text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--fill)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40"
               title="Scroll back to the top of this tab"
             >
               <Icon name="arrow-up" size={13} className="shrink-0" />
@@ -993,7 +993,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
           ref={contentScrollRef}
           className="report-sheet-content flex-1 overflow-y-auto bw-scroll-pane scrollbar-apple p-4 sm:p-6"
         >
-          <div className="max-w-[1400px] mx-auto w-full min-w-0 space-y-4">
+          <div className="max-w-7xl mx-auto w-full min-w-0 space-y-4">
             {/* ================================================================= */}
             {/* SCREEN VIEW: Render selected tab only                             */}
             {/* ================================================================= */}
@@ -1345,12 +1345,12 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                   />
                   </section>
 
-                  {/* Below: Balanced LandValueCard + FloorPlanGeneratorCard (trailing card spans both columns if blueprint expanded) */}
+                  {/* Below: Balanced LandValueCard + FloorPlanGeneratorCard */}
                   <section aria-label="Valuation and floor plan">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
                     {analysisData.land_value ? (
                       <div
-                        className={`w-full min-w-0 ${floorPlanData ? 'lg:col-span-2' : ''}`}
+                        className="w-full min-w-0 lg:col-span-2"
                         data-report-section="landvalue"
                         id="sec-landvalue"
                       >
@@ -1361,16 +1361,18 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                         />
                       </div>
                     ) : (
-                      <ReportEmptyState
-                        icon="currency-rupee"
-                        title="Land valuation unavailable"
-                        message="No state guidance rate matched this jurisdiction, so no land budget is shown. The civil cost estimate above is unaffected and remains valid."
-                      />
+                      <div className="w-full min-w-0 lg:col-span-2">
+                        <ReportEmptyState
+                          icon="currency-rupee"
+                          title="Land valuation unavailable"
+                          message="No state guidance rate matched this jurisdiction, so no land budget is shown. The civil cost estimate above is unaffected and remains valid."
+                        />
+                      </div>
                     )}
 
                     {floorPlanData?.qa && (
                       <div
-                        className={`w-full min-w-0 ${floorPlanData ? 'lg:col-span-2' : ''}`}
+                        className="w-full min-w-0 lg:col-span-2"
                         data-report-section="certificate"
                         id="sec-certificate"
                       >
@@ -1401,7 +1403,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                     )}
 
                     <div
-                      className={`w-full min-w-0 ${floorPlanData ? 'lg:col-span-2' : ''}`}
+                      className="w-full min-w-0 lg:col-span-2"
                       data-report-section="blueprint"
                       id="sec-blueprint"
                     >
