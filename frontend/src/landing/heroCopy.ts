@@ -89,12 +89,8 @@ export function firstScreenCss(): string {
   return `
 ${p}{display:block;position:absolute;top:0;left:0;right:0;z-index:1;font-family:${FONT_STACK};color:${LANDING.color.ink}}
 ${p} .bh-wrap{margin:0 auto;max-width:80rem;padding:8rem 1.5rem 5rem}
-${p} .bh-eyebrow{display:inline-flex;height:2rem;align-items:center;gap:0.5rem;border:1px solid rgba(11,18,32,0.09);background:rgba(255,255,255,0.75);border-radius:9999px;padding:0 0.875rem 0 0.625rem;color:${LANDING.color.slate}}
-${p} .bh-dot{width:6px;height:6px;flex:none;border-radius:9999px;background:${LANDING.color.accent}}
-${p} .bh-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:${LANDING.type.trackingEyebrow}}
-${p} .bh-h1{margin:1.5rem 0 0;font-size:${LANDING.type.hero};font-weight:700;letter-spacing:${LANDING.type.trackingHero};line-height:1.04;color:${LANDING.color.ink}}
+${p} .bh-h1{margin:0;font-size:${LANDING.type.hero};font-weight:700;letter-spacing:${LANDING.type.trackingHero};line-height:1.04;color:${LANDING.color.ink}}
 ${p} .bh-h1 span{display:block}
-${p} .bh-accent{background:linear-gradient(96deg,${LANDING.color.accentDeep} 4%,${LANDING.color.accent} 96%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
 ${p} .bh-sub{margin:1.5rem 0 0;max-width:38rem;font-size:17px;line-height:1.6;color:${LANDING.color.slate}}
 [data-boot-hero]{display:none}
 @media (min-width:640px){${p} .bh-wrap{padding-top:9rem}}
@@ -137,10 +133,8 @@ export function firstScreenHtml(): string {
   const c = HERO_COPY;
   return (
     `<div data-boot-hero><div class="bh-wrap">` +
-    `<p class="bh-eyebrow"><span class="bh-dot"></span>` +
-    `<span class="bh-label">${esc(c.eyebrow)}</span></p>` +
     `<h1 class="bh-h1"><span>${esc(c.headlineFirst)}</span>` +
-    `<span>${esc(c.headlineSecondLead)}<span class="bh-accent">${esc(c.headlineSecondAccent)}</span>${esc(c.headlineSecondTrail)}</span></h1>` +
+    `<span>${esc(c.headlineSecondLead)}<span>${esc(c.headlineSecondAccent)}</span>${esc(c.headlineSecondTrail)}</span></h1>` +
     `<p class="bh-sub">${esc(c.subcopy)}</p>` +
     `</div></div>`
   );

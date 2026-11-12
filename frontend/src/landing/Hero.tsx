@@ -155,24 +155,14 @@ export const Hero: React.FC = () => {
           style={{ y: copyY }}
         >
           <div className="lg:col-span-8">
-            <p className="inline-flex h-8 items-center gap-2 rounded-full border border-bw-line bg-bw-surface pl-2.5 pr-3.5 text-bw-ink-2">
-              <span aria-hidden className="h-[6px] w-[6px] shrink-0 rounded-full bg-bw-accent" />
-              <span
-                className="text-[11px] font-semibold uppercase"
-                style={{ letterSpacing: LANDING.type.trackingEyebrow }}
-              >
-                {HERO_COPY.eyebrow}
-              </span>
-            </p>
-
             <h1
-              className="mt-6 font-bold text-bw-ink"
+              className="font-bold text-bw-ink"
               style={{ fontSize: LANDING.type.hero, letterSpacing: LANDING.type.trackingHero, lineHeight: 1.04 }}
             >
               <span className="block">{HERO_COPY.headlineFirst}</span>
               <span className="block">
                 {HERO_COPY.headlineSecondLead}
-                <span className="bw-gradient-text">{HERO_COPY.headlineSecondAccent}</span>
+                <span className="text-bw-ink">{HERO_COPY.headlineSecondAccent}</span>
                 {HERO_COPY.headlineSecondTrail}
               </span>
             </h1>

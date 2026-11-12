@@ -22,6 +22,7 @@ import { motion } from 'framer-motion';
 import { fadeRise, staggerParent, SETTLE_VIEWPORT } from './motion';
 import { SectionHeading } from './SectionHeading';
 import { ScrollRule } from './ScrollRule';
+import { Icon } from '../components/Icon';
 
 interface Feature {
   title: string;
@@ -36,66 +37,37 @@ const FEATURES: ReadonlyArray<Feature> = [
     title: 'Land suitability',
     meta: 'MCDA',
     copy: 'Multi-criteria scoring over topography, land use, and environmental data, with the weightings disclosed.',
-    icon: (
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M8 3l4 8 5-5 5 15H2L8 3z" />
-      </svg>
-    ),
+    icon: <Icon name="mountain" size={17} strokeWidth={1.9} />,
   },
   {
     title: 'Seismic and flood risk',
     meta: 'IS 1893',
     copy: 'Zone and inundation stress from the code plus historical event and river-discharge telemetry.',
-    icon: (
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <polyline points="2 14 6 14 9 6 14 22 17 14 22 14" />
-        <path d="M3 9c2-1.6 3.4-1.6 5.4 0M15.6 9c2-1.6 3.4-1.6 5.4 0" opacity="0.7" />
-      </svg>
-    ),
+    icon: <Icon name="activity" size={17} strokeWidth={1.9} />,
   },
   {
     title: 'Cost estimation',
     meta: 'CPWD DSR',
     copy: 'Benchmarked construction cost by elemental head, with terrain and quality surcharges shown separately.',
-    icon: (
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3M9 13c6.667 0 6.667-10 0-10" />
-      </svg>
-    ),
+    icon: <Icon name="currency-rupee" size={17} strokeWidth={1.9} />,
   },
   {
     title: 'Vastu orientation',
     meta: '9-zone mandala',
     copy: 'Orientation and placement guidance scored per zone, alongside the solar and wind bearings that drive it.',
-    icon: (
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <circle cx="12" cy="12" r="9" />
-        <polygon points="15.5 8.5 13.6 13.6 8.5 15.5 10.4 10.4 15.5 8.5" />
-      </svg>
-    ),
+    icon: <Icon name="compass" size={17} strokeWidth={1.9} />,
   },
   {
     title: 'Generative blueprints',
     meta: 'Spatial CSP',
     copy: 'Floor plans solved against a placement knowledge base and non-negotiable topological invariants.',
-    icon: (
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <path d="M3 9h18M9 21V9M15 9v12" />
-      </svg>
-    ),
+    icon: <Icon name="blueprint" size={17} strokeWidth={1.9} />,
   },
   {
     title: 'Print-ready dossier',
     meta: 'Vector PDF',
     copy: 'One click compiles the scorecard, risk matrices, benchmarks, and a 174mm vector blueprint.',
-    icon: (
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <polyline points="6 9 6 2 18 2 18 9" />
-        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-        <rect x="6" y="14" width="12" height="8" rx="1" />
-      </svg>
-    ),
+    icon: <Icon name="printer" size={17} strokeWidth={1.9} />,
   },
 ];
 

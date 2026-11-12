@@ -47,11 +47,11 @@
 import React, { useRef } from 'react';
 import { motion, useInView } from 'framer-motion';
 import type { TargetAndTransition } from 'framer-motion';
-import { fadeRise, maskLift, ruleDraw, REVEAL, SETTLE_MARGIN, timed } from './motion';
+import { fadeRise, maskLift, REVEAL, SETTLE_MARGIN, timed } from './motion';
 import { LANDING } from './theme';
 
 export interface SectionHeadingProps {
-  eyebrow: string;
+  eyebrow?: string;
   title: React.ReactNode;
   copy?: React.ReactNode;
   /** Centre the block (used by the closing band) instead of left-aligning it. */
@@ -59,7 +59,7 @@ export interface SectionHeadingProps {
 }
 
 /** The cascade, in seconds from the heading's own reveal. */
-const DELAY = { eyebrow: 0, title: 0.07, copy: 0.2 };
+const DELAY = { title: 0.05, copy: 0.18 };
 
 /** Visual values only — see the timing note in this file's header. */
 function withoutTiming(v: TargetAndTransition): TargetAndTransition {
@@ -67,37 +67,17 @@ function withoutTiming(v: TargetAndTransition): TargetAndTransition {
   delete out.transition;
   return out;
 }
-const EYEBROW = { hidden: withoutTiming(fadeRise.hidden), show: withoutTiming(fadeRise.show) };
-const RULE = { hidden: withoutTiming(ruleDraw.hidden), show: withoutTiming(ruleDraw.show) };
+const COPY = { hidden: withoutTiming(fadeRise.hidden), show: withoutTiming(fadeRise.show) };
 const TITLE = { hidden: withoutTiming(maskLift.hidden), show: withoutTiming(maskLift.show) };
 
-export const SectionHeading: React.FC<SectionHeadingProps> = ({ eyebrow, title, copy, centered = false }) => {
+export const SectionHeading: React.FC<SectionHeadingProps> = ({ title, copy, centered = false }) => {
   const ref = useRef<HTMLDivElement>(null);
   const shown = useInView(ref, { once: true, margin: SETTLE_MARGIN });
 
   return (
     <div ref={ref} className={centered ? 'mx-auto max-w-2xl text-center' : 'max-w-2xl'}>
-      <motion.p
-        initial={EYEBROW.hidden}
-        animate={shown ? EYEBROW.show : EYEBROW.hidden}
-        transition={timed(REVEAL, DELAY.eyebrow)}
-        className="flex items-center gap-3 text-[11px] font-semibold uppercase text-bw-accent"
-      >
-        {/* The rule draws out of the label rather than fading in with it: at
-            1.5px there is no visible scale change, so what reads is the line
-            arriving rather than the line growing. */}
-        <motion.span
-          aria-hidden
-          initial={RULE.hidden}
-          animate={shown ? RULE.show : RULE.hidden}
-          transition={timed(0.7, DELAY.eyebrow)}
-          className="h-[1.5px] w-7 shrink-0 origin-left rounded-full bg-bw-accent"
-        />
-        <span style={{ letterSpacing: LANDING.type.trackingEyebrow }}>{eyebrow}</span>
-      </motion.p>
-
       <h2
-        className="mt-3 font-bold text-bw-ink"
+        className="font-bold text-bw-ink"
         style={{ fontSize: LANDING.type.sectionTitle, letterSpacing: '-0.03em', lineHeight: 1.12 }}
       >
         {/* Mask box. The padding is descender room (a tight line-height clips the
@@ -119,8 +99,8 @@ export const SectionHeading: React.FC<SectionHeadingProps> = ({ eyebrow, title, 
 
       {copy && (
         <motion.p
-          initial={EYEBROW.hidden}
-          animate={shown ? EYEBROW.show : EYEBROW.hidden}
+          initial={COPY.hidden}
+          animate={shown ? COPY.show : COPY.hidden}
           transition={timed(REVEAL, DELAY.copy)}
           className="mt-4 text-[16px] leading-[1.6] text-bw-ink-2"
         >
