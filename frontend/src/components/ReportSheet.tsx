@@ -28,6 +28,7 @@ import { DataSourcesDisclosure } from './DataSourcesDisclosure';
 import { SiteVisionCard } from './SiteVisionCard';
 import { OrientationCompass } from './OrientationCompass';
 import { VastuAdvisoryCard } from './VastuAdvisoryCard';
+import { VastuReconciliationSection } from './VastuReconciliationSection';
 import { CostBreakdownTable } from './CostBreakdownTable';
 import { LandValueCard } from './LandValueCard';
 import { FloorPlanGeneratorCard } from './FloorPlanGeneratorCard';
@@ -811,7 +812,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
         }}
       >
         {/* Sticky Sheet Header (56px) */}
-        <header className="h-[56px] min-h-[56px] border-b border-[var(--hairline)] px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-3 shrink-0 select-none bg-[var(--sheet-bg)]">
+        <header className="h-[56px] min-h-[56px] border-b border-[var(--hairline)] px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-3 shrink-0 select-none bg-[var(--sheet-bg)] backdrop-blur-md">
           {/* Left: Shield Icon + "Site Feasibility Report" 15px/600 + Ref Copy Pill */}
           <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             <div className="w-7 h-7 rounded-[8px] bg-[var(--accent-tint)] text-[var(--accent-ink)] flex items-center justify-center shrink-0">
@@ -910,7 +911,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
             tab body by its own height whenever a switch landed on a tab without
             anchors, so the anchor-less tabs had to carry an invisible strip
             that ate pane space and frosted the content scrolling under it. */}
-        <div className="print-hide flex items-center gap-x-3 px-3 sm:px-6 py-1 min-h-[38px] border-b border-[var(--hairline)] bg-[var(--sheet-bg)] shrink-0">
+        <div className="print-hide flex items-center gap-x-3 px-3 sm:px-6 py-1 min-h-[38px] border-b border-[var(--hairline)] bg-[var(--sheet-bg)] backdrop-blur-md shrink-0">
           {/* The read-out gets a FIXED box, not a content-sized one: it was the
               only measured layout shift in this row (0.00034 at the widest
               switch) because every element after a content-sized box — the
@@ -951,7 +952,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
 
         {/* Compact Horizontal Sub-Header Tabs (<1024px; mounted only here) */}
         {!desktopTabs && (
-        <div className="report-sheet-tabs-nav border-b border-[var(--hairline)] px-4 py-2 bg-[var(--sheet-bg)] bw-tab-strip bw-fade-x shrink-0">
+        <div className="report-sheet-tabs-nav border-b border-[var(--hairline)] px-4 py-2 bg-[var(--sheet-bg)] backdrop-blur-md bw-tab-strip bw-fade-x shrink-0">
           <div
             role="tablist"
             className="bg-[var(--fill)] rounded-[10px] p-[2px] flex items-center gap-1 min-w-max text-[12px] font-medium"
@@ -988,12 +989,12 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
         </div>
         )}
 
-        {/* Content Area: overflow-y auto with scrollbar-apple, padding 24px, inner max-width 1160px centered */}
+        {/* Content Area: overflow-y auto with scrollbar-apple, padding 24px, inner max-width 1440px centered */}
         <main
           ref={contentScrollRef}
           className="report-sheet-content flex-1 overflow-y-auto bw-scroll-pane scrollbar-apple p-4 sm:p-6"
         >
-          <div className="max-w-7xl mx-auto w-full min-w-0 space-y-4">
+          <div className="max-w-[1440px] mx-auto w-full min-w-0 space-y-4">
             {/* ================================================================= */}
             {/* SCREEN VIEW: Render selected tab only                             */}
             {/* ================================================================= */}
@@ -1018,47 +1019,45 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                     <ReportHeroHeader data={analysisData} />
                   </section>
 
-                  {/* b) BELOW: grid 7fr / 5fr, gap 16: left = Multi-Criteria Factor Breakdown; right = Engineering Commentary & Action Items */}
-                  <div className="grid grid-cols-1 lg:grid-cols-[7fr_5fr] gap-4 items-start">
-                    {/* Left Column (7fr): Multi-Criteria Factor Breakdown card */}
-                    <div className="w-full min-w-0" data-report-section="factors" id="sec-factors">
-                      <CollapsibleSection
-                        sectionId="overview-factors"
-                        title="Factor Assessment"
-                        icon="layers"
-                        meta={
-                          <span className="text-[11px] text-[var(--text-3)] tabular-nums">
-                            {analysisData.factors.length} weighted
-                          </span>
-                        }
-                      >
-                        {analysisData.factors.length > 0 ? (
-                          <MemoizedFactorList factors={analysisData.factors} dataSources={analysisData.data_sources} methodology={analysisData.methodology} />
-                        ) : (
-                          <ReportEmptyState
-                            icon="layers"
-                            title="No factor scores available"
-                            message="The suitability engine returned no weighted factors for this site. Re-run the analysis to score the terrain, hazard and access inputs."
-                          />
-                        )}
-                      </CollapsibleSection>
-                    </div>
+                  {/* Factor Assessment (Full width, standardized card container) */}
+                  <section className="w-full min-w-0" data-report-section="factors" id="sec-factors" aria-label="Factor assessment">
+                    <CollapsibleSection
+                      sectionId="overview-factors"
+                      title="Factor Assessment"
+                      icon="layers"
+                      variant="card"
+                      meta={
+                        <span className="text-[11px] text-[var(--text-3)] tabular-nums">
+                          {analysisData.factors.length} weighted
+                        </span>
+                      }
+                    >
+                      {analysisData.factors.length > 0 ? (
+                        <MemoizedFactorList factors={analysisData.factors} dataSources={analysisData.data_sources} methodology={analysisData.methodology} />
+                      ) : (
+                        <ReportEmptyState
+                          icon="layers"
+                          title="No factor scores available"
+                          message="The suitability engine returned no weighted factors for this site. Re-run the analysis to score the terrain, hazard and access inputs."
+                        />
+                      )}
+                    </CollapsibleSection>
+                  </section>
 
-                    {/* Right Column (5fr): Engineering Commentary & Action Items card (sticky filter control) */}
-                    <div className="w-full min-w-0" data-report-section="commentary" id="sec-commentary">
-                      <RecommendationPanel
-                        summary={analysisData.engineering_summary}
-                        recommendations={analysisData.detailed_recommendations}
-                        recommendationItems={analysisData.recommendation_items}
-                        aiMetadata={analysisData.ai_metadata}
-                        parameterReflection={analysisData.parameter_reflection}
-                        summaryOnly={false}
-                      />
-                    </div>
-                  </div>
+                  {/* Engineering Commentary & Action Items (Full width, balanced internal grid) */}
+                  <section className="w-full min-w-0" data-report-section="commentary" id="sec-commentary" aria-label="Engineering commentary and action items">
+                    <RecommendationPanel
+                      summary={analysisData.engineering_summary}
+                      recommendations={analysisData.detailed_recommendations}
+                      recommendationItems={analysisData.recommendation_items}
+                      aiMetadata={analysisData.ai_metadata}
+                      parameterReflection={analysisData.parameter_reflection}
+                      summaryOnly={false}
+                    />
+                  </section>
 
                   {/* c) BELOW: full-width export / download strip */}
-                  <div className="rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-3.5 px-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-[12px] text-[var(--text-2)]">
+                  <div className="rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-3.5 px-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-[12px] text-[var(--text-2)]">
                     <div className="flex items-center gap-2 min-w-0">
                       <Icon name="file-text" size={16} className="text-[var(--text-2)] shrink-0" />
                       <span className="truncate">
@@ -1091,19 +1090,16 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                   {/* Degradation warnings: same banner the Overview tab renders */}
                   <WarningsBanner data={bannerData} planVerdict={floorPlanData?.plan_verdict ?? null} />
 
-                  {/* 3-col grid with Seismic / Hydrological / Storm side by side */}
+                  {/* Hazard Profiles (Seismic, Hydrological, Storm in balanced 3-col grid) */}
                   <section data-report-section="profiles" aria-label="Hazard profiles">
-                    <div className="flex items-center justify-between mb-2">
-                      <h2 className="text-[14px] font-semibold text-[var(--text-1)] tracking-tight flex items-center gap-2">
-                        <Icon name="activity" size={14} className="text-[var(--text-2)]" />
-                        Seismic classification
-                      </h2>
-                      {analysisData.hazard_profile && (
-                        <SeismicZoneChip seismic={analysisData.hazard_profile.seismic} />
-                      )}
-                    </div>
                     {analysisData.hazard_profile ? (
-                      <HazardProfileCard hazard={analysisData.hazard_profile} layout="grid" />
+                      <HazardProfileCard
+                        hazard={analysisData.hazard_profile}
+                        layout="grid"
+                        extraHeader={
+                          <SeismicZoneChip seismic={analysisData.hazard_profile.seismic} />
+                        }
+                      />
                     ) : (
                       <ReportEmptyState
                         icon="activity"
@@ -1154,7 +1150,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
 
                   {/* Below: 2-col grid OrientationCompass + VastuAdvisoryCard side by side */}
                   <section data-report-section="orientation" aria-label="Orientation and vastu">
-                    <div className="rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 mb-4">
+                    <div className="bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px] mb-4">
                       <h2 className="text-[14px] font-semibold text-[var(--text-1)] tracking-tight mb-3">
                         Bioclimatic orientation
                       </h2>
@@ -1174,6 +1170,11 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                       )}
                     </div>
                   </section>
+
+                  {/* Full-width Vastu & Building Physics Reconciliation section */}
+                  {analysisData.vastu_advisory?.reconciliation_notes && analysisData.vastu_advisory.reconciliation_notes.length > 0 && (
+                    <VastuReconciliationSection notes={analysisData.vastu_advisory.reconciliation_notes} />
+                  )}
 
                   {/* Consolidated Data Sources & Standards */}
                   <DataSourcesDisclosure category="ecology" degraded={analysisData.degraded_mode || (analysisData.warnings?.length ?? 0) > 0} />
@@ -1201,7 +1202,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                     const basicDelta = activeRate - (GRADE_RATES_INR_PER_SQFT.find((g) => g.id === 'basic')?.rate ?? activeRate);
                     const fmtDelta = (v: number) => `${v >= 0 ? '+' : '−'}₹${formatIN(Math.abs(v))}`;
                     return (
-                      <div className="bw-card rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-3.5 mb-3.5 space-y-2">
+                      <div className="bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-3.5 mb-3.5 space-y-2">
                         <div className="flex items-center justify-between gap-2 min-w-0">
                           <span className="text-[12px] font-semibold text-[var(--text-1)]">Specification grade → cost</span>
                           <span className="inline-flex items-center gap-1 min-w-0">
@@ -1243,7 +1244,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
 
                   {/* Summary Tiles Row (4 tiles with room: label 12px, value 22px/600) */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-                    <div className="bw-card bg-[var(--card-bg-subtle)] border border-[var(--hairline)] p-4 rounded-[14px] min-w-0">
+                    <div className="bw-card bg-[var(--card-bg-subtle)] border border-[var(--hairline)] p-4 rounded-[16px] min-w-0">
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <span className="text-[12px] font-normal text-[var(--text-3)]">
                           Plinth area base rate
@@ -1265,7 +1266,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                       </span>
                     </div>
 
-                    <div className="bw-card bg-[var(--card-bg-subtle)] border border-[var(--hairline)] p-4 rounded-[14px] min-w-0">
+                    <div className="bw-card bg-[var(--card-bg-subtle)] border border-[var(--hairline)] p-4 rounded-[16px] min-w-0">
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <span className="text-[12px] font-normal text-[var(--text-3)]">
                           Topographic modifier
@@ -1286,7 +1287,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                       </span>
                     </div>
 
-                    <div className="bw-card bg-[var(--card-bg-subtle)] border border-[var(--hairline)] p-4 rounded-[14px] min-w-0">
+                    <div className="bw-card bg-[var(--card-bg-subtle)] border border-[var(--hairline)] p-4 rounded-[16px] min-w-0">
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <span className="text-[12px] font-normal text-[var(--text-3)]">
                           Total civil budget
@@ -1306,7 +1307,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                       </span>
                     </div>
 
-                    <div className="bw-card bg-[var(--card-bg-subtle)] border border-[var(--hairline)] p-4 rounded-[14px] min-w-0">
+                    <div className="bw-card bg-[var(--card-bg-subtle)] border border-[var(--hairline)] p-4 rounded-[16px] min-w-0">
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <span className="text-[12px] font-normal text-[var(--text-3)]">
                           Combined project total
@@ -1332,7 +1333,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
 
                   {/* Full-width Cost Breakdown Table */}
                   <section data-report-section="breakdown" id="sec-breakdown" aria-label="Cost breakdown">
-                  <div className="bw-card rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4">
+                  <div className="bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px]">
                     <h2 className="text-[14px] font-semibold text-[var(--text-1)] tracking-tight mb-3">
                       Cost spread &amp; composition
                     </h2>
@@ -1345,12 +1346,11 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                   />
                   </section>
 
-                  {/* Below: Balanced LandValueCard + FloorPlanGeneratorCard */}
-                  <section aria-label="Valuation and floor plan">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                  {/* Valuation, Certificate, Land & Space, and Floor Plan Stack */}
+                  <section aria-label="Valuation and floor plan" className="space-y-4">
                     {analysisData.land_value ? (
                       <div
-                        className="w-full min-w-0 lg:col-span-2"
+                        className="w-full min-w-0"
                         data-report-section="landvalue"
                         id="sec-landvalue"
                       >
@@ -1361,7 +1361,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                         />
                       </div>
                     ) : (
-                      <div className="w-full min-w-0 lg:col-span-2">
+                      <div className="w-full min-w-0">
                         <ReportEmptyState
                           icon="currency-rupee"
                           title="Land valuation unavailable"
@@ -1372,7 +1372,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
 
                     {floorPlanData?.qa && (
                       <div
-                        className="w-full min-w-0 lg:col-span-2"
+                        className="w-full min-w-0"
                         data-report-section="certificate"
                         id="sec-certificate"
                       >
@@ -1394,7 +1394,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
 
                     {landEconomics && (
                       <div
-                        className="w-full min-w-0 lg:col-span-2"
+                        className="w-full min-w-0"
                         data-report-section="land"
                         id="sec-land"
                       >
@@ -1403,7 +1403,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                     )}
 
                     <div
-                      className="w-full min-w-0 lg:col-span-2"
+                      className="w-full min-w-0"
                       data-report-section="blueprint"
                       id="sec-blueprint"
                     >
@@ -1452,7 +1452,6 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                         prevailingWindDirectionDegrees={analysisData.orientation?.prevailing_wind_direction_degrees}
                       />
                     </div>
-                  </div>
                   </section>
                 </div>
               )}
@@ -1547,6 +1546,9 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                     <VastuAdvisoryCard advisory={analysisData.vastu_advisory} />
                   )}
                 </div>
+                {analysisData.vastu_advisory?.reconciliation_notes && analysisData.vastu_advisory.reconciliation_notes.length > 0 && (
+                  <VastuReconciliationSection notes={analysisData.vastu_advisory.reconciliation_notes} />
+                )}
                 <DataSourcesDisclosure category="ecology" degraded={analysisData.degraded_mode || (analysisData.warnings?.length ?? 0) > 0} />
               </div>
 
