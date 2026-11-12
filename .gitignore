@@ -8,6 +8,8 @@ dist/
 dist-ssr/
 build/
 *.egg-info/
+PRODUCT.md
+.impeccable/
 
 # Environment and secrets
 .env

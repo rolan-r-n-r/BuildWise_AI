@@ -651,6 +651,19 @@
   transition: opacity 200ms ease;
 }
 
+.ios-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 6px;
+}
+
+.ios-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--accent-tint), 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.ios-slider:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--accent-tint), 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
 .ios-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
