@@ -117,7 +117,7 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
       : items.filter((it) => it.severity.toLowerCase() === filterSeverity.toLowerCase());
 
   return (
-    <div className="bw-card rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px] space-y-3.5 w-full min-w-0">
+    <div className="bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px] space-y-3.5 w-full min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-2 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
@@ -140,57 +140,76 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
         </button>
       </div>
 
-      {/* Parameter Reflection: styled italic quote with sparkles icon and accent-tinted surface */}
-      {reflectionText && (
-        <div
-          data-testid="narrative-block"
-          className="p-3.5 bg-[var(--accent-tint)] border border-[var(--accent)]/20 rounded-[12px] space-y-1.5"
-        >
-          <div className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--accent-ink)]">
-            <Icon name="sparkles" size={13} className="text-[var(--accent-ink)]" />
-            <span data-testid="narrative-label">{narrativeLabel}</span>
-          </div>
-          <p className="text-[13px] text-[var(--text-1)] leading-relaxed italic">
-            "{reflectionText}"
-          </p>
-          {redactedClaims.length > 0 && (
-            <p data-testid="narrative-redaction-note" className="text-[11px] text-[var(--text-2)] leading-snug">
-              {redactedClaims.join(', ')} claim{redactedClaims.length === 1 ? '' : 's'} removed — use the
-              certified values in this report.
-            </p>
+      {/* Parameter Reflection & Engineering Summary: side-by-side on md+ when both exist */}
+      {(reflectionText || (!isNearIdentical && summary)) && (
+        <div className={`grid gap-3 ${reflectionText && !isNearIdentical && summary ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+          {reflectionText && (
+            <div
+              data-testid="narrative-block"
+              className="p-3.5 bg-[var(--accent-tint)] border border-[var(--accent)]/20 rounded-[12px] space-y-1.5 flex flex-col justify-between"
+            >
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--accent-ink)]">
+                  <Icon name="sparkles" size={13} className="text-[var(--accent-ink)] shrink-0" />
+                  <span data-testid="narrative-label">{narrativeLabel}</span>
+                </div>
+                <p className="text-[13px] text-[var(--text-1)] leading-relaxed italic">
+                  "{reflectionText}"
+                </p>
+              </div>
+              {redactedClaims.length > 0 && (
+                <p data-testid="narrative-redaction-note" className="text-[11px] text-[var(--text-2)] leading-snug pt-1">
+                  {redactedClaims.join(', ')} claim{redactedClaims.length === 1 ? '' : 's'} removed — use the
+                  certified values in this report.
+                </p>
+              )}
+            </div>
+          )}
+
+          {!isNearIdentical && summary && (
+            <div className="p-3.5 bg-[var(--fill)] rounded-[12px] text-[13px] text-[var(--text-2)] leading-[1.55] space-y-1.5 flex flex-col justify-start">
+              <div className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--text-1)]">
+                <Icon name="file-text" size={13} className="text-[var(--text-2)] shrink-0" />
+                <span>Deterministic Summary</span>
+              </div>
+              <p>{summary}</p>
+            </div>
           )}
         </div>
       )}
 
-      {/* Engineering Narrative Summary (only rendered if distinct from reflectionText) */}
-      {!isNearIdentical && summary && (
-        <div className="p-3.5 bg-[var(--fill)] rounded-[12px] text-[13px] text-[var(--text-2)] leading-[1.55]">
-          {summary}
-        </div>
-      )}
-
-      {/* Compact Action Items with Sticky Filter Control */}
+      {/* Action Items with Natural-Scrolling Filter Control */}
       {!summaryOnly && items.length > 0 && (
-        <div className="space-y-2 pt-1">
-          {/* Sticky filter segmented control at card top */}
-          <div className="sticky top-0 bg-[var(--card-bg-subtle)] z-10 pt-1 pb-1.5">
-            <SegmentedControl
-              ariaLabel="Filter recommendations by severity"
-              size="sm"
-              stretch
-              value={filterSeverity}
-              onChange={setFilterSeverity}
-              options={[
-                { id: 'all', label: 'All' },
-                { id: 'critical', label: 'Critical' },
-                { id: 'advisory', label: 'Advisory' },
-                { id: 'optimal', label: 'Optimal' },
-              ]}
-            />
+        <div className="space-y-3 pt-1">
+          {/* Filter row: natural scroll, never sticky */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] font-semibold text-[var(--text-1)] tracking-tight">
+                Prioritized Action Items
+              </span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-[var(--fill)] text-[var(--text-2)] font-medium tabular-nums">
+                {filteredItems.length} of {items.length}
+              </span>
+            </div>
+            <div className="w-full sm:w-auto sm:min-w-[280px]">
+              <SegmentedControl
+                ariaLabel="Filter recommendations by severity"
+                size="sm"
+                stretch
+                value={filterSeverity}
+                onChange={setFilterSeverity}
+                options={[
+                  { id: 'all', label: 'All' },
+                  { id: 'critical', label: 'Critical' },
+                  { id: 'advisory', label: 'Advisory' },
+                  { id: 'optimal', label: 'Optimal' },
+                ]}
+              />
+            </div>
           </div>
 
-          {/* Grouped Recommendations List: hairline separators, no per-entry cards, natural flow */}
-          <div className="divide-y divide-[var(--hairline)] border-y border-[var(--hairline)]">
+          {/* Grouped Recommendations List: responsive 2-col grid on md+ */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {filteredItems.map((item, idx) => {
               const style = getSeverityStyle(item.severity);
               const itemId = item.rule_id || item.id || idx;
@@ -199,43 +218,48 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
               const isLongText = bodyText.length > 180;
 
               return (
-                <div key={itemId} className="py-3 space-y-1.5 min-w-0 first:pt-2 last:pb-1">
-                  {/* Title Row: 14px/600 --text-1 + tinted severity pill right */}
-                  <div className="flex items-center justify-between gap-2 min-w-0">
-                    <span className="text-[14px] font-semibold text-[var(--text-1)] leading-snug break-words">
-                      {item.category_label || item.title || item.category}
-                    </span>
-                    <span
-                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold capitalize shrink-0"
-                      style={{ backgroundColor: style.bg, color: style.text }}
-                    >
+                <div
+                  key={itemId}
+                  className="p-3.5 rounded-[12px] bg-[var(--fill)]/60 border border-[var(--hairline)] space-y-2 min-w-0 flex flex-col justify-between"
+                >
+                  <div className="space-y-1.5">
+                    {/* Title Row: 13.5px font-semibold --text-1 + tinted severity pill right */}
+                    <div className="flex items-start justify-between gap-2 min-w-0">
+                      <span className="text-[13.5px] font-semibold text-[var(--text-1)] leading-snug break-words">
+                        {item.category_label || item.title || item.category}
+                      </span>
                       <span
-                        className="w-1.5 h-1.5 rounded-full"
-                        style={{ backgroundColor: style.text }}
-                      />
-                      <span>{item.severity}</span>
-                    </span>
-                  </div>
-
-                  {/* Body: 13px --text-2, line-height 1.55, clamped to 4 lines with a 'More' button */}
-                  <div className="text-[13px] text-[var(--text-2)] leading-[1.55]">
-                    <p className={isExpanded ? '' : 'line-clamp-4'}>
-                      {bodyText}
-                    </p>
-                    {isLongText && (
-                      <button
-                        type="button"
-                        onClick={() => toggleExpand(itemId)}
-                        className="text-[12px] font-medium text-[var(--accent-ink)] hover:underline mt-1 cursor-pointer select-none inline-block"
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold capitalize shrink-0"
+                        style={{ backgroundColor: style.bg, color: style.text }}
                       >
-                        {isExpanded ? 'Less' : 'More'}
-                      </button>
-                    )}
+                        <span
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{ backgroundColor: style.text }}
+                        />
+                        <span>{item.severity}</span>
+                      </span>
+                    </div>
+
+                    {/* Body */}
+                    <div className="text-[12.5px] text-[var(--text-2)] leading-[1.55]">
+                      <p className={isExpanded ? '' : 'line-clamp-3'}>
+                        {bodyText}
+                      </p>
+                      {isLongText && (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpand(itemId)}
+                          className="text-[12px] font-medium text-[var(--accent-ink)] hover:underline mt-1 cursor-pointer select-none inline-block"
+                        >
+                          {isExpanded ? 'Less' : 'More'}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Traceability: why this recommendation fired + which payload field it reads. */}
                   {(item.trigger_condition || item.source_data_ref) && (
-                    <details className="group">
+                    <details className="group pt-1 border-t border-[var(--hairline)]">
                       <summary className="cursor-pointer text-[11px] font-medium text-[var(--accent-ink)] hover:underline select-none inline-flex items-center gap-1 list-none">
                         <Icon name="info" size={11} className="shrink-0" />
                         Why this recommendation
@@ -266,12 +290,12 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
 
       {/* Fallback to simple list if no structured items and not summaryOnly */}
       {!summaryOnly && items.length === 0 && recommendations.length > 0 && (
-        <div className="divide-y divide-[var(--hairline)] border-y border-[var(--hairline)]">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {recommendations.map((rec, idx) => {
             const isExpanded = Boolean(expandedItems[idx]);
             const isLongText = rec.length > 180;
             return (
-              <div key={idx} className="py-3 text-[13px] text-[var(--text-2)] leading-[1.55]">
+              <div key={idx} className="p-3.5 rounded-[12px] bg-[var(--fill)]/60 border border-[var(--hairline)] text-[12.5px] text-[var(--text-2)] leading-[1.55]">
                 <div className="flex items-start gap-2">
                   <span className="font-semibold text-[var(--text-1)] shrink-0">{idx + 1}.</span>
                   <div className="flex-1 min-w-0">

@@ -6,9 +6,10 @@ import { AMSL_DISCLOSURE, Z_FACTOR_DISCLOSURE } from './report/termDisclosures';
 interface HazardProfileCardProps {
   hazard: HazardProfile;
   layout?: 'stack' | 'grid';
+  extraHeader?: React.ReactNode;
 }
 
-export const HazardProfileCard: React.FC<HazardProfileCardProps> = ({ hazard, layout = 'stack' }) => {
+export const HazardProfileCard: React.FC<HazardProfileCardProps> = ({ hazard, layout = 'stack', extraHeader }) => {
   const isGrid = layout === 'grid';
   const { seismic, flood, storm_cyclone: storm, overall_hazard_level } = hazard;
 
@@ -132,7 +133,10 @@ export const HazardProfileCard: React.FC<HazardProfileCardProps> = ({ hazard, la
             Climate & Hazard Vulnerability
           </h3>
         </div>
-        {getSeverityPill(overall_hazard_level, `${overall_hazard_level} hazard`)}
+        <div className="flex items-center gap-2 shrink-0">
+          {extraHeader}
+          {getSeverityPill(overall_hazard_level, `${overall_hazard_level} hazard`)}
+        </div>
       </div>
 
       <div className={isGrid ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start' : 'space-y-3'}>
