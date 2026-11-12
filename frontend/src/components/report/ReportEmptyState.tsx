@@ -25,7 +25,7 @@ export const ReportEmptyState: React.FC<ReportEmptyStateProps> = ({
 }) => (
   <div
     role="status"
-    className={`rounded-[14px] border border-dashed border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-5 text-center space-y-2.5 w-full min-w-0 ${className}`}
+    className={`rounded-[16px] border border-dashed border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-5 text-center space-y-2.5 w-full min-w-0 ${className}`}
   >
     <div className="w-9 h-9 mx-auto rounded-full bg-[var(--fill)] text-[var(--text-2)] flex items-center justify-center">
       <Icon name={icon} size={18} />

@@ -34,7 +34,7 @@ export const ResultsSummary: React.FC<ResultsSummaryProps> = ({ data, onOpenRepo
 
     {/* Top 3 Factor Breakdown Rows — same factor card as the report, so
         status badges and provenance are present in the sidebar too. */}
-    <div className="rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px] space-y-3.5 w-full min-w-0">
+    <div className="bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px] space-y-3.5 w-full min-w-0">
       <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-2 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
           <Icon name="layers" size={15} className="text-[var(--text-2)] shrink-0" />

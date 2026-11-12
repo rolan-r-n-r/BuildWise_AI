@@ -65,7 +65,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     <section
       aria-label={title}
       className={`w-full min-w-0 ${
-        isCard ? 'rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)]' : ''
+        isCard ? 'bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)]' : ''
       }`}
     >
       <button
@@ -73,7 +73,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         onClick={() => setOpen((prev) => !prev)}
         className={`w-full flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-left cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40 ${
           isCard
-            ? 'px-4 py-3 rounded-[14px]'
+            ? 'p-4 sm:p-[18px] pb-3 sm:pb-3.5'
             : 'py-1.5 rounded-[8px]'
         }`}
         aria-expanded={open}
@@ -107,7 +107,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         }`}
       >
         <div className="overflow-hidden">
-          <div className={isCard ? 'px-4 pb-4 pt-0 border-t border-[var(--hairline)]' : 'pt-1.5'}>
+          <div className={isCard ? 'px-4 sm:px-[18px] pb-4 sm:pb-[18px] pt-2 border-t border-[var(--hairline)]' : 'pt-1.5'}>
             {children}
           </div>
         </div>

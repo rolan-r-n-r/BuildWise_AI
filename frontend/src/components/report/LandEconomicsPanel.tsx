@@ -89,7 +89,7 @@ export const LandEconomicsPanel: React.FC<{ report: LandEconomicsReport; classNa
     <section
       data-testid="land-economics-panel"
       aria-label="Land economics and space efficiency"
-      className={`bw-card rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 space-y-3 w-full min-w-0 ${className}`}
+      className={`bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-4 sm:p-[18px] space-y-3.5 w-full min-w-0 ${className}`}
     >
       <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-2 min-w-0">
         <div className="flex items-center gap-2 min-w-0">

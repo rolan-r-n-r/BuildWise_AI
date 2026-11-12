@@ -110,7 +110,7 @@ export const ArrivalSlice: React.FC<ArrivalSliceProps> = ({
         className={`relative w-full min-w-0 ${className}`}
         style={{ minHeight: reservedHeight }}
       >
-        <Skeleton className="absolute inset-0 rounded-[14px]" label={label} />
+        <Skeleton className="absolute inset-0 rounded-[16px]" label={label} />
       </div>
     );
   }

@@ -27,7 +27,7 @@ export const DataSourcesDisclosure: React.FC<DataSourcesDisclosureProps> = ({ ca
   const sources = category === 'hazards' ? HAZARD_SOURCES : ECOLOGY_SOURCES;
 
   return (
-    <div className="rounded-[14px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-3 text-[12px] text-[var(--text-3)] transition-ui">
+    <div className="bw-card rounded-[16px] border border-[var(--hairline)] bg-[var(--card-bg-subtle)] p-3.5 sm:p-4 text-[12px] text-[var(--text-3)] transition-ui">
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
