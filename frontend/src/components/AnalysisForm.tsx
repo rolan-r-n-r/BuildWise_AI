@@ -631,28 +631,30 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
                     aria-checked={isActive}
                     data-testid={`quality-grade-${grade.id}`}
                     onClick={() => onChange({ quality_grade: grade.id })}
-                    className={`py-1.5 px-1 rounded-[8px] text-center transition-colors duration-150 ease-apple select-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40 ${
+                    className={`py-1.5 px-1 rounded-[8px] text-center transition-colors duration-150 ease-apple select-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40 min-h-[68px] flex flex-col justify-between ${
                       isActive
                         ? 'bg-[var(--segmented-active-bg)] bw-segmented-active-shadow'
                         : 'hover:bg-[var(--fill-hover)]'
                     }`}
                   >
-                    <span
-                      className="text-[12.5px] font-semibold block leading-tight"
-                      style={{
-                        color: isActive ? 'var(--segmented-active-label)' : 'var(--text-2)',
-                      }}
-                    >
-                      {grade.label}
-                    </span>
-                    <span
-                      className="text-[11px] block mt-0.5 font-medium tabular-nums leading-tight"
-                      style={{
-                        color: isActive ? 'var(--segmented-active-sublabel)' : 'var(--text-3)',
-                      }}
-                    >
-                      {grade.rate}
-                    </span>
+                    <div>
+                      <span
+                        className="text-[13px] font-semibold block leading-tight"
+                        style={{
+                          color: isActive ? 'var(--segmented-active-label)' : 'var(--text-2)',
+                        }}
+                      >
+                        {grade.label}
+                      </span>
+                      <span
+                        className="text-[11px] block mt-0.5 font-medium tabular-nums leading-tight"
+                        style={{
+                          color: isActive ? 'var(--segmented-active-sublabel)' : 'var(--text-3)',
+                        }}
+                      >
+                        {grade.rate}
+                      </span>
+                    </div>
                     <span
                       className="text-[11px] block mt-0.5 font-normal leading-[1.2]"
                       style={{

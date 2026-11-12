@@ -2274,7 +2274,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       {/* Dynamic Attribution Compliance Pill (bottom-right) */}
       <div className="absolute bottom-2 sm:bottom-3 right-2 sm:right-4 z-[1000] pointer-events-auto">
-        <div className="vibrancy-pill px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-[10px] text-[var(--text-2)] flex items-center gap-1 border border-[var(--panel-border-color)] bg-[var(--surface-overlay)] backdrop-blur-md shadow-sm max-w-[calc(100vw-16px)]">
+        <div className="vibrancy-pill px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-[10px] text-[var(--text-2)] flex items-center gap-1 border border-[var(--panel-border-color)] bg-[var(--surface-overlay)] shadow-sm max-w-[calc(100vw-16px)]">
           <span>&copy;</span>
           <a
             href={isFallbackActive ? 'https://www.openstreetmap.org/copyright' : 'https://openfreemap.org'}

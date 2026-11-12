@@ -144,7 +144,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
   return (
     <header
-      className="fixed top-2 sm:top-3 left-2 sm:left-3 right-2 sm:right-3 h-[48px] sm:h-[52px] rounded-[14px] sm:rounded-[16px] vibrancy-panel z-[1001] px-2 sm:px-4 flex items-center justify-between pointer-events-auto border border-[var(--panel-border-color)] shadow-md select-none"
+      className="fixed top-2 sm:top-3 left-2 sm:left-3 right-2 sm:right-3 h-[48px] sm:h-[52px] rounded-[16px] vibrancy-panel z-[1001] px-2 sm:px-4 flex items-center justify-between pointer-events-auto border border-[var(--panel-border-color)] shadow-md select-none"
     >
       {/* Brand identity: BuildWise AI Logo */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink">
