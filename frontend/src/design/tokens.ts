@@ -84,10 +84,10 @@ export function ui(token: MotionToken): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* RADII — 6/8/10/12/16 + full. Rounded-2xl (16) is the outermost      */
-/* surface radius; nothing nests a larger radius inside a smaller one. */
+/* RADII — 6/8/10/12/16/20/24 + full. Rounded-2xl (16) is primary card; */
+/* 20 is panel; 24 is sheet modal. No nesting larger inside smaller. */
 /* ------------------------------------------------------------------ */
-export const RADII = { xs: 6, sm: 8, md: 10, lg: 12, xl: 16, full: 9999 } as const;
+export const RADII = { xs: 6, sm: 8, md: 10, lg: 12, xl: 16, panel: 20, sheet: 24, full: 9999 } as const;
 
 /* ------------------------------------------------------------------ */
 /* TYPOGRAPHY — SF-adjacent stack; tabular figures for every number    */
