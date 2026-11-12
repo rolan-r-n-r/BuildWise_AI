@@ -43,8 +43,8 @@ export const VastuAdvisoryCard: React.FC<VastuAdvisoryCardProps> = ({ advisory }
         </div>
       </div>
 
-      {/* Scrollable Card Body: balances height with OrientationCompass */}
-      <div className="space-y-3.5 max-h-[460px] overflow-y-auto scrollbar-apple pr-1">
+      {/* Card Body: natural flow within ReportSheet drawer */}
+      <div className="space-y-3.5">
         {/* Ranked Entrances */}
       <div className="space-y-2">
         <span className="text-[12px] font-normal text-[var(--text-3)] block">
@@ -59,7 +59,7 @@ export const VastuAdvisoryCard: React.FC<VastuAdvisoryCardProps> = ({ advisory }
                     {idx + 1}
                   </span>
                   <span className="text-[13px] font-semibold text-[var(--text-1)]">
-                    {ent.direction} Facing
+                    {ent.direction.endsWith('Facing') ? ent.direction : `${ent.direction} Facing`}
                   </span>
                   {ent.is_approach_side && (
                     <span className="text-[11px] font-medium bg-[var(--accent-tint)] text-[var(--accent-ink)] px-2 py-0.5 rounded-full">
@@ -107,7 +107,7 @@ export const VastuAdvisoryCard: React.FC<VastuAdvisoryCardProps> = ({ advisory }
                 key={quad}
                 type="button"
                 onClick={() => zone && setSelectedZone(zone)}
-                className={`p-2 rounded-[8px] text-left transition-ui min-h-[60px] flex flex-col justify-between select-none cursor-pointer ${
+                className={`p-2 rounded-[8px] text-left transition-ui min-h-[60px] flex flex-col justify-between select-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
                   isSelected
                     ? 'bg-[var(--accent)] text-white shadow-sm'
                     : 'bg-[var(--card-bg-subtle)] hover:bg-[var(--fill)] border border-[var(--hairline)] text-[var(--text-1)]'
@@ -116,12 +116,12 @@ export const VastuAdvisoryCard: React.FC<VastuAdvisoryCardProps> = ({ advisory }
                 <div className="flex justify-between items-center w-full min-w-0">
                   <span className="font-bold text-[11px] opacity-80 shrink-0">{quad}</span>
                   {zone?.zone_name && (
-                    <span className="text-[9px] capitalize opacity-60 break-words leading-none text-right">
+                    <span className="text-[10px] capitalize opacity-70 break-words leading-none text-right">
                       {zone.zone === 'Center' ? 'Brahma' : zone.zone_name}
                     </span>
                   )}
                 </div>
-                <span className="text-[10px] font-medium leading-[1.2] break-words mt-1 block">
+                <span className="text-[11px] font-medium leading-[1.25] break-words mt-1 block">
                   {zone?.primary_room ?? quad}
                 </span>
               </button>
@@ -197,7 +197,7 @@ export const VastuAdvisoryCard: React.FC<VastuAdvisoryCardProps> = ({ advisory }
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-[var(--text-1)] text-[12px]">{item.topic}</span>
                   <span
-                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${
+                    className={`text-[11px] font-semibold px-2 py-0.5 rounded-full capitalize ${
                       item.status === 'concordant'
                         ? 'bg-[var(--semantic-green)]/12 text-[var(--semantic-green-ink)]'
                         : 'bg-[var(--semantic-amber)]/12 text-[var(--semantic-amber-ink)]'

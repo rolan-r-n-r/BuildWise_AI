@@ -307,7 +307,7 @@ export const SiteVisionCard: React.FC<SiteVisionCardProps> = ({
                 No significant tree clusters (≥ 25 m²) detected on the surveyed plot.
               </div>
             ) : (
-              <div className="divide-y divide-[var(--hairline)] max-h-72 overflow-y-auto scrollbar-apple pr-1">
+              <div className="divide-y divide-[var(--hairline)]">
                 {data.preservation_plan.map((item) => {
                   const badge = getRankBadge(item.rank);
                   return (

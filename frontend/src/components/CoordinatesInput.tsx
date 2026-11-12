@@ -337,6 +337,8 @@ function parseLocationName(displayName: string): { title: string; subtitle: stri
               top: dropdownRect.top + 2,
               left: dropdownRect.left,
               width: dropdownRect.width,
+              maxWidth: 'calc(100vw - 32px)',
+              maxHeight: `min(300px, calc(100vh - ${dropdownRect.top + 16}px))`,
               zIndex: 99999,
               backgroundColor: 'var(--card-bg-subtle)',
               border: '1px solid var(--hairline)',
@@ -450,7 +452,7 @@ function parseLocationName(displayName: string): { title: string; subtitle: stri
             <button
               type="button"
               onClick={handleClearAll}
-              className="text-[12px] text-[var(--text-2)] hover:text-[var(--semantic-red-ink)] flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded-[6px]"
+              className="bw-touch-target text-[12px] text-[var(--text-2)] hover:text-[var(--semantic-red-ink)] flex items-center gap-1 transition-colors px-2 py-1 rounded-[6px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               title="Clear coordinates"
             >
               <Icon name="x" size={12} />

@@ -205,7 +205,7 @@ export const MethodologyPopover: React.FC<MethodologyPopoverProps> = ({
         aria-describedby={open ? contentId : undefined}
         title={triggerLabel ?? `What ${factorName} affects`}
         aria-label={triggerLabel ?? `Methodology for ${factorName}`}
-        className="w-5 h-5 rounded-full bg-[var(--fill)] hover:bg-[var(--fill-hover)] text-[var(--text-3)] hover:text-[var(--text-1)] flex items-center justify-center transition-colors duration-150 ease-apple cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40"
+        className="bw-touch-target w-5 h-5 rounded-full bg-[var(--fill)] hover:bg-[var(--fill-hover)] text-[var(--text-3)] hover:text-[var(--text-1)] flex items-center justify-center transition-colors duration-150 ease-apple cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40"
       >
         <Icon name="info" size={11} />
       </button>

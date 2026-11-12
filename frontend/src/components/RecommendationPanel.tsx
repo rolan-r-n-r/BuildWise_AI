@@ -189,8 +189,8 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
             />
           </div>
 
-          {/* Grouped Recommendations List: hairline separators, no per-entry cards, scrollable */}
-          <div className="divide-y divide-[var(--hairline)] border-y border-[var(--hairline)] max-h-[340px] overflow-y-auto scrollbar-apple pr-1">
+          {/* Grouped Recommendations List: hairline separators, no per-entry cards, natural flow */}
+          <div className="divide-y divide-[var(--hairline)] border-y border-[var(--hairline)]">
             {filteredItems.map((item, idx) => {
               const style = getSeverityStyle(item.severity);
               const itemId = item.rule_id || item.id || idx;
@@ -266,7 +266,7 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
 
       {/* Fallback to simple list if no structured items and not summaryOnly */}
       {!summaryOnly && items.length === 0 && recommendations.length > 0 && (
-        <div className="divide-y divide-[var(--hairline)] border-y border-[var(--hairline)] max-h-[340px] overflow-y-auto scrollbar-apple pr-1">
+        <div className="divide-y divide-[var(--hairline)] border-y border-[var(--hairline)]">
           {recommendations.map((rec, idx) => {
             const isExpanded = Boolean(expandedItems[idx]);
             const isLongText = rec.length > 180;

@@ -199,7 +199,7 @@ const SliderField: React.FC<SliderFieldProps> = ({
           </div>
         </div>
 
-        <div className="flex justify-between items-center text-[10.5px] text-[var(--text-3)] font-medium pt-2">
+        <div className="flex justify-between items-center text-[11px] text-[var(--text-2)] font-medium pt-2">
           <span className="w-1/3 text-left truncate">{scaleLabels[0]}</span>
           <span className="w-1/3 text-center truncate">{scaleLabels[1]}</span>
           <span className="w-1/3 text-right truncate">{scaleLabels[2]}</span>
@@ -646,7 +646,7 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
                       {grade.label}
                     </span>
                     <span
-                      className="text-[10.5px] block mt-0.5 font-medium tabular-nums leading-tight"
+                      className="text-[11px] block mt-0.5 font-medium tabular-nums leading-tight"
                       style={{
                         color: isActive ? 'var(--segmented-active-sublabel)' : 'var(--text-3)',
                       }}
@@ -654,7 +654,7 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
                       {grade.rate}
                     </span>
                     <span
-                      className="text-[10px] block mt-0.5 font-normal leading-[1.2]"
+                      className="text-[11px] block mt-0.5 font-normal leading-[1.2]"
                       style={{
                         color: isActive ? 'var(--segmented-active-sublabel)' : 'var(--text-3)',
                       }}

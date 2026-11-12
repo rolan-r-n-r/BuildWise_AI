@@ -59,7 +59,7 @@ export function engineBadge(
     return {
       state: 'live',
       label: `Live · ${hosted.name}`,
-      dotClass: 'bg-[var(--semantic-green)] animate-pulse',
+      dotClass: 'bg-[var(--semantic-green)]',
       title: `AI engine: Live — the ${hosted.name} key is configured. Key presence is probed; upstream reachability is not.`,
     };
   }
@@ -144,10 +144,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
   return (
     <header
-      className="fixed top-2 sm:top-3 left-2 sm:left-3 right-2 sm:right-3 h-[48px] sm:h-[52px] rounded-[14px] sm:rounded-[16px] vibrancy-panel z-[1001] px-2.5 sm:px-4 flex items-center justify-between pointer-events-auto border border-[var(--panel-border-color)] shadow-md select-none"
+      className="fixed top-2 sm:top-3 left-2 sm:left-3 right-2 sm:right-3 h-[48px] sm:h-[52px] rounded-[14px] sm:rounded-[16px] vibrancy-panel z-[1001] px-2 sm:px-4 flex items-center justify-between pointer-events-auto border border-[var(--panel-border-color)] shadow-md select-none"
     >
       {/* Brand identity: BuildWise AI Logo */}
-      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink">
         <div className="w-7 h-7 rounded-[8px] bg-white dark:bg-white/10 flex items-center justify-center shrink-0 border border-slate-200/90 dark:border-white/10 overflow-hidden shadow-xs">
           <img
             src={theme === 'dark' ? '/brand/BuildWise_logo_square_white.png' : '/brand/BuildWise_logo_square.png'}
@@ -156,7 +156,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           />
         </div>
         <div className="min-w-0 flex items-center gap-1.5 sm:gap-2">
-          <h1 className="text-[14px] sm:text-[15px] font-semibold text-[var(--text-1)] tracking-tight whitespace-nowrap truncate">
+          <h1 className="text-[13px] sm:text-[15px] font-semibold text-[var(--text-1)] tracking-tight whitespace-nowrap truncate">
             BuildWise AI
           </h1>
           <span className="hidden sm:inline-block text-[11px] font-medium bg-[var(--fill)] text-[var(--text-2)] px-2 py-0.5 rounded-full shrink-0">
@@ -171,7 +171,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       {/* Right controls: Theme toggle, Telemetry notice, Methodology, Reset, Engine Status */}
       <div className="flex items-center gap-1 sm:gap-2 shrink-0">
         {/* Mobile Panel Toggles (hidden on desktop >=1024px) */}
-        <div className="flex lg:hidden items-center gap-1 sm:gap-1.5">
+        <div className="flex lg:hidden items-center gap-0.5 xs:gap-1 sm:gap-1.5">
           {onToggleMobileControl && (
             <button
               type="button"
@@ -180,7 +180,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               onClick={onToggleMobileControl}
               aria-expanded={isMobileControlOpen}
               aria-controls="controls-drawer"
-              className={`relative px-2 sm:px-2.5 py-1.5 sm:py-2 text-[12px] font-medium rounded-[10px] transition-colors flex items-center justify-center gap-1 min-h-[32px] sm:min-h-[36px] min-w-[32px] bw-touch-target ${
+              className={`relative px-1.5 xs:px-2 sm:px-2.5 py-1.5 sm:py-2 text-[12px] font-medium rounded-[10px] transition-colors flex items-center justify-center gap-1 min-h-[32px] sm:min-h-[36px] min-w-[32px] bw-touch-target ${
                 isMobileControlOpen
                   ? 'bg-[var(--accent)] text-white'
                   : 'bg-[var(--fill)] text-[var(--text-1)] hover:bg-[var(--fill-hover)]'
@@ -201,7 +201,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               onClick={onToggleMobileResults}
               aria-expanded={isMobileResultsOpen}
               aria-controls="results-drawer"
-              className={`relative px-2 sm:px-2.5 py-1.5 sm:py-2 text-[12px] font-medium rounded-[10px] transition-colors flex items-center justify-center gap-1 min-h-[32px] sm:min-h-[36px] min-w-[32px] bw-touch-target ${
+              className={`relative px-1.5 xs:px-2 sm:px-2.5 py-1.5 sm:py-2 text-[12px] font-medium rounded-[10px] transition-colors flex items-center justify-center gap-1 min-h-[32px] sm:min-h-[36px] min-w-[32px] bw-touch-target ${
                 isMobileResultsOpen
                   ? 'bg-[var(--accent)] text-white'
                   : 'bg-[var(--fill)] text-[var(--text-1)] hover:bg-[var(--fill-hover)]'
@@ -224,7 +224,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               onClick={() => setIsPopoverOpen(!isPopoverOpen)}
               aria-haspopup="dialog"
               aria-expanded={isPopoverOpen}
-              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 text-[11px] sm:text-[12px] font-medium text-[var(--semantic-amber-ink)] bg-[var(--fill)] hover:bg-[var(--fill-hover)] rounded-[10px] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--semantic-amber)]/30 min-h-[32px]"
+              className="bw-touch-target relative flex items-center justify-center gap-1 px-1.5 xs:px-2 sm:px-2.5 py-1 text-[11px] sm:text-[12px] font-medium text-[var(--semantic-amber-ink)] bg-[var(--fill)] hover:bg-[var(--fill-hover)] rounded-[10px] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--semantic-amber)]/30 min-h-[32px] min-w-[32px]"
               title={`Telemetry Notices (${warnings.length}): Click or press Enter to view details`}
               aria-label={`View ${warnings.length} telemetry notices`}
             >
@@ -239,7 +239,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                 ref={popoverRef}
                 role="dialog"
                 aria-label="Telemetry Warning Details"
-                className="absolute right-0 top-full mt-2 w-80 sm:w-96 max-w-[calc(100vw-32px)] vibrancy-panel rounded-[16px] shadow-2xl z-[1050] p-4 space-y-3 text-[12px] border border-[var(--panel-border-color)]"
+                className="fixed top-[56px] left-3 right-3 sm:absolute sm:top-full sm:left-auto sm:right-0 sm:w-96 sm:mt-2 max-w-none sm:max-w-[calc(100vw-32px)] vibrancy-panel rounded-[16px] shadow-2xl z-[1050] p-4 space-y-3 text-[12px] border border-[var(--panel-border-color)]"
               >
                 <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-2.5">
                   <div className="flex items-center gap-1.5 text-[var(--semantic-amber-ink)] font-semibold">
@@ -294,7 +294,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <button
             type="button"
             onClick={onToggleTheme}
-            className="relative w-8 h-8 rounded-[10px] bg-[var(--fill)] hover:bg-[var(--fill-hover)] text-[var(--text-1)] flex items-center justify-center transition-colors active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            className="bw-touch-target relative w-8 h-8 rounded-[10px] bg-[var(--fill)] hover:bg-[var(--fill-hover)] text-[var(--text-1)] flex items-center justify-center transition-colors active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             title="Toggle light / dark theme"
             aria-label="Toggle light / dark theme"
             aria-keyshortcuts="T"
@@ -318,7 +318,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         <button
           type="button"
           onClick={onReset}
-          className="relative flex items-center justify-center gap-1.5 w-8 h-8 sm:w-auto sm:px-3 sm:py-1.5 text-[12px] font-medium text-[var(--text-1)] bg-[var(--fill)] hover:bg-[var(--fill-hover)] rounded-[10px] transition-colors shrink-0 active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          className="bw-touch-target relative flex items-center justify-center gap-1.5 w-8 h-8 sm:w-auto sm:px-3 sm:py-1.5 text-[12px] font-medium text-[var(--text-1)] bg-[var(--fill)] hover:bg-[var(--fill-hover)] rounded-[10px] transition-colors shrink-0 active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           title="Reset the site analysis"
           aria-label="Reset the site analysis"
           aria-keyshortcuts="R"
