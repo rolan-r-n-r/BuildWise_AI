@@ -1,3 +1,4 @@
+import threading
 import time
 from typing import Any, Dict, Optional, Tuple
 
@@ -11,6 +12,7 @@ class SimpleTtlCache:
         self.max_entries = max_entries
         self.precision = precision
         self._store: Dict[str, Tuple[float, Any]] = {}
+        self._lock = threading.Lock()
 
     def _get_key(self, lat: float, lon: float, category: str, precision: Optional[int] = None, scene_id: Optional[str] = None, grid_step: Optional[float] = None) -> str:
         if grid_step is not None and grid_step > 0:
@@ -25,26 +27,30 @@ class SimpleTtlCache:
 
     def get(self, lat: float, lon: float, category: str, precision: Optional[int] = None, scene_id: Optional[str] = None, grid_step: Optional[float] = None) -> Optional[Any]:
         key = self._get_key(lat, lon, category, precision, scene_id, grid_step)
-        if key in self._store:
-            timestamp, data = self._store[key]
-            if time.time() - timestamp < self.ttl_seconds:
-                return data
-            else:
-                del self._store[key]
+        with self._lock:
+            if key in self._store:
+                timestamp, data = self._store[key]
+                if time.time() - timestamp < self.ttl_seconds:
+                    return data
+                else:
+                    self._store.pop(key, None)
         return None
 
     def set(self, lat: float, lon: float, category: str, value: Any, precision: Optional[int] = None, scene_id: Optional[str] = None, grid_step: Optional[float] = None) -> None:
-        if len(self._store) >= self.max_entries:
-            # Purge oldest 20%
-            keys_to_remove = sorted(self._store.keys(), key=lambda k: self._store[k][0])[:self.max_entries // 5]
-            for k in keys_to_remove:
-                self._store.pop(k, None)
-
         key = self._get_key(lat, lon, category, precision, scene_id, grid_step)
-        self._store[key] = (time.time(), value)
+        now = time.time()
+        with self._lock:
+            if len(self._store) >= self.max_entries:
+                # Purge oldest 20% safely from snapshot
+                items_snapshot = list(self._store.items())
+                items_snapshot.sort(key=lambda item: item[1][0])
+                for k, _ in items_snapshot[:self.max_entries // 5]:
+                    self._store.pop(k, None)
+            self._store[key] = (now, value)
 
     def clear(self) -> None:
-        self._store.clear()
+        with self._lock:
+            self._store.clear()
 
 # Standard micro-scale cache (1 hour TTL, ~110m resolution)
 cache = SimpleTtlCache(ttl_seconds=3600, precision=3)

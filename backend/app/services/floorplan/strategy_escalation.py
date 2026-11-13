@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -40,6 +41,13 @@ T2_TYPOLOGY_ALIASES = ("residential_multi", "T2_FAMILY_APARTMENT", "apartment")
 # process-local memo: (request hash, strategy id) -> response.  The engine is
 # deterministic, so a cached dry-run is the same plan, not an approximation.
 _CACHE: "OrderedDict[str, FloorPlanResponse]" = OrderedDict()
+_CACHE_LOCK = threading.Lock()
+
+
+def clear_cache() -> None:
+    """Test/QA seam: forget every cached strategy solve."""
+    with _CACHE_LOCK:
+        _CACHE.clear()
 
 
 # Bump when the cache-key contract changes.  The cache is process-local, so
@@ -72,14 +80,17 @@ def _plate_hash(request: FloorPlanRequest) -> str:
 
 def _cached_solve(request: FloorPlanRequest, strategy_id: str) -> FloorPlanResponse:
     key = f"{_plate_hash(request)}|{strategy_id}"
-    hit = _CACHE.get(key)
-    if hit is not None:
-        _CACHE.move_to_end(key)
-        return hit.model_copy(deep=True)
+    with _CACHE_LOCK:
+        hit = _CACHE.get(key)
+        if hit is not None:
+            _CACHE.move_to_end(key)
+            return hit.model_copy(deep=True)
     response = generate_floor_plan(request)
-    _CACHE[key] = response.model_copy(deep=True)
-    while len(_CACHE) > CACHE_LIMIT:
-        _CACHE.popitem(last=False)
+    with _CACHE_LOCK:
+        _CACHE[key] = response.model_copy(deep=True)
+        _CACHE.move_to_end(key)
+        while len(_CACHE) > CACHE_LIMIT:
+            _CACHE.popitem(last=False)
     return response
 
 
