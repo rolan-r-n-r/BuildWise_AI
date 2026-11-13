@@ -1,3 +1,4 @@
+import math
 import httpx
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Tuple
@@ -146,15 +147,16 @@ async def fetch_climate_data(lat: float, lon: float) -> Tuple[Dict[str, float], 
                 avg_min = sum(min_temps) / max(len(min_temps), 1)
                 est_annual_precip = sum(precips) * 52.0  # approximate annual mm
                 precip_source = "7day_forecast_extrapolation"
+                wind_source = "current_telemetry"
 
                 # Prefer the ERA5 archive's observed
-                # 365-day precipitation total over a 7-day x 52 extrapolation.
+                # 365-day precipitation total and dominant wind vector over short extrapolations.
                 try:
                     end_date = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
                     start_date = (datetime.now(timezone.utc) - timedelta(days=366)).strftime("%Y-%m-%d")
                     archive_url = (
                         f"https://archive-api.open-meteo.com/v1/archive?latitude={lat:.4f}&longitude={lon:.4f}"
-                        f"&start_date={start_date}&end_date={end_date}&daily=precipitation_sum&timezone=auto"
+                        f"&start_date={start_date}&end_date={end_date}&daily=precipitation_sum,wind_direction_10m_dominant&timezone=auto"
                     )
                     arch_resp = await client.get(archive_url, headers={"User-Agent": USER_AGENT})
                     if arch_resp.status_code == 200:
@@ -163,8 +165,16 @@ async def fetch_climate_data(lat: float, lon: float) -> Tuple[Dict[str, float], 
                         if len(arch_precips) >= 300:
                             est_annual_precip = round(sum(arch_precips), 1)
                             precip_source = "era5_observed_365d"
+
+                        arch_winds = [float(v) for v in arch_daily.get("wind_direction_10m_dominant", []) if v is not None]
+                        if len(arch_winds) >= 300:
+                            s_sum = sum(math.sin(math.radians(d)) for d in arch_winds)
+                            c_sum = sum(math.cos(math.radians(d)) for d in arch_winds)
+                            if abs(s_sum) > 1e-4 or abs(c_sum) > 1e-4:
+                                wind_dir = round((math.degrees(math.atan2(s_sum, c_sum)) + 360.0) % 360.0, 1)
+                                wind_source = "era5_observed_365d_dominant"
                 except Exception:
-                    pass  # keep extrapolated estimate, source label discloses it
+                    pass  # keep forecast estimate, source label discloses it
 
                 climate = {
                     "temperature_current_c": round(temp_now, 1),
@@ -173,7 +183,8 @@ async def fetch_climate_data(lat: float, lon: float) -> Tuple[Dict[str, float], 
                     "wind_direction_deg": round(wind_dir, 1),
                     "wind_speed_kmh": round(wind_speed, 1),
                     "annual_precipitation_mm": round(est_annual_precip, 1),
-                    "annual_precipitation_source": precip_source
+                    "annual_precipitation_source": precip_source,
+                    "wind_direction_source": wind_source,
                 }
                 cache.set(lat, lon, "climate", climate)
                 return climate, False

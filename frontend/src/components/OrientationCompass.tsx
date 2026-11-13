@@ -5,6 +5,7 @@ import { BIOCLIMATIC_AXIS_DISCLOSURE } from './report/termDisclosures';
 
 interface OrientationCompassProps {
   orientation: OrientationData;
+  latitude?: number | null;
 }
 
 const CARDINALS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
@@ -53,7 +54,7 @@ function getVentilationStatus(rating: string = 'Good') {
   };
 }
 
-export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientation }) => {
+export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientation, latitude }) => {
   const {
     optimal_axis_degrees = 90.0,
     axis_label = 'East-West (Pure 90 deg)',
@@ -62,6 +63,11 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
     passive_design_rationale = '',
     solar_exposure_summary = '',
   } = orientation || {};
+
+  const isSouthernHemisphere =
+    typeof latitude === 'number'
+      ? latitude < 0.0
+      : solar_exposure_summary.toLowerCase().includes('northern sky');
 
   // Geometry for balanced SVG compass (viewBox 0 0 280 236, center at 140, 123)
   const cx = 140;
@@ -227,9 +233,13 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
             W
           </text>
 
-          {/* Sun Trajectory Arc (Southern Sky) */}
+          {/* Sun Trajectory Arc (Northern or Southern Sky based on hemisphere) */}
           <path
-            d={`M ${cx + 68} ${cy} A 68 68 0 0 1 ${cx - 68} ${cy}`}
+            d={
+              isSouthernHemisphere
+                ? `M ${cx - 68} ${cy} A 68 68 0 0 1 ${cx + 68} ${cy}`
+                : `M ${cx + 68} ${cy} A 68 68 0 0 1 ${cx - 68} ${cy}`
+            }
             fill="none"
             stroke="var(--semantic-amber)"
             strokeWidth="1.5"
@@ -237,15 +247,28 @@ export const OrientationCompass: React.FC<OrientationCompassProps> = ({ orientat
             opacity="0.55"
           />
           {/* Midday Sun indicator */}
-          <circle cx={cx} cy={cy + 68} r="3.5" fill="var(--semantic-amber)" />
-          <circle cx={cx} cy={cy + 68} r="6.5" fill="none" stroke="var(--semantic-amber)" strokeWidth="0.85" opacity="0.4" />
+          <circle
+            cx={cx}
+            cy={isSouthernHemisphere ? cy - 68 : cy + 68}
+            r="3.5"
+            fill="var(--semantic-amber)"
+          />
+          <circle
+            cx={cx}
+            cy={isSouthernHemisphere ? cy - 68 : cy + 68}
+            r="6.5"
+            fill="none"
+            stroke="var(--semantic-amber)"
+            strokeWidth="0.85"
+            opacity="0.4"
+          />
           <text
             x={cx}
-            y={cy + 58}
+            y={isSouthernHemisphere ? cy - 54 : cy + 58}
             textAnchor="middle"
             className="text-[10px] font-semibold fill-[var(--semantic-amber-ink)] select-none"
           >
-            Sun Arc
+            Sun Arc ({isSouthernHemisphere ? 'North' : 'South'})
           </text>
 
           {/* Recommended Building Architectural Footprint & Longitudinal Axis */}

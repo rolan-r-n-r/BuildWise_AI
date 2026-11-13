@@ -1157,7 +1157,10 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                       <WindRose orientation={analysisData.orientation} />
                     </div>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-                      <OrientationCompass orientation={analysisData.orientation} />
+                      <OrientationCompass
+                        orientation={analysisData.orientation}
+                        latitude={analysisData.coordinates?.latitude}
+                      />
 
                       {analysisData.vastu_advisory ? (
                         <VastuAdvisoryCard advisory={analysisData.vastu_advisory} />
@@ -1541,7 +1544,10 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                   layout="grid"
                 />
                 <div className="grid grid-cols-2 gap-6 items-start">
-                  <OrientationCompass orientation={analysisData.orientation} />
+                  <OrientationCompass
+                    orientation={analysisData.orientation}
+                    latitude={analysisData.coordinates?.latitude}
+                  />
                   {analysisData.vastu_advisory && (
                     <VastuAdvisoryCard advisory={analysisData.vastu_advisory} />
                   )}
