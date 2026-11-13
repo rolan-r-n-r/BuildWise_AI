@@ -154,15 +154,17 @@ class GeminiExplanationAdapter(BaseExplanationAdapter):
         gemini_schema = to_gemini_schema(AnalysisResponse.model_json_schema())
 
         candidate_models = [
-            "gemini-2.5-flash-lite",
-            "gemini-3.5-flash-lite",
-            "gemini-3.6-flash",
-            "gemini-1.5-flash"
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
         ]
 
         last_error = "Gemini API call failed or timed out"
         for target_model in candidate_models:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={self.api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent"
+            headers = {
+                "x-goog-api-key": self.api_key,
+                "Content-Type": "application/json"
+            }
             try:
                 async with httpx.AsyncClient(timeout=15.0) as client:
                     payload = {
@@ -177,7 +179,7 @@ class GeminiExplanationAdapter(BaseExplanationAdapter):
                             "responseSchema": gemini_schema
                         }
                     }
-                    resp = await client.post(url, json=payload)
+                    resp = await client.post(url, headers=headers, json=payload)
                     if resp.status_code == 200:
                         data = resp.json()
                         candidates = data.get("candidates", [])

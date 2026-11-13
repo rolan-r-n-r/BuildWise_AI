@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Tuple
 from app.utils.geo_utils import get_cardinal_offsets, calculate_synthetic_elevation
 from app.utils.cache_utils import cache
+from app.services.geocode_service import _nominatim_throttle
 
 USER_AGENT = "BuildWise-Civil-Engineering-Engine/1.0"
 DEFAULT_TIMEOUT_SECONDS = 3.5
@@ -21,6 +22,7 @@ async def fetch_reverse_geocode(lat: float, lon: float) -> Tuple[str, bool]:
     headers = {"User-Agent": USER_AGENT}
 
     try:
+        await _nominatim_throttle()
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT_SECONDS) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code == 200:

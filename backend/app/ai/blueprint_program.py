@@ -3,6 +3,8 @@ import json
 import re
 import hashlib
 import logging
+import threading
+from collections import OrderedDict
 import httpx
 from typing import Dict, Any, Tuple, Optional, List
 
@@ -67,9 +69,35 @@ FALLBACK_PROGRAMS: Dict[str, RoomProgram] = {
     )
 }
 
-# In-memory cache: hash_key -> (timestamp, RoomProgram)
-_PROGRAM_CACHE: Dict[str, Tuple[float, RoomProgram]] = {}
+# Bounded thread-safe in-memory cache: hash_key -> (timestamp, RoomProgram)
+_PROGRAM_CACHE: "OrderedDict[str, Tuple[float, RoomProgram]]" = OrderedDict()
+_PROGRAM_CACHE_LOCK = threading.Lock()
 CACHE_TTL_SECONDS = 3600.0  # 1 hour
+CACHE_MAX_ENTRIES = 256
+
+
+def _cache_get_program(key: str) -> Optional[RoomProgram]:
+    now = time.time()
+    with _PROGRAM_CACHE_LOCK:
+        entry = _PROGRAM_CACHE.get(key)
+        if entry is None:
+            return None
+        cached_time, prog = entry
+        if now - cached_time < CACHE_TTL_SECONDS:
+            _PROGRAM_CACHE.move_to_end(key)
+            return prog
+        else:
+            _PROGRAM_CACHE.pop(key, None)
+            return None
+
+
+def _cache_put_program(key: str, prog: RoomProgram) -> None:
+    now = time.time()
+    with _PROGRAM_CACHE_LOCK:
+        _PROGRAM_CACHE[key] = (now, prog)
+        _PROGRAM_CACHE.move_to_end(key)
+        while len(_PROGRAM_CACHE) > CACHE_MAX_ENTRIES:
+            _PROGRAM_CACHE.popitem(last=False)
 
 
 def _compute_cache_key(
@@ -366,10 +394,9 @@ async def generate_room_program(
         vastu_strictness=vastu_strictness,
         built_up_area=built_up_area,
     )
-    now = time.time()
-    if not bypass_cache and cache_key in _PROGRAM_CACHE:
-        cached_time, cached_program = _PROGRAM_CACHE[cache_key]
-        if now - cached_time < CACHE_TTL_SECONDS:
+    if not bypass_cache:
+        cached_program = _cache_get_program(cache_key)
+        if cached_program is not None:
             return cached_program, "cache"
 
     # 2. Build User Prompt with explicit context
@@ -530,7 +557,7 @@ async def generate_room_program(
                             content = resp.json()["choices"][0]["message"]["content"]
                             prog = _clean_and_parse_llm_json(content, typology)
                             if prog:
-                                _PROGRAM_CACHE[cache_key] = (now, prog)
+                                _cache_put_program(cache_key, prog)
                                 return prog, "llm"
             except Exception as e:
                 logger.warning(f"Groq room program generation failed: {e}")
@@ -540,9 +567,13 @@ async def generate_room_program(
         if api_key and not api_key.startswith("your_"):
             try:
                 gemini_schema = to_gemini_schema(RoomProgram.model_json_schema())
-                candidate_models = ["gemini-2.5-flash-lite", "gemini-1.5-flash"]
+                candidate_models = ["gemini-2.0-flash", "gemini-1.5-flash"]
                 for model in candidate_models:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+                    headers = {
+                        "x-goog-api-key": api_key,
+                        "Content-Type": "application/json",
+                    }
                     async with httpx.AsyncClient(timeout=12.0) as client:
                         payload = {
                             "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
@@ -554,14 +585,14 @@ async def generate_room_program(
                                 "responseSchema": gemini_schema
                             }
                         }
-                        resp = await client.post(url, json=payload)
+                        resp = await client.post(url, headers=headers, json=payload)
                         if resp.status_code == 200:
                             cands = resp.json().get("candidates", [])
                             if cands:
                                 text = cands[0].get("content", {}).get("parts", [{}])[0].get("text", "")
                                 prog = _clean_and_parse_llm_json(text, typology)
                                 if prog:
-                                    _PROGRAM_CACHE[cache_key] = (now, prog)
+                                    _cache_put_program(cache_key, prog)
                                     return prog, "llm"
             except Exception as e:
                 logger.warning(f"Gemini room program generation failed: {e}")
@@ -570,7 +601,7 @@ async def generate_room_program(
     if selected_provider in ("mock", "default") or not notes or required_rooms:
         try:
             mock_prog = _generate_mock_program(typology, grade, storeys, coverage, notes, built_up_area, required_rooms=required_rooms)
-            _PROGRAM_CACHE[cache_key] = (now, mock_prog)
+            _cache_put_program(cache_key, mock_prog)
             return mock_prog, "llm"
         except Exception as e:
             logger.warning(f"Mock program generation fallback triggered: {e}")
@@ -608,15 +639,14 @@ def generate_room_program_sync(
         vastu_strictness=vastu_strictness,
         built_up_area=built_up_area,
     )
-    now = time.time()
-    if not bypass_cache and cache_key in _PROGRAM_CACHE:
-        cached_time, cached_prog = _PROGRAM_CACHE[cache_key]
-        if now - cached_time < CACHE_TTL_SECONDS:
-            return cached_prog, "cache"
+    if not bypass_cache:
+        cached_program = _cache_get_program(cache_key)
+        if cached_program is not None:
+            return cached_program, "cache"
 
     try:
         mock_prog = _generate_mock_program(typology, grade, storeys, coverage, notes, built_up_area, required_rooms=required_rooms)
-        _PROGRAM_CACHE[cache_key] = (now, mock_prog)
+        _cache_put_program(cache_key, mock_prog)
         return mock_prog, "llm"
     except Exception as e:
         logger.warning(f"Sync mock program generation fallback triggered: {e}")

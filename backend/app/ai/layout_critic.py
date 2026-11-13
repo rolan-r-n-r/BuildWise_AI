@@ -151,7 +151,11 @@ def evaluate_layout_critic(
             return "skipped", []
         try:
             with httpx.Client(timeout=4.0) as client:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={api_key}"
+                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+                headers = {
+                    "x-goog-api-key": api_key,
+                    "Content-Type": "application/json",
+                }
                 body = {
                     "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
                     "contents": [{"parts": [{"text": user_prompt}]}],
@@ -161,7 +165,7 @@ def evaluate_layout_critic(
                         "responseMimeType": "application/json"
                     }
                 }
-                resp = client.post(url, json=body)
+                resp = client.post(url, headers=headers, json=body)
                 if resp.status_code == 200:
                     data = resp.json()
                     cands = data.get("candidates", [])

@@ -105,13 +105,17 @@ def reason_placement_sync(
         api_key = getattr(settings, "GEMINI_API_KEY", None)
         if api_key and not api_key.startswith("your_"):
             try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+                headers = {
+                    "x-goog-api-key": api_key,
+                    "Content-Type": "application/json",
+                }
                 payload = {
                     "contents": [{"parts": [{"text": f"{SYSTEM_PROMPT}\n\n{user_prompt}"}]}],
                     "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
                 }
                 with httpx.Client(timeout=10.0) as client:
-                    resp = client.post(url, json=payload)
+                    resp = client.post(url, headers=headers, json=payload)
                 if resp.status_code == 200:
                     text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
                     raw_spec = json.loads(text)
