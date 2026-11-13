@@ -1352,18 +1352,6 @@ html.bw-landing-open.lenis body {
    could never match — which is the one kind of CSS that is pure cost: it ships in
    every build and cannot affect a pixel. */
 
-/* Accent headline text. One near-flat ramp from a deep accent to the accent
-   itself: the old two-hue 10%->55% ramp (and its unused 200% background-size)
-   read as a WordArt gradient at hero scale — at 80px the eye resolves the
-   colour stops, and a headline should read as ink, not as a gradient. */
-.bw-gradient-text {
-  background: linear-gradient(96deg, var(--bw-accent-deep) 4%, var(--bw-accent) 96%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-}
-
 /* ========================================================================= */
 /* FLOATING NAV PILL — CSS-owned state                                       */
 /* ========================================================================= */
