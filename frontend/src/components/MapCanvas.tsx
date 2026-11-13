@@ -125,6 +125,39 @@ const PAINT_OPACITY_PROPS: Record<string, string[]> = {
  */
 const RASTER_OVERLAY_MODE_LAYERS = new Set(['satellite-layer', 'terrain-layer']);
 
+interface DynamicStyleMap {
+  setPaintProperty(layerId: string, name: string, value: unknown): maplibregl.Map;
+  getPaintProperty(layerId: string, name: string): unknown;
+  getLayoutProperty(layerId: string, name: string): unknown;
+}
+
+const setPaintProp = (map: maplibregl.Map, layerId: string, name: string, value: unknown) => {
+  (map as unknown as DynamicStyleMap).setPaintProperty(layerId, name, value);
+};
+const getPaintProp = (map: maplibregl.Map, layerId: string, name: string): unknown => {
+  return (map as unknown as DynamicStyleMap).getPaintProperty(layerId, name);
+};
+const getLayoutProp = (map: maplibregl.Map, layerId: string, name: string): unknown => {
+  return (map as unknown as DynamicStyleMap).getLayoutProperty(layerId, name);
+};
+
+interface TreeClusterProperties {
+  cluster_id?: string;
+  area_sqm?: number;
+  mean_ndvi?: number;
+  rank?: string;
+  preservation_rank?: string;
+}
+
+interface WaterBodyProperties {
+  cluster_id?: string;
+  area_sqm?: number;
+}
+
+interface AnnotationFeatureProperties {
+  title?: string;
+}
+
 /**
  * Cartographic grade for the two raster modes.
  *
@@ -141,7 +174,7 @@ const applyMapCartographyTone = (map: maplibregl.Map, theme: 'light' | 'dark') =
   const set = (layerId: string, prop: string, value: unknown) => {
     if (!map.getLayer(layerId)) return;
     try {
-      (map as any).setPaintProperty(layerId, prop, value);
+      setPaintProp(map, layerId, prop, value);
     } catch {
       // Non-fatal: a missing layer keeps its authored treatment.
     }
@@ -208,7 +241,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const prevThemeRef = useRef<'light' | 'dark' | null>(null);
 
   const onMapReadyRef = useRef(onMapReady);
-  onMapReadyRef.current = onMapReady;
+  useEffect(() => {
+    onMapReadyRef.current = onMapReady;
+  }, [onMapReady]);
   const onLocationSelectRef = useRef(onLocationSelect);
   useEffect(() => {
     onLocationSelectRef.current = onLocationSelect;
@@ -246,9 +281,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   }, [showWaterLayer]);
 
   const hideMassingRef = useRef(hideMassing);
-  hideMassingRef.current = hideMassing;
+  useEffect(() => {
+    hideMassingRef.current = hideMassing;
+  }, [hideMassing]);
   const maxZoomRef = useRef(maxZoom);
-  maxZoomRef.current = maxZoom;
+  useEffect(() => {
+    maxZoomRef.current = maxZoom;
+  }, [maxZoom]);
 
   const treeClustersRef = useRef(treeClusters);
   useEffect(() => {
@@ -356,10 +395,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
    */
   const isLayerReady = (map: maplibregl.Map, layerId: string) => {
     try {
-      const layer = (map as any).getLayer(layerId);
+      const layer = map.getLayer(layerId);
       if (!layer) return true;
-      if ((map as any).getLayoutProperty(layerId, 'visibility') === 'none') return false;
-      return map.isSourceLoaded(layer.source);
+      if (getLayoutProp(map, layerId, 'visibility') === 'none') return false;
+      return 'source' in layer && typeof layer.source === 'string' ? map.isSourceLoaded(layer.source) : true;
     } catch {
       return true;
     }
@@ -422,7 +461,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (!originalPaintOpacitiesRef.current.has(layerId)) {
         let authored = 1;
         try {
-          const current = (map as any).getPaintProperty(layerId, 'raster-opacity');
+          const current = getPaintProp(map, layerId, 'raster-opacity');
           if (typeof current === 'number' && current > 0) authored = current;
         } catch {
           authored = 1;
@@ -430,16 +469,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         originalPaintOpacitiesRef.current.set(layerId, authored);
       }
       try {
-        (map as any).setPaintProperty(layerId, 'raster-opacity-transition', {
+        setPaintProp(map, layerId, 'raster-opacity-transition', {
           duration: 0,
           delay: 0,
         });
-        (map as any).setPaintProperty(layerId, 'raster-opacity', 0);
+        setPaintProp(map, layerId, 'raster-opacity', 0);
       } catch {
         // ignore
       }
       try {
-        if ((map as any).getLayoutProperty(layerId, 'visibility') === 'none') {
+        if (getLayoutProp(map, layerId, 'visibility') === 'none') {
           map.setLayoutProperty(layerId, 'visibility', 'visible');
         }
       } catch {
@@ -550,10 +589,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     for (const ft of fadeTargets) {
       if (orig.has(ft.layerId)) continue;
       const props = PAINT_OPACITY_PROPS[ft.type];
-      let value: any = 1;
+      let value: unknown = 1;
       if (props) {
         try {
-          value = (map as any).getPaintProperty(ft.layerId, props[0]);
+          value = getPaintProp(map, ft.layerId, props[0]);
         } catch {
           value = 1;
         }
@@ -583,14 +622,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         // Reveal at opacity 0 BEFORE waiting, so MapLibre starts fetching the
         // viewport tiles now and readiness reflects real progress.
         try {
-          if ((map as any).getLayoutProperty(rasterLayerId, 'visibility') === 'none') {
+          if (getLayoutProp(map, rasterLayerId, 'visibility') === 'none') {
             map.setLayoutProperty(rasterLayerId, 'visibility', 'visible');
           }
-          (map as any).setPaintProperty(rasterLayerId, 'raster-opacity-transition', {
+          setPaintProp(map, rasterLayerId, 'raster-opacity-transition', {
             duration: 0,
             delay: 0,
           });
-          (map as any).setPaintProperty(rasterLayerId, 'raster-opacity', 0);
+          setPaintProp(map, rasterLayerId, 'raster-opacity', 0);
         } catch {
           // ignore
         }
@@ -633,7 +672,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (
           target === 1 &&
           !(layerId === '3d-buildings' && hideMassingRef.current) &&
-          (map as any).getLayoutProperty(layerId, 'visibility') === 'none'
+          getLayoutProp(map, layerId, 'visibility') === 'none'
         ) {
           map.setLayoutProperty(layerId, 'visibility', 'visible');
         }
@@ -642,9 +681,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
 
       for (const prop of props) {
-        let current: any;
+        let current: unknown;
         try {
-          current = (map as any).getPaintProperty(layerId, prop);
+          current = getPaintProp(map, layerId, prop);
         } catch {
           continue;
         }
@@ -661,11 +700,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
         if (target === 0) anyFadeOut = true;
         try {
-          (map as any).setPaintProperty(layerId, `${prop}-transition`, {
+          setPaintProp(map, layerId, `${prop}-transition`, {
             duration,
             delay,
           });
-          (map as any).setPaintProperty(layerId, prop, toValue);
+          setPaintProp(map, layerId, prop, toValue);
         } catch {
           // Ignore unmodifiable internal layer styles
         }
@@ -717,7 +756,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           const props = PAINT_OPACITY_PROPS[type];
           if (!props) continue;
           try {
-            if ((map as any).getPaintProperty(layerId, props[0]) === 0) {
+            if (getPaintProp(map, layerId, props[0]) === 0) {
               map.setLayoutProperty(layerId, 'visibility', 'none');
             }
           } catch {
@@ -975,7 +1014,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (!map.getLayer('3d-buildings')) {
       const vectorSourceId =
         Object.keys(style.sources || {}).find(
-          (id) => (map.getSource(id) as any)?.type === 'vector'
+          (id) => (map.getSource(id) as maplibregl.Source | undefined)?.type === 'vector'
         );
 
       if (vectorSourceId && map.getSource(vectorSourceId)) {
@@ -1108,7 +1147,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     // 6. Tree Canopy Clusters Overlay
     const treeData =
       treeClustersRef.current && treeClustersRef.current.features?.length
-        ? (treeClustersRef.current as any)
+        ? (treeClustersRef.current as unknown as FeatureCollection)
         : EMPTY_GEOJSON_COLLECTION;
 
     if (!map.getSource('tree-clusters-source')) {
@@ -1174,7 +1213,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     // 7. Water Bodies Overlay
     const waterData =
       waterBodiesRef.current && waterBodiesRef.current.features?.length
-        ? (waterBodiesRef.current as any)
+        ? (waterBodiesRef.current as unknown as FeatureCollection)
         : EMPTY_GEOJSON_COLLECTION;
 
     if (!map.getSource('water-bodies-source')) {
@@ -1373,7 +1412,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       map.getCanvas().style.cursor = 'pointer';
       const feature = e.features?.[0];
       if (feature) {
-        const props = (feature.properties as any) || {};
+        const props = (feature.properties as TreeClusterProperties) || {};
         const id = props.cluster_id || 'Cluster';
         const area = props.area_sqm ? `${props.area_sqm} m²` : '';
         const ndvi =
@@ -1399,7 +1438,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       map.getCanvas().style.cursor = 'pointer';
       const feature = e.features?.[0];
       if (feature) {
-        const props = (feature.properties as any) || {};
+        const props = (feature.properties as WaterBodyProperties) || {};
         const id = props.cluster_id || 'Water Body';
         const area = props.area_sqm ? `${props.area_sqm} m²` : '';
         popup
@@ -1420,7 +1459,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const feature = e.features?.[0];
       if (feature) {
         const title =
-          (feature.properties as any)?.title || 'Proposed Layout Footprint';
+          (feature.properties as AnnotationFeatureProperties)?.title || 'Proposed Layout Footprint';
         popup
           .setLngLat(e.lngLat)
           .setHTML(
@@ -1438,7 +1477,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       map.getCanvas().style.cursor = 'pointer';
       const feature = e.features?.[0];
       if (feature) {
-        const title = (feature.properties as any)?.title || 'Main Entrance';
+        const title = (feature.properties as AnnotationFeatureProperties)?.title || 'Main Entrance';
         popup
           .setLngLat(e.lngLat)
           .setHTML(
@@ -1494,12 +1533,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    const handleContextLost = (e: Event) => {
+    const handleContextLost = (e: maplibregl.MapContextEvent) => {
       // MapLibre hands its own event object to this listener, not the DOM
       // WebGLContextEvent: it has no preventDefault. Calling it unconditionally
       // threw `TypeError: e.preventDefault is not a function` on every context
       // loss; cancel only when the event really supports it.
-      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof (e as unknown as { preventDefault?: () => void }).preventDefault === 'function') {
+        (e as unknown as { preventDefault: () => void }).preventDefault();
+      }
       console.warn('Map WebGL context lost.');
     };
     const handleContextRestored = () => {
@@ -1508,8 +1549,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       setupCustomLayersAndSources(map);
     };
 
-    map.on('webglcontextlost', handleContextLost as any);
-    map.on('webglcontextrestored', handleContextRestored as any);
+    map.on('webglcontextlost', handleContextLost);
+    map.on('webglcontextrestored', handleContextRestored);
 
     return () => {
       if (styleFallbackTimer) clearTimeout(styleFallbackTimer);
@@ -1519,8 +1560,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       window.removeEventListener('resize', handleWindowResize);
       resizeObserver.disconnect();
       map.off('error', handleMapError);
-      map.off('webglcontextlost', handleContextLost as any);
-      map.off('webglcontextrestored', handleContextRestored as any);
+      map.off('webglcontextlost', handleContextLost);
+      map.off('webglcontextrestored', handleContextRestored);
       if (popupRef.current) {
         popupRef.current.remove();
         popupRef.current = null;
@@ -2046,7 +2087,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         treeClusters && treeClusters.features?.length
           ? treeClusters
           : EMPTY_GEOJSON_COLLECTION;
-      treeSource.setData(data as any);
+      treeSource.setData(data as unknown as FeatureCollection);
     }
 
     if (map.getLayer('tree-clusters-fill')) {
@@ -2072,7 +2113,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         waterBodies && waterBodies.features?.length
           ? waterBodies
           : EMPTY_GEOJSON_COLLECTION;
-      waterSource.setData(data as any);
+      waterSource.setData(data as unknown as FeatureCollection);
     }
 
     if (map.getLayer('water-bodies-fill')) {

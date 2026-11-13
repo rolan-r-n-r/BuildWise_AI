@@ -77,12 +77,14 @@ export const PlanAdvisorPanel: React.FC<PlanAdvisorPanelProps> = ({
 
   const [options, setOptions] = useState<RemediationOption[] | null>(testOptions ?? null);
   // A card that changes the programme (the S2 dwelling-count trade) may only
-  // run after the client ticks the deficit acknowledgement.  Reset on a new
+  // run after the client ticks the deficit acknowledgement. Reset on a new
   // plan so a tick never travels to a different certificate.
   const [confirmed, setConfirmed] = useState<Record<string, boolean>>({});
-  useEffect(() => {
+  const [prevPlanHash, setPrevPlanHash] = useState<string>(planHash);
+  if (prevPlanHash !== planHash) {
+    setPrevPlanHash(planHash);
     setConfirmed({});
-  }, [planHash]);
+  }
   const [optionsState, setOptionsState] = useState<'loading' | 'ready' | 'failed'>(
     testOptions ? 'ready' : 'loading',
   );
@@ -95,105 +97,105 @@ export const PlanAdvisorPanel: React.FC<PlanAdvisorPanelProps> = ({
     testAdvisory && !testAdvisory.narrative ? testAdvisory.meta.fallback_reason ?? null : null,
   );
 
-  // ---- engine dry-runs (deterministic) --------------------------------
+  // ---- unified remediation & advisory coordinator ----
   useEffect(() => {
-    if (testOptions) return;
-    if (!request) {
-      setOptionsState('failed');
-      setOptionsNote('No request snapshot is available for this plan.');
-      return;
-    }
-    const cached = readRemediationCache(planHash);
-    if (cached) {
-      setOptions(cached.options);
-      setOptionsState('ready');
-      return;
-    }
-    const controller = new AbortController();
     let cancelled = false;
-    setOptionsState('loading');
-    setOptionsNote(null);
-    const placedRooms = Array.from(
-      new Set(
-        (plan.multi_storey?.floors ?? [])
-          .flatMap((floor) => floor.rooms ?? [])
-          .map((room: any) => String(room.room_id).replace(/_F\d+$/, '')),
-      ),
-    );
-    const payload = {
-      request: request as FloorPlanRequest,
-      warnings: plan.warnings ?? [],
-      plan_verdict: planVerdict,
-      placed_rooms: placedRooms,
-      rotation_alternatives: (plan.site_plan?.rotation_alternatives ??
-        (plan.qa as any)?.rotation_alternatives ??
-        []) as Array<Record<string, any>>,
-      scheme_alternatives: (plan.scheme_alternatives ?? []).map((alt) => ({
-        scheme_id: alt.scheme_id,
-        label: alt.label,
-        feasible: alt.feasible,
-        score: alt.score,
-      })),
-      selected_scheme_id: plan.selected_scheme_id ?? request.selected_scheme_id ?? null,
-      // The ladder's chosen rung, so the matching card reads "current" even
-      // when the baseline request never named the variant.
-      strategy_selected: plan.multi_storey?.strategy_selected ?? null,
-      baseline: {
-        warning_count: report.totalMessages,
-        failure_count: report.tiers.T1.messages,
-        relaxation_count: report.relaxations.total,
-        plate_area_m2: null,
-      },
-      plan_hash: planHash,
-    };
-    withTimeout(fetchRemediationOptions(payload, controller.signal), REMEDIATION_TIMEOUT_MS)
-      .then((response) => {
-        if (cancelled) return;
+    const controller = new AbortController();
+
+    const resolveRemediation = async (): Promise<RemediationOption[] | null> => {
+      if (testOptions) return testOptions;
+      if (!request) {
+        setOptionsState('failed');
+        setOptionsNote('No request snapshot is available for this plan.');
+        return null;
+      }
+      const cached = readRemediationCache(planHash);
+      if (cached) {
+        setOptions(cached.options);
+        setOptionsState('ready');
+        return cached.options;
+      }
+
+      setOptionsState('loading');
+      setOptionsNote(null);
+      const placedRooms = Array.from(
+        new Set(
+          (plan.multi_storey?.floors ?? [])
+            .flatMap((floor) => floor.rooms ?? [])
+            .map((room: any) => String(room.room_id).replace(/_F\d+$/, '')),
+        ),
+      );
+      const payload = {
+        request: request as FloorPlanRequest,
+        warnings: plan.warnings ?? [],
+        plan_verdict: planVerdict,
+        placed_rooms: placedRooms,
+        rotation_alternatives: (plan.site_plan?.rotation_alternatives ??
+          (plan.qa as any)?.rotation_alternatives ??
+          []) as Array<Record<string, any>>,
+        scheme_alternatives: (plan.scheme_alternatives ?? []).map((alt) => ({
+          scheme_id: alt.scheme_id,
+          label: alt.label,
+          feasible: alt.feasible,
+          score: alt.score,
+        })),
+        selected_scheme_id: plan.selected_scheme_id ?? request.selected_scheme_id ?? null,
+        strategy_selected: plan.multi_storey?.strategy_selected ?? null,
+        baseline: {
+          warning_count: report.totalMessages,
+          failure_count: report.tiers.T1.messages,
+          relaxation_count: report.relaxations.total,
+          plate_area_m2: null,
+        },
+        plan_hash: planHash,
+      };
+
+      try {
+        const response = await withTimeout(
+          fetchRemediationOptions(payload, controller.signal),
+          REMEDIATION_TIMEOUT_MS,
+        );
+        if (cancelled) return null;
         setOptions(response.options);
         setOptionsState('ready');
         writeRemediationCache(planHash, response);
-      })
-      .catch((error) => {
-        if (cancelled) return;
+        return response.options;
+      } catch (error: any) {
+        if (cancelled) return null;
         setOptionsState('failed');
         setOptionsNote(
           error?.name === 'AbortError'
             ? 'Engine dry-run cancelled.'
-            : `Next steps could not be measured${error?.status ? ` (HTTP ${error.status})` : ''}: ${
-                error?.message || 'the engine did not answer'
-              }. The generated plan and its verdict are unchanged; only this remediation preview failed.`,
+            : `Next steps could not be measured${error?.status ? ` (HTTP ${error.status})` : ''}: ${error?.message || 'the engine did not answer'
+            }. The generated plan and its verdict are unchanged; only this remediation preview failed.`,
         );
-      });
-    return () => {
-      cancelled = true;
-      controller.abort();
+        return null;
+      }
     };
-  }, [plan, planHash, planVerdict, report, request, testOptions]);
 
-  // ---- advisory wording (optional, never authoritative) ---------------
-  useEffect(() => {
-    if (testAdvisory !== undefined && testAdvisory !== null) return;
-    if (optionsState !== 'ready' || !options) return;
-    const cached = readAdvisorCache(planHash);
-    if (cached) {
-      setAdvisor(cached);
-      setAdvisorState(cached.narrative ? 'ready' : 'offline');
-      setOfflineReason(cached.meta.fallback_reason ?? null);
-      return;
-    }
-    const controller = new AbortController();
-    let cancelled = false;
-    setAdvisorState('loading');
-    const advisoryPayload = buildAdvisoryRequest(planHash, planVerdict, report, options);
-    withTimeout(fetchPlanAdvisory(advisoryPayload, controller.signal), ADVISOR_TIMEOUT_MS)
-      .then((response) => {
+    const resolveAdvisory = async (remediationOpts: RemediationOption[]) => {
+      if (testAdvisory !== undefined && testAdvisory !== null) return;
+      const cached = readAdvisorCache(planHash);
+      if (cached) {
+        setAdvisor(cached);
+        setAdvisorState(cached.narrative ? 'ready' : 'offline');
+        setOfflineReason(cached.meta.fallback_reason ?? null);
+        return;
+      }
+
+      setAdvisorState('loading');
+      const advisoryPayload = buildAdvisoryRequest(planHash, planVerdict, report, remediationOpts);
+      try {
+        const response = await withTimeout(
+          fetchPlanAdvisory(advisoryPayload, controller.signal),
+          ADVISOR_TIMEOUT_MS,
+        );
         if (cancelled) return;
         setAdvisor(response);
         writeAdvisorCache(planHash, response);
         setAdvisorState(response.narrative ? 'ready' : 'offline');
         setOfflineReason(response.meta.fallback_reason ?? null);
-      })
-      .catch((error) => {
+      } catch (error: any) {
         if (cancelled) return;
         setAdvisorState('offline');
         setOfflineReason(
@@ -201,12 +203,24 @@ export const PlanAdvisorPanel: React.FC<PlanAdvisorPanelProps> = ({
             ? 'Advisor timed out — showing the deterministic summary only.'
             : 'Advisor offline — showing the deterministic summary only.',
         );
-      });
+      }
+    };
+
+    void (async () => {
+      const opts = await resolveRemediation();
+      if (!cancelled && opts && opts.length > 0) {
+        await resolveAdvisory(opts);
+      } else if (!cancelled && !testAdvisory) {
+        setAdvisorState('offline');
+        setOfflineReason('No remediation options available.');
+      }
+    })();
+
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [options, optionsState, planHash, planVerdict, report, testAdvisory]);
+  }, [plan, planHash, planVerdict, report, request, testOptions, testAdvisory]);
 
   const handleApply = useCallback(
     (option: RemediationOption) => {
@@ -232,9 +246,8 @@ export const PlanAdvisorPanel: React.FC<PlanAdvisorPanelProps> = ({
       data-advisor-state={advisorState}
       data-options-state={optionsState}
       aria-labelledby={titleId}
-      className={`mt-2.5 min-w-0 max-w-full rounded-[12px] border p-3 space-y-2.5 ${
-        critical ? 'border-rose-500/30 bg-[var(--card-bg-subtle)]' : 'border-[var(--hairline)] bg-[var(--card-bg-subtle)]'
-      }`}
+      className={`mt-2.5 min-w-0 max-w-full rounded-[12px] border p-3 space-y-2.5 ${critical ? 'border-rose-500/30 bg-[var(--card-bg-subtle)]' : 'border-[var(--hairline)] bg-[var(--card-bg-subtle)]'
+        }`}
     >
       {/* Deterministic summary: instant, offline, never generated by a model */}
       <div data-testid="advisor-deterministic" className="min-w-0 space-y-1">
@@ -345,21 +358,19 @@ export const PlanAdvisorPanel: React.FC<PlanAdvisorPanelProps> = ({
                 <span className="shrink-0 font-mono font-semibold text-[var(--text-1)]">{step.id}</span>
                 <span className="min-w-0 break-words text-[var(--text-2)]">{step.label}</span>
                 <span
-                  className={`shrink-0 font-semibold ${
-                    step.status === 'certified'
+                  className={`shrink-0 font-semibold ${step.status === 'certified'
                       ? 'text-[var(--semantic-green-ink)]'
                       : step.status === 'fail'
                         ? 'text-rose-600 dark:text-rose-300'
                         : 'text-[var(--text-3)]'
-                  }`}
+                    }`}
                 >
                   {step.status}
                 </span>
                 <span className="min-w-0 break-words font-mono text-[9.5px] text-[var(--text-3)]">
                   {step.status === 'fail' || step.status === 'certified'
-                    ? `${step.failures ?? 0} failure(s) · ${step.warnings ?? 0} warning(s)${
-                        step.plate_area_m2 != null ? ` · ${step.plate_area_m2.toFixed(1)} m²` : ''
-                      }`
+                    ? `${step.failures ?? 0} failure(s) · ${step.warnings ?? 0} warning(s)${step.plate_area_m2 != null ? ` · ${step.plate_area_m2.toFixed(1)} m²` : ''
+                    }`
                     : step.status === 'skipped'
                       ? (step.skip_reason ?? 'not applicable')
                       : (step.error ?? 'strategy could not be solved')}
@@ -415,152 +426,151 @@ export const PlanAdvisorPanel: React.FC<PlanAdvisorPanelProps> = ({
         )}
         {optionsState === 'ready' && options && options.length > 0 && (
           <ul className="space-y-1.5" aria-label="Engine-measured next steps">
-          {options.map((option) => {
-            const isCurrent = Boolean(option.details?.current);
-            const needsConfirmation = Boolean(option.details?.requires_confirmation);
-            const isConfirmed = Boolean(confirmed[option.id]);
-            const isConstraint = option.available === false;
-            const constraintId = `${titleId}-${option.id}-constraint`;
-            return (
-            <li
-              key={option.id}
-              data-testid="remediation-card"
-              data-option={option.id}
-              data-current={isCurrent ? 'true' : 'false'}
-              data-available={isConstraint ? 'false' : 'true'}
-              data-verdict={option.effect?.verdict ?? 'UNMEASURED'}
-              data-failures={option.effect?.failure_count ?? ''}
-              data-warnings={option.effect?.warning_count ?? ''}
-              data-plate={option.effect?.plate_area_m2 ?? ''}
-              className={`min-w-0 rounded-[8px] border px-2.5 py-2 space-y-1 ${
-                isConstraint
-                  ? 'border-[var(--semantic-amber)]/35 bg-[var(--semantic-amber)]/5'
-                  : 'border-[var(--hairline)] bg-[var(--surface)]'
-              }`}
-            >
-              <div className="flex min-w-0 flex-wrap items-start justify-between gap-1.5">
-                <div className="min-w-0">
-                  <p className="min-w-0 break-words text-[11.5px] font-semibold text-[var(--text-1)]">
-                    {option.title}
-                  </p>
-                  <p className="min-w-0 break-words text-[10.5px] leading-snug text-[var(--text-2)]">
-                    {option.description}
-                  </p>
-                  {isConstraint && (
-                    <span
-                      data-testid={`constraint-badge-${option.id}`}
-                      className="mt-1 inline-flex items-center rounded-full bg-[var(--semantic-amber)]/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--semantic-amber-ink)]"
+            {options.map((option) => {
+              const isCurrent = Boolean(option.details?.current);
+              const needsConfirmation = Boolean(option.details?.requires_confirmation);
+              const isConfirmed = Boolean(confirmed[option.id]);
+              const isConstraint = option.available === false;
+              const constraintId = `${titleId}-${option.id}-constraint`;
+              return (
+                <li
+                  key={option.id}
+                  data-testid="remediation-card"
+                  data-option={option.id}
+                  data-current={isCurrent ? 'true' : 'false'}
+                  data-available={isConstraint ? 'false' : 'true'}
+                  data-verdict={option.effect?.verdict ?? 'UNMEASURED'}
+                  data-failures={option.effect?.failure_count ?? ''}
+                  data-warnings={option.effect?.warning_count ?? ''}
+                  data-plate={option.effect?.plate_area_m2 ?? ''}
+                  className={`min-w-0 rounded-[8px] border px-2.5 py-2 space-y-1 ${isConstraint
+                      ? 'border-[var(--semantic-amber)]/35 bg-[var(--semantic-amber)]/5'
+                      : 'border-[var(--hairline)] bg-[var(--surface)]'
+                    }`}
+                >
+                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-1.5">
+                    <div className="min-w-0">
+                      <p className="min-w-0 break-words text-[11.5px] font-semibold text-[var(--text-1)]">
+                        {option.title}
+                      </p>
+                      <p className="min-w-0 break-words text-[10.5px] leading-snug text-[var(--text-2)]">
+                        {option.description}
+                      </p>
+                      {isConstraint && (
+                        <span
+                          data-testid={`constraint-badge-${option.id}`}
+                          className="mt-1 inline-flex items-center rounded-full bg-[var(--semantic-amber)]/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--semantic-amber-ink)]"
+                        >
+                          Constraint
+                        </span>
+                      )}
+                      {option.basis && (option.basis.codes?.length || option.basis.rooms?.length) ? (
+                        <p
+                          data-testid="remediation-basis"
+                          className="mt-0.5 min-w-0 break-words font-mono text-[9.5px] leading-snug text-[var(--text-3)]"
+                        >
+                          Basis: {(option.basis.codes ?? []).join(', ') || 'structured findings'}
+                          {(option.basis.room_count ?? option.basis.rooms?.length ?? 0) > 0
+                            ? ` · ${option.basis.room_count ?? option.basis.rooms?.length} affected room${(option.basis.room_count ?? option.basis.rooms?.length) === 1 ? '' : 's'}`
+                            : ''}
+                        </p>
+                      ) : null}
+                      {advisorState === 'ready' && advisor?.option_notes?.[option.id] && (
+                        <p
+                          data-testid="advisor-option-note"
+                          data-option={option.id}
+                          className="mt-0.5 min-w-0 break-words text-[10px] italic leading-snug text-[var(--text-3)]"
+                        >
+                          {advisor.option_notes[option.id]}
+                        </p>
+                      )}
+                    </div>
+                    {isConstraint ? (
+                      <span
+                        data-testid={`apply-unavailable-${option.id}`}
+                        className="shrink-0 rounded-[6px] border border-[var(--semantic-amber)]/35 bg-[var(--semantic-amber)]/10 px-2 py-1 text-[10.5px] font-semibold text-[var(--semantic-amber-ink)]"
+                      >
+                        Not available
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        data-testid={`apply-${option.id}`}
+                        onClick={() => handleApply(option)}
+                        disabled={
+                          isGenerating || !option.effect || isCurrent || (needsConfirmation && !isConfirmed)
+                        }
+                        aria-describedby={
+                          option.constraint_reason ? constraintId : undefined
+                        }
+                        title={
+                          isCurrent
+                            ? String(option.details?.apply_blocked_reason ?? 'This is already the selected strategy.')
+                            : needsConfirmation && !isConfirmed
+                              ? 'Confirm the dwelling-count change before re-solving.'
+                              : undefined
+                        }
+                        className="shrink-0 rounded-[6px] border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 text-[10.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent)]/20 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40"
+                      >
+                        {isCurrent
+                          ? 'Current strategy'
+                          : isGenerating
+                            ? 'Re-solving…'
+                            : needsConfirmation
+                              ? 'Confirm & re-certify'
+                              : 'Apply & re-certify'}
+                      </button>
+                    )}
+                  </div>
+                  {!isConstraint && needsConfirmation && !isCurrent && (
+                    <label
+                      data-testid={`confirm-${option.id}`}
+                      className="flex min-w-0 cursor-pointer items-start gap-1.5 rounded-[6px] border border-[var(--semantic-amber)]/35 bg-[var(--semantic-amber)]/10 px-2 py-1.5 text-[10px] leading-snug text-[var(--semantic-amber-ink)]"
                     >
-                      Constraint
-                    </span>
+                      <input
+                        type="checkbox"
+                        data-testid={`confirm-checkbox-${option.id}`}
+                        checked={isConfirmed}
+                        onChange={(event) =>
+                          setConfirmed((prev) => ({ ...prev, [option.id]: event.target.checked }))
+                        }
+                        className="mt-0.5 shrink-0"
+                      />
+                      <span className="min-w-0 break-words">
+                        I understand this changes the dwelling count; draw the reduced programme.
+                      </span>
+                    </label>
                   )}
-                  {option.basis && (option.basis.codes?.length || option.basis.rooms?.length) ? (
+                  {isConstraint && option.constraint_reason && (
                     <p
-                      data-testid="remediation-basis"
-                      className="mt-0.5 min-w-0 break-words font-mono text-[9.5px] leading-snug text-[var(--text-3)]"
+                      id={constraintId}
+                      data-testid="remediation-constraint"
+                      className="min-w-0 break-words text-[10px] leading-snug text-[var(--semantic-amber-ink)]"
                     >
-                      Basis: {(option.basis.codes ?? []).join(', ') || 'structured findings'}
-                      {(option.basis.room_count ?? option.basis.rooms?.length ?? 0) > 0
-                        ? ` · ${option.basis.room_count ?? option.basis.rooms?.length} affected room${(option.basis.room_count ?? option.basis.rooms?.length) === 1 ? '' : 's'}`
-                        : ''}
-                    </p>
-                  ) : null}
-                  {advisorState === 'ready' && advisor?.option_notes?.[option.id] && (
-                    <p
-                      data-testid="advisor-option-note"
-                      data-option={option.id}
-                      className="mt-0.5 min-w-0 break-words text-[10px] italic leading-snug text-[var(--text-3)]"
-                    >
-                      {advisor.option_notes[option.id]}
+                      {option.constraint_reason}
                     </p>
                   )}
-                </div>
-                {isConstraint ? (
-                  <span
-                    data-testid={`apply-unavailable-${option.id}`}
-                    className="shrink-0 rounded-[6px] border border-[var(--semantic-amber)]/35 bg-[var(--semantic-amber)]/10 px-2 py-1 text-[10.5px] font-semibold text-[var(--semantic-amber-ink)]"
+                  <p
+                    data-testid="remediation-effect"
+                    className="min-w-0 break-words font-mono text-[10px] leading-snug text-[var(--text-3)]"
                   >
-                    Not available
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    data-testid={`apply-${option.id}`}
-                    onClick={() => handleApply(option)}
-                    disabled={
-                      isGenerating || !option.effect || isCurrent || (needsConfirmation && !isConfirmed)
-                    }
-                    aria-describedby={
-                      option.constraint_reason ? constraintId : undefined
-                    }
-                    title={
-                      isCurrent
-                        ? String(option.details?.apply_blocked_reason ?? 'This is already the selected strategy.')
-                        : needsConfirmation && !isConfirmed
-                          ? 'Confirm the dwelling-count change before re-solving.'
-                          : undefined
-                    }
-                    className="shrink-0 rounded-[6px] border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 text-[10.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent)]/20 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40"
-                  >
-                    {isCurrent
-                      ? 'Current strategy'
-                      : isGenerating
-                        ? 'Re-solving…'
-                        : needsConfirmation
-                          ? 'Confirm & re-certify'
-                          : 'Apply & re-certify'}
-                  </button>
-                )}
-              </div>
-              {!isConstraint && needsConfirmation && !isCurrent && (
-                <label
-                  data-testid={`confirm-${option.id}`}
-                  className="flex min-w-0 cursor-pointer items-start gap-1.5 rounded-[6px] border border-[var(--semantic-amber)]/35 bg-[var(--semantic-amber)]/10 px-2 py-1.5 text-[10px] leading-snug text-[var(--semantic-amber-ink)]"
-                >
-                  <input
-                    type="checkbox"
-                    data-testid={`confirm-checkbox-${option.id}`}
-                    checked={isConfirmed}
-                    onChange={(event) =>
-                      setConfirmed((prev) => ({ ...prev, [option.id]: event.target.checked }))
-                    }
-                    className="mt-0.5 shrink-0"
-                  />
-                  <span className="min-w-0 break-words">
-                    I understand this changes the dwelling count; draw the reduced programme.
-                  </span>
-                </label>
-              )}
-              {isConstraint && option.constraint_reason && (
-                <p
-                  id={constraintId}
-                  data-testid="remediation-constraint"
-                  className="min-w-0 break-words text-[10px] leading-snug text-[var(--semantic-amber-ink)]"
-                >
-                  {option.constraint_reason}
-                </p>
-              )}
-              <p
-                data-testid="remediation-effect"
-                className="min-w-0 break-words font-mono text-[10px] leading-snug text-[var(--text-3)]"
-              >
-                {isConstraint
-                  ? 'No dry-run: this input combination is refused by the engine.'
-                  : option.error
-                    ? `Dry-run failed: ${option.error}`
-                    : effectLine(option)}
-              </p>
-              {option.details?.configuration_note && (
-                <p
-                  data-testid="remediation-configuration-note"
-                  className="min-w-0 break-words text-[10px] leading-snug text-[var(--semantic-amber-ink)]"
-                >
-                  {String(option.details.configuration_note)}
-                </p>
-              )}
-            </li>
-            );
-          })}
+                    {isConstraint
+                      ? 'No dry-run: this input combination is refused by the engine.'
+                      : option.error
+                        ? `Dry-run failed: ${option.error}`
+                        : effectLine(option)}
+                  </p>
+                  {option.details?.configuration_note && (
+                    <p
+                      data-testid="remediation-configuration-note"
+                      className="min-w-0 break-words text-[10px] leading-snug text-[var(--semantic-amber-ink)]"
+                    >
+                      {String(option.details.configuration_note)}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
         <p className="min-w-0 break-words text-[9.5px] leading-snug text-[var(--text-3)]">

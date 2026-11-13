@@ -132,6 +132,21 @@ const CAPTURE_LAYER_IDS = [
  * the source uses promoteId('idx'). Pure pointer affordance (not animation),
  * so reduced-motion users get the same cue.
  */
+interface VertexIdsState {
+  current: Set<number>;
+  hoverIdx: number | null;
+  dragIdx: number | null;
+  insertIdx: number | null;
+}
+
+/** The vertex ids seen in the last updateCaptureSources ring write. */
+const lastVertexIds: VertexIdsState = {
+  current: new Set<number>(),
+  hoverIdx: null,
+  dragIdx: null,
+  insertIdx: null,
+};
+
 export function setVertexFeatureState(
   map: MlMap,
   which: 'hover' | 'drag' | 'insert',
@@ -141,23 +156,16 @@ export function setVertexFeatureState(
   try {
     if (map.setFeatureState === undefined) return;
     const ids = lastVertexIds.current;
-    const prevKey = `${which}Idx`;
-    const prev = (lastVertexIds as any)[prevKey] as number | null;
+    const prevKey = `${which}Idx` as keyof Omit<VertexIdsState, 'current'>;
+    const prev = lastVertexIds[prevKey];
     if (prev !== null && prev !== undefined && ids.has(prev)) {
       map.setFeatureState({ source: VERTICES_SRC, id: prev }, { [which]: false });
     }
-    (lastVertexIds as any)[prevKey] = idx;
+    lastVertexIds[prevKey] = idx;
     if (idx === null || idx === undefined || !ids.has(idx)) return;
     map.setFeatureState({ source: VERTICES_SRC, id: idx }, { [which]: true });
   } catch {}
 }
-/** The vertex ids seen in the last updateCaptureSources ring write. */
-const lastVertexIds: { current: Set<number> } & { [key: string]: number | null | Set<number> } = {
-  current: new Set<number>(),
-  hoverIdx: null,
-  dragIdx: null,
-  insertIdx: null,
-};
 
 /**
  * Style readiness — a MOUNTED style is enough to add sources/layers.
@@ -183,7 +191,7 @@ function isStyleReady(map: MlMap | null | undefined): map is MlMap {
 function isMapAlive(map: MlMap | null | undefined): map is MlMap {
   if (!map) return false;
   try {
-    return !(map as any)._removed && Boolean(map.getContainer?.());
+    return !(map as { _removed?: boolean })._removed && Boolean(map.getContainer?.());
   } catch {
     return false;
   }
@@ -461,7 +469,7 @@ export function updateCaptureSources(map: MlMap, state: CaptureRenderState): voi
   const apply = (id: string, data: GeoJSON.Feature | GeoJSON.FeatureCollection): void => {
     try {
       const src = map.getSource(id) as GeoJSONSource | undefined;
-      if (src) src.setData(data as any);
+      if (src) src.setData(data);
     } catch {}
   };
 
@@ -620,8 +628,8 @@ export function clearDraftOverlays(map: MlMap): boolean {
         // point sources (ghost/close-target/insert) get emptyFc().
         src.setData(
           id === LIVE_EDGE_SRC || id === GUIDES_SRC || id === DRAG_LINE_SRC
-            ? (emptyLine() as any)
-            : (emptyFc() as any)
+            ? emptyLine()
+            : emptyFc()
         );
         cleared = true;
       }
@@ -687,14 +695,14 @@ export function updateHoveredEdge(map: MlMap, ring: Vertex[], edgeIndex: number 
     const valid =
       edgeIndex !== null && ring.length >= 3 && edgeIndex >= 0 && edgeIndex < ring.length;
     if (!valid) {
-      edgeSrc.setData(emptyLine() as any);
-      vertSrc.setData(emptyFc() as any);
+      edgeSrc.setData(emptyLine());
+      vertSrc.setData(emptyFc());
       return;
     }
     const i = edgeIndex as number;
     const a = ring[i];
     const b = ring[(i + 1) % ring.length];
-    edgeSrc.setData(lineFeature(a, b) as any);
+    edgeSrc.setData(lineFeature(a, b));
     vertSrc.setData({
       type: 'FeatureCollection',
       features: [a, b].map((v) => ({
@@ -702,7 +710,7 @@ export function updateHoveredEdge(map: MlMap, ring: Vertex[], edgeIndex: number 
         properties: {},
         geometry: { type: 'Point' as const, coordinates: toLngLat(v) },
       })),
-    } as any);
+    });
   } catch {}
 }
 
