@@ -4,6 +4,7 @@ import uuid
 import time
 import logging
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.encoders import jsonable_encoder
@@ -68,10 +69,24 @@ from app.services.site_preview_service import (
     compute_site_preview,
 )
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info(
+        f"Starting BuildWise backend engine: env={settings.ENVIRONMENT}, "
+        f"default_ai={settings.DEFAULT_AI_PROVIDER}, "
+        f"trusted_proxies={len(settings.TRUSTED_PROXIES)}"
+    )
+    try:
+        yield
+    finally:
+        logger.info("Shutting down BuildWise backend cleanly.")
+
+
 app = FastAPI(
     title="BuildWise AI API",
     description="Geo-based intelligent construction feasibility, orientation, cost estimation, hazard, land value, and Vastu advisory engine.",
-    version="1.1.0"
+    version="1.1.0",
+    lifespan=lifespan,
 )
 
 
@@ -132,7 +147,47 @@ async def limit_request_body_size(request: Request, call_next):
             status_code=413,
             content={"detail": f"Request body too large ({content_length} bytes; limit {MAX_REQUEST_BODY_BYTES} bytes)."},
         )
-    return await call_next(request)
+
+    # Enforce body size limits during streaming / chunked transfers
+    request.state.body_size_exceeded = False
+    if request.method in ("POST", "PUT", "PATCH"):
+        received_bytes = 0
+        original_receive = request.receive
+
+        async def limited_receive():
+            nonlocal received_bytes
+            message = await original_receive()
+            if message.get("type") == "http.request":
+                body = message.get("body", b"")
+                received_bytes += len(body)
+                if received_bytes > MAX_REQUEST_BODY_BYTES:
+                    request.state.body_size_exceeded = True
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Request body exceeds maximum size limit of {MAX_REQUEST_BODY_BYTES} bytes.",
+                    )
+            return message
+
+        request._receive = limited_receive
+
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        if getattr(request.state, "body_size_exceeded", False):
+            return JSONResponse(
+                status_code=413,
+                content={"detail": f"Request body exceeds maximum size limit of {MAX_REQUEST_BODY_BYTES} bytes."},
+            )
+        if isinstance(exc, HTTPException) and exc.status_code == 413:
+            return JSONResponse(status_code=413, content={"detail": exc.detail})
+        raise
+
+    if getattr(request.state, "body_size_exceeded", False):
+        return JSONResponse(
+            status_code=413,
+            content={"detail": f"Request body exceeds maximum size limit of {MAX_REQUEST_BODY_BYTES} bytes."},
+        )
+    return response
 
 # Sliding window in-memory rate limiter: 30 requests per 60 seconds per IP
 RATE_LIMIT_WINDOW_SEC = 60.0
@@ -153,13 +208,21 @@ def _prune_rate_histories(now: float) -> None:
             store.pop(ip, None)
 
 def _client_ip(request: Request) -> str:
-    """Client IP with X-Forwarded-For support for deployments behind a proxy."""
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        first = xff.split(",")[0].strip()
-        if first:
-            return first
-    return request.client.host if request.client else "127.0.0.1"
+    """Client IP with secure trusted reverse proxy verification.
+
+    X-Forwarded-For is only parsed when the direct peer connection originates
+    from a configured trusted proxy, preventing client-side IP spoofing and rate
+    limit evasion.
+    """
+    direct_host = request.client.host if request.client else "127.0.0.1"
+    trusted = getattr(settings, "TRUSTED_PROXIES", ["127.0.0.1", "::1", "testclient", "localhost"])
+    if "*" in trusted or direct_host in trusted:
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            first = xff.split(",")[0].strip()
+            if first:
+                return first
+    return direct_host
 
 def check_rate_limit(client_ip: str):
     now = time.time()
@@ -754,9 +817,8 @@ async def create_pdf_report(req: ReportRequest):
             },
         )
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"PDF generation error: {str(e)}")
+        logger.exception("PDF generation error")
+        raise HTTPException(status_code=500, detail="An internal error occurred during PDF report generation.")
 
 @app.post("/api/site-vision", response_model=SiteVisionResponse)
 async def site_vision_analysis(req: SiteVisionRequest):
@@ -774,9 +836,8 @@ async def site_vision_analysis(req: SiteVisionRequest):
         )
         return response
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Site vision analysis error: {str(e)}")
+        logger.exception("Site vision analysis error")
+        raise HTTPException(status_code=500, detail="An internal error occurred during site vision analysis.")
 
 @app.post("/api/generate-floorplan")
 async def create_generative_floorplan(
@@ -1052,13 +1113,11 @@ async def create_generative_floorplan(
         msg = str(e)
         if "Hard Constraint Violation" in msg or "RULE-FP-" in msg:
             raise HTTPException(status_code=422, detail=f"Floor plan constraint violation: {msg}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Floor plan generation error: {msg}")
+        logger.exception("Floor plan generation invalid value error")
+        raise HTTPException(status_code=500, detail="An internal error occurred during floor plan generation.")
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Floor plan generation error: {str(e)}")
+        logger.exception("Floor plan generation unexpected error")
+        raise HTTPException(status_code=500, detail="An internal error occurred during floor plan generation.")
 
 
 @app.post("/api/floorplan/remediation")
@@ -1074,8 +1133,8 @@ async def floorplan_remediation(req: RemediationIn):
     try:
         return await asyncio.to_thread(build_options, req)
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"Remediation dry-run failed: {exc}")
-        raise HTTPException(status_code=500, detail=f"Remediation dry-run failed: {exc}")
+        logger.exception("Remediation dry-run failed")
+        raise HTTPException(status_code=500, detail="An internal error occurred during remediation dry-run.")
 
 
 @app.post("/api/floorplan/advisory")

@@ -661,3 +661,74 @@ def test_rate_limiter_prunes_idle_ips():
     fresh = _client_request_history[target_ip]
     assert fresh and all(time.time() - t < 60.0 for t in fresh)
 
+
+def test_client_ip_trusted_proxy_verification():
+    """Verify that unverified direct client connections cannot spoof X-Forwarded-For."""
+    from unittest.mock import MagicMock
+    from app.main import _client_ip
+    from app.config import settings
+
+    # 1. Untrusted direct client IP should NOT honor X-Forwarded-For
+    req_untrusted = MagicMock()
+    req_untrusted.client.host = "203.0.113.195"
+    req_untrusted.headers = {"x-forwarded-for": "10.0.0.1"}
+    assert _client_ip(req_untrusted) == "203.0.113.195"
+
+    # 2. Trusted proxy (e.g. 127.0.0.1) DOES honor X-Forwarded-For
+    req_trusted = MagicMock()
+    req_trusted.client.host = "127.0.0.1"
+    req_trusted.headers = {"x-forwarded-for": "198.51.100.22, 127.0.0.1"}
+    assert _client_ip(req_trusted) == "198.51.100.22"
+
+
+def test_cors_origins_json_array_parsing():
+    """Verify that CORS_ORIGINS parses JSON array syntax without leaving quotes or brackets."""
+    from app.config import _parse_cors_origins
+
+    raw_json = '["https://buildwise.yourdomain.com", "https://app.yourdomain.com"]'
+    parsed = _parse_cors_origins(raw_json)
+    assert parsed == ["https://buildwise.yourdomain.com", "https://app.yourdomain.com"]
+
+    raw_single_quotes = "['https://example.com']"
+    parsed_single = _parse_cors_origins(raw_single_quotes)
+    assert parsed_single == ["https://example.com"]
+
+
+def test_request_body_size_limit_rejection():
+    """Verify that oversized requests are rejected with HTTP 413."""
+    from fastapi.testclient import TestClient
+    from app.main import app, MAX_REQUEST_BODY_BYTES
+
+    client = TestClient(app)
+
+    # 1. Header-based rejection (Content-Length > MAX_REQUEST_BODY_BYTES)
+    oversized_length = MAX_REQUEST_BODY_BYTES + 1024
+    resp = client.post(
+        "/api/analyze",
+        headers={"content-length": str(oversized_length)},
+        content=b"x"
+    )
+    assert resp.status_code == 413
+    assert "Request body too large" in resp.json()["detail"]
+
+    # 2. Streaming rejection when chunks exceed MAX_REQUEST_BODY_BYTES
+    # Temporarily patch MAX_REQUEST_BODY_BYTES to a small value for streaming verification
+    import app.main as main_mod
+    original_max = main_mod.MAX_REQUEST_BODY_BYTES
+    try:
+        main_mod.MAX_REQUEST_BODY_BYTES = 500
+        # Stream 1000 bytes in chunks of 200 without Content-Length
+        def chunk_generator():
+            for _ in range(5):
+                yield b"A" * 200
+
+        resp_stream = client.post(
+            "/api/analyze",
+            content=chunk_generator(),
+            headers={"transfer-encoding": "chunked"}
+        )
+        assert resp_stream.status_code == 413
+        assert "Request body exceeds maximum size limit" in resp_stream.json()["detail"]
+    finally:
+        main_mod.MAX_REQUEST_BODY_BYTES = original_max
+
