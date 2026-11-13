@@ -87,6 +87,44 @@ def test_facility_score_is_labelled_proxy():
     assert "verify" in details.lower()
 
 
+def test_facility_score_osm_measured():
+    """Measured OSM facility counts must score accurately across tiers."""
+    # Optimal: >= 15
+    score_opt, status_opt, details_opt = calculate_facility_score(12.97, 77.59, facility_count=22)
+    assert score_opt == 90.0
+    assert status_opt == "optimal"
+    assert "22 facilities" in details_opt
+    assert "OpenStreetMap" in details_opt
+
+    # Acceptable: 5-14
+    score_acc, status_acc, details_acc = calculate_facility_score(12.97, 77.59, facility_count=8)
+    assert score_acc == 75.0
+    assert status_acc == "acceptable"
+
+    # Developing: 1-4
+    score_dev, status_dev, details_dev = calculate_facility_score(12.97, 77.59, facility_count=2)
+    assert score_dev == 60.0
+    assert status_dev == "acceptable"
+
+    # Critical: 0
+    score_zero, status_zero, details_zero = calculate_facility_score(12.97, 77.59, facility_count=0)
+    assert score_zero == 45.0
+    assert status_zero == "critical"
+    assert "zero civic amenities" in details_zero.lower()
+
+
+def test_evaluate_land_suitability_with_facility_count():
+    climate = {"temperature_max_c": 30.0, "temperature_min_c": 18.0, "wind_speed_kmh": 10.0, "annual_precipitation_mm": 800.0}
+    _, _, factors = evaluate_land_suitability(
+        lat=12.97, lon=77.59, elevation_m=900.0, slope_pct=2.0, climate=climate,
+        facility_count=18
+    )
+    fac_factor = next(f for f in factors if f.factor_id == "facility_proximity")
+    assert fac_factor.name == "Proximity to Facilities (OpenStreetMap)"
+    assert fac_factor.raw_value == 18.0
+    assert fac_factor.score == 90.0
+
+
 def test_flood_score_fuses_hazard_profile_conservatively():
     """
     When a hazard FloodProfile is supplied, the worse of the

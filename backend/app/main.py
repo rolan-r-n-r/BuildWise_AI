@@ -55,7 +55,7 @@ from app.ai import get_ai_adapter, generate_room_program
 from app.services.geocode_service import geocode_search, reverse_geocode_probe
 from app.services.methodology import methodology_notes
 from app.services.external_data_service import fetch_elevation_samples
-from app.services.road_service import fetch_nearest_road
+from app.services.road_service import fetch_nearest_road, fetch_facility_count
 from app.schemas.site_intelligence import (
     NearestRoadResponse,
     RoadHit,
@@ -63,7 +63,6 @@ from app.schemas.site_intelligence import (
     SitePreviewRequest,
     SitePreviewResponse,
 )
-from app.services.road_service import fetch_nearest_road
 from app.services.site_preview_service import (
     BoundaryStatutoryViolation,
     compute_site_preview,
@@ -429,6 +428,7 @@ async def analyze_site(req: AnalysisRequest, request: Request):
     elevation_task = asyncio.create_task(fetch_elevation_and_slope(req.latitude, req.longitude))
     climate_task = asyncio.create_task(fetch_climate_data(req.latitude, req.longitude))
     road_task = asyncio.create_task(fetch_nearest_road(req.latitude, req.longitude))
+    facility_task = asyncio.create_task(fetch_facility_count(req.latitude, req.longitude))
 
     address, address_fallback = await geocode_task
     elevation_m, slope_pct, elev_fallback = await elevation_task
@@ -447,6 +447,7 @@ async def analyze_site(req: AnalysisRequest, request: Request):
     )
     climate, climate_fallback = await climate_task
     road_result, _road_cache_hit, road_warning = await road_task
+    facility_count, facility_fallback = await facility_task
 
     data_sources["geocode"] = {
         "source": "OpenStreetMap Nominatim (reverse)",
@@ -512,6 +513,12 @@ async def analyze_site(req: AnalysisRequest, request: Request):
         road_service_available = "No mapped road" in (road_warning or "")
         road_distance_m = None
 
+    data_sources["facilities"] = {
+        "source": "OpenStreetMap Overpass API (amenities within 1.5 km)",
+        "fetched_at": None if facility_fallback else now_utc.isoformat(),
+        "is_fallback": facility_fallback,
+    }
+
     # 2. Module 1: Hazard History & Climate Stress Profile (moved ahead of MCDA
     # so the river-discharge flood signal can be fused into the suitability
     # flood factor).  Started above, alongside the road lookup.
@@ -544,7 +551,8 @@ async def analyze_site(req: AnalysisRequest, request: Request):
         climate=climate,
         road_distance_m=road_distance_m,
         road_service_available=road_service_available,
-        flood_profile=hazard_profile.flood
+        flood_profile=hazard_profile.flood,
+        facility_count=facility_count,
     )
 
     orientation = calculate_building_orientation(

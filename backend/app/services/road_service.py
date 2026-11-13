@@ -388,3 +388,45 @@ async def fetch_nearest_road(
         _mark_upstream_failed()
 
     return _fallback_result(_UNAVAILABLE_WARNING), False, _UNAVAILABLE_WARNING
+
+
+async def fetch_facility_count(lat: float, lon: float) -> Tuple[Optional[int], bool]:
+    """
+    Queries OpenStreetMap Overpass for count of civic facilities (amenities) within 1500m.
+    Returns (count, is_fallback). Returns (None, True) on upstream outage or timeout.
+    """
+    cache_cat = "osm_facility_count"
+    cached = hazard_cache.get(lat, lon, cache_cat, precision=2)
+    if cached is not None:
+        return cached, False
+
+    if _upstream_cooldown_remaining() > 0.0:
+        return None, True
+
+    query = (
+        f"[out:json][timeout:{int(_QL_TIMEOUT_S)}];"
+        f"(node[\"amenity\"](around:1500,{lat:.5f},{lon:.5f});"
+        f"way[\"amenity\"](around:1500,{lat:.5f},{lon:.5f}););"
+        f"out count;"
+    )
+    try:
+        await _overpass_throttle()
+        resp = await _post_query(query, _ATTEMPT_READ_TIMEOUT_S)
+        if resp.status_code == 200:
+            data = resp.json()
+            count_val = None
+            elements = data.get("elements", [])
+            for el in elements:
+                if el.get("type") == "count":
+                    count_val = int(el.get("tags", {}).get("total", 0))
+                    break
+            if count_val is None:
+                count_val = len(elements)
+            hazard_cache.set(lat, lon, cache_cat, count_val, precision=2)
+            _mark_upstream_healthy()
+            return count_val, False
+    except Exception as exc:
+        logger.debug("Overpass facility query failed: %s", exc)
+
+    return None, True
+

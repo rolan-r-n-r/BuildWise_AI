@@ -155,15 +155,51 @@ def calculate_environmental_comfort_score(climate: dict) -> Tuple[float, str, st
     return round(score, 1), status, details
 
 
-def calculate_facility_score(lat: float, lon: float) -> Tuple[float, str, str]:
+def calculate_facility_score(
+    lat: float,
+    lon: float,
+    facility_count: Optional[int] = None
+) -> Tuple[float, str, str]:
     """
     Computes proximity to municipal utilities and civic services (0-100).
 
-    This remains a DETERMINISTIC MODELLED PROXY (no
-    municipal-utility dataset is integrated yet). It is explicitly labelled as
-    a proxy, its weight is reduced (0.10), and it never emits factual claims
-    about specific infrastructure being present.
+    When facility_count is measured via OpenStreetMap, scores based on verified
+    amenity density within 1.5 km. When unmeasured, falls back to an honest proxy
+    index with mandatory verification disclosure.
     """
+    if facility_count is not None:
+        if facility_count >= 15:
+            score = 90.0
+            status = "optimal"
+            details = (
+                f"High civic infrastructure density: {facility_count} facilities "
+                "(schools, healthcare, transit, services) verified within 1.5 km via OpenStreetMap. "
+                "Verify specific utility connection points with the local authority."
+            )
+        elif facility_count >= 5:
+            score = 75.0
+            status = "acceptable"
+            details = (
+                f"Established suburban infrastructure: {facility_count} civic facilities "
+                "verified within 1.5 km via OpenStreetMap. Verify service load capacity with the local authority."
+            )
+        elif facility_count >= 1:
+            score = 60.0
+            status = "acceptable"
+            details = (
+                f"Developing peripheral infrastructure: {facility_count} civic facility/facilities "
+                "verified within 1.5 km via OpenStreetMap. Independent borewell, rainwater harvesting, or septic "
+                "arrangements may be required; verify with the local authority."
+            )
+        else:
+            score = 45.0
+            status = "critical"
+            details = (
+                "Sparse infrastructure zone: zero civic amenities mapped within 1.5 km in OpenStreetMap. "
+                "Independent utility provisions required; verify availability with the local authority."
+            )
+        return score, status, details
+
     utility_factor = (math.sin(lat * 0.8 + 1.2) ** 2 + math.cos(lon * 0.8 - 0.4) ** 2) / 2.0
     score = round(60.0 + utility_factor * 35.0, 1)
 
@@ -198,7 +234,8 @@ def evaluate_land_suitability(
     climate: dict,
     road_distance_m: Optional[float] = None,
     road_service_available: bool = False,
-    flood_profile: Optional[Any] = None
+    flood_profile: Optional[Any] = None,
+    facility_count: Optional[int] = None,
 ) -> Tuple[float, str, List[FactorScore]]:
     """
     Executes full Multi-Criteria Decision Analysis (MCDA) across 5 standard engineering factors.
@@ -260,14 +297,23 @@ def evaluate_land_suitability(
         details=e_details
     )
 
-    # 5. Facility Proximity (modelled proxy, honestly labelled, reduced weight)
-    p_score, p_status, p_details = calculate_facility_score(lat, lon)
+    # 5. Facility Proximity (OpenStreetMap amenities or modelled proxy)
+    p_score, p_status, p_details = calculate_facility_score(lat, lon, facility_count=facility_count)
+    if facility_count is not None:
+        facility_name = "Proximity to Facilities (OpenStreetMap)"
+        facility_unit = "mapped facilities (1.5 km)"
+        facility_raw = float(facility_count)
+    else:
+        facility_name = "Proximity to Facilities (Modelled Proxy)"
+        facility_unit = "modelled index (0-100)"
+        facility_raw = p_score
+
     factor_facility = FactorScore(
         factor_id="facility_proximity",
-        name="Proximity to Facilities (Modelled Proxy)",
+        name=facility_name,
         weight=0.10,
-        raw_value=p_score,
-        unit="modelled index (0-100)",
+        raw_value=facility_raw,
+        unit=facility_unit,
         score=p_score,
         status=p_status,
         details=p_details
