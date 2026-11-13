@@ -30,3 +30,12 @@ def test_cost_breakdown_proportions():
     total_pct = sum(item.percentage for item in cost.breakdown)
     assert 99.0 <= total_pct <= 101.0
     assert cost.cost_range_min_inr < cost.total_estimated_cost_inr < cost.cost_range_max_inr
+
+def test_steep_slope_contingency_guaranteed():
+    """Ensure statutory contingency reserve is never zeroed out even on steep terrain (>25% slope)."""
+    cost_steep = calculate_construction_cost(area_sqft=2000.0, quality_grade="standard", slope_pct=28.0)
+    contingency = next(item for item in cost_steep.breakdown if "Contingency" in item.category)
+    assert contingency.amount_inr > 0.0
+    assert 8.0 <= contingency.percentage <= 10.0
+    total_pct = sum(item.percentage for item in cost_steep.breakdown)
+    assert 99.0 <= total_pct <= 101.0

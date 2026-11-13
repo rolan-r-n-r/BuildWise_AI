@@ -16,16 +16,16 @@ def calculate_building_orientation(latitude: float, wind_dir_deg: float) -> Orie
 
     # Base optimal longitudinal axis is 90 degrees (East-West axis)
     base_axis = 90.0
+    max_deflection = 15.0  # Permissible NBC 2016 skew (+/- 15 deg)
 
     # Wind deflection: Calculate acute angle difference to wind direction
     # Normal to East-West facade is 0 deg (North) or 180 deg (South)
-    # Wind angle adjustment
     wind_rad = math.radians(wind_dir_deg)
-    # Deflect slightly toward wind normal to encourage positive pressure on opening
-    wind_offset = round(4.5 * math.sin(wind_rad * 2.0), 1)
+    # Deflect toward wind normal to encourage positive pressure on opening
+    wind_offset = round(max_deflection * math.sin(wind_rad * 2.0), 1)
     
     # Constrain axis within [75.0, 105.0] degrees relative to true North
-    optimal_axis = round(base_axis + wind_offset, 1)
+    optimal_axis = round(max(base_axis - max_deflection, min(base_axis + max_deflection, base_axis + wind_offset)), 1)
 
     # Label generation
     if optimal_axis == 90.0:

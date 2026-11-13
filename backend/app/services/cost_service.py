@@ -44,7 +44,10 @@ def calculate_construction_cost(
     civil_structural_pct = 0.50
     finishes_pct = 0.18
     mep_pct = 0.14
-    grading_prep_pct = 0.08 + (terrain_mult - 1.0) * 0.4
+    # Statutory contingency reserve is guaranteed at 8-10% of subtotal;
+    # grading preparation scales with terrain slope without zeroing contingency.
+    contingency_pct = max(0.08, round(0.10 - (terrain_mult - 1.0) * 0.08, 3))
+    grading_prep_pct = round(1.0 - (civil_structural_pct + finishes_pct + mep_pct + contingency_pct), 3)
 
     civil_amt = round(subtotal * civil_structural_pct, 2)
     finishes_amt = round(subtotal * finishes_pct, 2)
