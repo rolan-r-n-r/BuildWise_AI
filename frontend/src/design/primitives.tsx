@@ -57,6 +57,25 @@ export interface ToastItem {
   ttlMs?: number;
 }
 
+const EMPTY_TOASTS: ToastItem[] = [];
+const EMPTY_EXITING: number[] = [];
+
+export interface ToastStateContextValue {
+  toasts: ToastItem[];
+  exitingToasts: number[];
+  dismissToast: (id: number) => void;
+}
+
+const ToastStateContext = createContext<ToastStateContextValue>({
+  toasts: EMPTY_TOASTS,
+  exitingToasts: EMPTY_EXITING,
+  dismissToast: () => {},
+});
+
+export function useToastState(): ToastStateContextValue {
+  return useContext(ToastStateContext);
+}
+
 export interface DesignContextValue {
   toasts: ToastItem[];
   /** Toasts in their exit animation; kept in `toasts` until it completes. */
@@ -128,12 +147,29 @@ export function DesignProvider({ children }: { children: React.ReactNode }): Rea
     };
   }, []);
 
-  const ctx = useMemo<DesignContextValue>(
-    () => ({ toasts, exitingToasts, dismissToast, pushToast, reducedMotion }),
-    [toasts, exitingToasts, dismissToast, pushToast, reducedMotion]
+  const actionCtx = useMemo<DesignContextValue>(
+    () => ({
+      toasts: EMPTY_TOASTS,
+      exitingToasts: EMPTY_EXITING,
+      dismissToast,
+      pushToast,
+      reducedMotion,
+    }),
+    [dismissToast, pushToast, reducedMotion]
   );
 
-  return <DesignContext.Provider value={ctx}>{children}</DesignContext.Provider>;
+  const stateCtx = useMemo<ToastStateContextValue>(
+    () => ({ toasts, exitingToasts, dismissToast }),
+    [toasts, exitingToasts, dismissToast]
+  );
+
+  return (
+    <DesignContext.Provider value={actionCtx}>
+      <ToastStateContext.Provider value={stateCtx}>
+        {children}
+      </ToastStateContext.Provider>
+    </DesignContext.Provider>
+  );
 }
 
 /**
@@ -797,7 +833,7 @@ const TOAST_TONE_PATH: Record<NonNullable<ToastItem['tone']>, string> = {
 };
 
 export const ToastViewport: React.FC = () => {
-  const { toasts, exitingToasts, dismissToast } = useDesign();
+  const { toasts, exitingToasts, dismissToast } = useToastState();
   if (toasts.length === 0) return null;
   return ReactDOM.createPortal(
     <div
@@ -1349,7 +1385,9 @@ const NON_TEXT_INPUT_TYPES = new Set([
 
 export function useShortcuts(handler: ShortcutHandler): void {
   const handlerRef = React.useRef(handler);
-  handlerRef.current = handler;
+  React.useEffect(() => {
+    handlerRef.current = handler;
+  });
 
   React.useEffect(() => {
     const isTypingTarget = (el: EventTarget | null): boolean => {
