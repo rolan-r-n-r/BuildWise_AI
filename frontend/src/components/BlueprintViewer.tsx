@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect, useLayoutEffect } from 'react';
 import ReactDOM from 'react-dom';
-import type { RoomPlacement, MultiStoreyBuildingModel, SingleFloorPlanModel, SitePlanModel } from '../services/types';
+import type { RoomPlacement, MultiStoreyBuildingModel, SingleFloorPlanModel, SitePlanModel, MultiFloorRoomRectangle } from '../services/types';
 import { downloadFloorplanDossier } from '../services/api';
 import { Icon } from './Icon';
 import { prefersReducedMotion, useDesign } from '../design';
@@ -27,106 +27,20 @@ import {
   resolveProgrammeFloor,
   unitCountForFloor,
 } from '../services/typologyProgramme';
+import { useSheetGestures } from './blueprint/useSheetGestures';
 
-interface BlueprintViewerProps {
-  svgString: string;
-  svgPaperString?: string;
-  placements?: RoomPlacement[];
-  plotWidthM?: number;
-  plotDepthM?: number;
-  multiStorey?: MultiStoreyBuildingModel | null;
-  sitePlan?: SitePlanModel | null;
-  generationTimestamp?: number;
-  generationId?: string;
-  storeys?: number;
-  isStale?: boolean;
-  requestedTypology?: string;
-  /** Server-computed plan verdict, rendered verbatim. */
-  planVerdict?: string | null;
+export interface RoomMeta {
+  dotColor: string;
+  label: string;
+  zone: string;
+  isCore?: boolean;
 }
 
-type SheetGestureState = {
-  mode: 'none' | 'pan' | 'pinch';
-  dist: number;
-  zoom: number;
-  x: number;
-  y: number;
-};
+const FLOOR_SUFFIX_RE = /_F\d+$/;
+const NON_WORD_RE = /\W/g;
+const UNDERSCORE_RE = /_/g;
 
-interface SheetGestureOpts {
-  gestureRef: { current: SheetGestureState };
-  panStartRef: { current: { x: number; y: number } };
-  movedRef: { current: boolean };
-  lastTapRef: { current: { t: number; x: number; y: number } };
-  getPan: () => { x: number; y: number };
-  setPan: (p: { x: number; y: number }) => void;
-  getZoom: () => number;
-  setZoom: (z: number) => void;
-  minZoom: number;
-  maxZoom: number;
-  onDoubleTap?: () => void;
-}
-
-/**
- * Direct-manipulation gestures for a fixed-fidelity drawing sheet: one-finger
- * drag pans, two-finger pinch zooms, and a double-tap steps the zoom. The
- * sheet itself is never reflowed — touch only moves the viewport over it.
- */
-function makeSheetGestures(opts: SheetGestureOpts) {
-  const { gestureRef, panStartRef, movedRef, lastTapRef, getPan, setPan, getZoom, setZoom, minZoom, maxZoom, onDoubleTap } = opts;
-  return {
-    onTouchStart(e: React.TouchEvent<HTMLDivElement>) {
-      const g = gestureRef.current;
-      if (e.touches.length === 2) {
-        const a = e.touches[0];
-        const b = e.touches[1];
-        g.mode = 'pinch';
-        g.dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-        g.zoom = getZoom();
-      } else if (e.touches.length === 1) {
-        g.mode = 'pan';
-        g.x = e.touches[0].clientX;
-        g.y = e.touches[0].clientY;
-        panStartRef.current = { ...getPan() };
-        movedRef.current = false;
-      }
-    },
-    onTouchMove(e: React.TouchEvent<HTMLDivElement>) {
-      const g = gestureRef.current;
-      if (g.mode === 'pinch' && e.touches.length === 2) {
-        const a = e.touches[0];
-        const b = e.touches[1];
-        const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-        if (g.dist > 0) {
-          const next = Math.min(maxZoom, Math.max(minZoom, g.zoom * (dist / g.dist)));
-          setZoom(Number(next.toFixed(2)));
-        }
-      } else if (g.mode === 'pan' && e.touches.length === 1) {
-        const dx = e.touches[0].clientX - g.x;
-        const dy = e.touches[0].clientY - g.y;
-        if (Math.abs(dx) + Math.abs(dy) > 6) movedRef.current = true;
-        setPan({ x: panStartRef.current.x + dx, y: panStartRef.current.y + dy });
-      }
-    },
-    onTouchEnd(e: React.TouchEvent<HTMLDivElement>) {
-      const g = gestureRef.current;
-      if (g.mode === 'pan' && e.changedTouches.length > 0 && !movedRef.current) {
-        const t = e.changedTouches[0];
-        const now = Date.now();
-        const last = lastTapRef.current;
-        if (now - last.t < 300 && Math.hypot(t.clientX - last.x, t.clientY - last.y) < 24) {
-          onDoubleTap?.();
-          lastTapRef.current = { t: 0, x: 0, y: 0 };
-        } else {
-          lastTapRef.current = { t: now, x: t.clientX, y: t.clientY };
-        }
-      }
-      g.mode = 'none';
-    },
-  };
-}
-
-const ROOM_METADATA: Record<string, { dotColor: string; label: string; zone: string; isCore?: boolean }> = {
+const ROOM_METADATA: Record<string, RoomMeta> = {
   // T1 Residence
   master_bed: { dotColor: '#0284C7', label: 'Master Bedroom', zone: 'SW' },
   living: { dotColor: '#10B981', label: 'Living Room', zone: 'N/NE' },
@@ -179,11 +93,7 @@ const ROOM_METADATA: Record<string, { dotColor: string; label: string; zone: str
   conference_room: { dotColor: '#8B5CF6', label: 'Conference Room', zone: 'ADMIN' },
   catwalk: { dotColor: '#94A3B8', label: 'Inspection Catwalk', zone: 'ACCESS' },
 
-  // Canonical ontology IDs emitted by current generations. The legacy keys
-  // above stay for plans generated before the typology vocabulary alignment.
-  // New dot fills consume the semantic tokens (never raw hex) so the design
-  // system gate keeps passing as typologies are added; the chip label, not the
-  // hue, is what identifies the space.
+  // Canonical ontology IDs emitted by current generations
   t1_stair: { dotColor: 'var(--accent)', label: 'Private Staircase', zone: 'CORE', isCore: true },
   foyer: { dotColor: 'var(--text-2)', label: 'Entry Foyer', zone: 'N' },
   shared_stair: { dotColor: 'var(--accent)', label: 'Shared Staircase Core', zone: 'CORE', isCore: true },
@@ -208,6 +118,45 @@ const ROOM_METADATA: Record<string, { dotColor: string; label: string; zone: str
   ind_stair: { dotColor: 'var(--semantic-red)', label: 'Industrial Fire Egress Stair', zone: 'CORE', isCore: true },
   admin_catwalk: { dotColor: 'var(--text-2)', label: 'Mezzanine Access Catwalk', zone: 'ACCESS' },
 };
+
+function resolveRoomMeta(
+  roomId: string,
+  baseRoomId: string,
+  isCore?: boolean,
+  isTerraceBand?: boolean,
+  isBalcony?: boolean,
+  fallbackLabel?: string,
+  fallbackZone?: string
+): { dotColor: string; label: string; zone: string } {
+  const meta = ROOM_METADATA[roomId] || ROOM_METADATA[baseRoomId] || {
+    dotColor: isCore ? '#8B5CF6' : (isTerraceBand ? '#0EA5E9' : (isBalcony ? '#10B981' : '#64748B')),
+    label: fallbackLabel || roomId,
+    zone: fallbackZone || 'GEN',
+  };
+  const dotColor = isTerraceBand ? '#0EA5E9' : (isBalcony ? '#10B981' : meta.dotColor);
+  return {
+    dotColor,
+    label: meta.label,
+    zone: meta.zone,
+  };
+}
+
+interface BlueprintViewerProps {
+  svgString: string;
+  svgPaperString?: string;
+  placements?: RoomPlacement[];
+  plotWidthM?: number;
+  plotDepthM?: number;
+  multiStorey?: MultiStoreyBuildingModel | null;
+  sitePlan?: SitePlanModel | null;
+  generationTimestamp?: number;
+  generationId?: string;
+  storeys?: number;
+  isStale?: boolean;
+  requestedTypology?: string;
+  /** Server-computed plan verdict, rendered verbatim. */
+  planVerdict?: string | null;
+}
 
 export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   svgString,
@@ -270,8 +219,12 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
     ? multiStorey.floors[safeFloorIndex] || multiStorey.floors[0]
     : null;
 
-  // Whenever generationId, generationTimestamp, or primary svgString changes: reset active floor, viewTab, pan, and zoom
-  useEffect(() => {
+  // Whenever generation identity changes, adjust view state synchronously during render
+  // avoiding post-render cascading effects, layout thrashing, or stale frames 
+  const currentGenKey = `${generationId ?? ''}_${generationTimestamp ?? ''}_${svgString ?? ''}`;
+  const [prevGenKey, setPrevGenKey] = useState<string>(currentGenKey);
+  if (currentGenKey !== prevGenKey) {
+    setPrevGenKey(currentGenKey);
     setViewTab('floor');
     setActiveFloorIndex(0);
     setSelectedRoomId(null);
@@ -279,7 +232,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
     setPan({ x: 0, y: 0 });
     setModalZoom(1.0);
     setModalPan({ x: 0, y: 0 });
-  }, [generationId, generationTimestamp, svgString]);
+  }
 
   const activeSvg = useMemo(() => {
     if (viewTab === 'site' && effectiveSitePlan?.svg_site_plan) {
@@ -294,7 +247,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   }, [viewTab, effectiveSitePlan, isMultiStorey, currentFloor, mode, svgPaperString, svgString]);
 
   // Derive robust generation key and visible freshness token (Requirement 6)
-  const effectiveGenId = generationId ?? (generationTimestamp ? `T${generationTimestamp}` : (svgString ? `${svgString.length}_${svgString.slice(0, 16).replace(/\W/g, '')}` : 'init'));
+  const effectiveGenId = generationId ?? (generationTimestamp ? `T${generationTimestamp}` : (svgString ? `${svgString.length}_${svgString.slice(0, 16).replace(NON_WORD_RE, '')}` : 'init'));
   const storeysLabel = isMultiStorey ? `G+${(multiStorey?.total_storeys || storeys || 2) - 1}` : 'G';
   const dimsLabel = `${(plotWidthM || 10).toFixed(1)}x${(plotDepthM || 12).toFixed(1)}m`;
   // Sheet truth: the viewer header carries the same frontage + polygon-hash
@@ -325,9 +278,10 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   // re-parse was the largest long task on this surface. This memo still exists
   // for the within-render-reasons: it keeps React from calling into it on every
   // unrelated re-render.
-  const sanitizedSvg = useMemo(
-    () => sanitizeBlueprintSvg(activeSvg, ghostVisible),
-    [activeSvg, ghostVisible]
+  // Defer modal SVG sanitization until modal is open, avoiding redundant DOMParser passes on every floor/mode switch
+  const modalSvg = useMemo(
+    () => (isModalOpen ? sanitizeBlueprintSvg(activeSvg, ghostVisible) : ''),
+    [isModalOpen, activeSvg, ghostVisible]
   );
 
   /**
@@ -465,10 +419,16 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   const typologyMismatch = Boolean(
     multiStorey && requestedTypology && !generatedTypologyMatches(multiStorey, requestedTypology)
   );
-  const selectedRoom = useMemo(
-    () => currentFloor?.rooms.find((room) => room.room_id === selectedRoomId) || null,
-    [currentFloor, selectedRoomId]
-  );
+  const floorRoomMap = useMemo(() => {
+    const map = new Map<string, MultiFloorRoomRectangle>();
+    if (currentFloor?.rooms) {
+      for (const room of currentFloor.rooms) {
+        map.set(room.room_id, room);
+      }
+    }
+    return map;
+  }, [currentFloor]);
+  const selectedRoom = selectedRoomId ? floorRoomMap.get(selectedRoomId) || null : null;
   // A new floor is a new room set: an id that only existed on the previous
   // plate must not highlight or open the inspector.  Derived during render so
   // the viewer never needs an effect just to clear state.
@@ -557,22 +517,28 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
     setModalPan({ x: 0, y: 0 });
   }, [isModalOpen, sheetKey, mode, safeFloorIndex, effectiveViewMode]);
 
-  const selectedRoomWindows = useMemo(
-    () => (currentFloor?.windows || []).filter((window) => window.room_id === selectedRoom?.room_id),
-    [currentFloor, selectedRoom?.room_id]
-  );
-  const selectedRoomDoors = useMemo(
-    () => (currentFloor?.doors || []).filter(
-      (door) => door.from_room === selectedRoom?.room_id || door.to_room === selectedRoom?.room_id
-    ),
-    [currentFloor, selectedRoom?.room_id]
-  );
-  const selectedRoomShafts = useMemo(
-    () => (multiStorey?.duct_shafts || []).filter((shaft) =>
-      shaft.servicing_rooms.includes(selectedRoom?.room_id || '')
-    ),
-    [multiStorey?.duct_shafts, selectedRoom?.room_id]
-  );
+  const selectedRoomWindows = useMemo(() => {
+    const rid = selectedRoom?.room_id;
+    if (!rid || !currentFloor?.windows?.length) return [];
+    return currentFloor.windows.filter((window) => window.room_id === rid);
+  }, [currentFloor, selectedRoom?.room_id]);
+
+  const selectedRoomDoors = useMemo(() => {
+    const rid = selectedRoom?.room_id;
+    if (!rid || !currentFloor?.doors?.length) return [];
+    return currentFloor.doors.filter(
+      (door) => door.from_room === rid || door.to_room === rid
+    );
+  }, [currentFloor, selectedRoom?.room_id]);
+
+  const selectedRoomShafts = useMemo(() => {
+    const rid = selectedRoom?.room_id;
+    if (!rid || !multiStorey?.duct_shafts?.length) return [];
+    return multiStorey.duct_shafts.filter((shaft) =>
+      shaft.servicing_rooms.includes(rid)
+    );
+  }, [multiStorey, selectedRoom?.room_id]);
+
   const selectedRoomFurniture = selectedRoom?.furniture || [];
   const selectedRoomFurnitureOk = selectedRoomFurniture.length > 0 &&
     selectedRoomFurniture.every((item) => item.is_satisfied);
@@ -585,20 +551,22 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   const currentPlacements = useMemo(() => {
     const schedule = (currentFloor?.room_schedule ?? []) as Array<Record<string, unknown>>;
     const clearByRoom = new Map<string, number>();
+    const clearByBaseRoom = new Map<string, number>();
     for (const row of schedule) {
       const id = typeof row.room_id === 'string' ? row.room_id : null;
       const clear = Number(row.clear_area_sqm ?? row.area_sqm);
-      if (id && Number.isFinite(clear) && clear > 0) clearByRoom.set(id, clear);
+      if (id && Number.isFinite(clear) && clear > 0) {
+        clearByRoom.set(id, clear);
+        const base = id.replace(FLOOR_SUFFIX_RE, '');
+        if (!clearByBaseRoom.has(base)) clearByBaseRoom.set(base, clear);
+      }
     }
     const clearAreaFor = (roomId: string, fallback: number | undefined): number | undefined => {
       const direct = clearByRoom.get(roomId);
       if (direct !== undefined) return direct;
-      // Floor-suffixed rows (living_F0) vs base ids (living): match on the base
-      // id so a placement without its own schedule row still resolves.
-      const base = roomId.replace(/_F\d+$/, '');
-      for (const [id, area] of clearByRoom) {
-        if (id.replace(/_F\d+$/, '') === base) return area;
-      }
+      const base = roomId.replace(FLOOR_SUFFIX_RE, '');
+      const baseMatch = clearByBaseRoom.get(base);
+      if (baseMatch !== undefined) return baseMatch;
       return fallback;
     };
     if (isMultiStorey && currentFloor && currentFloor.rooms && currentFloor.rooms.length > 0) {
@@ -619,9 +587,50 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
     }));
   }, [isMultiStorey, currentFloor, placements]);
 
-  const selectedRoomClearArea = useMemo(
-    () => currentPlacements.find((placement) => placement.room_id === selectedRoom?.room_id)?.area_sqm,
-    [currentPlacements, selectedRoom?.room_id]
+  const placementAreaMap = useMemo(() => {
+    const map = new Map<string, number | undefined>();
+    for (const p of currentPlacements) {
+      map.set(p.room_id, p.area_sqm);
+    }
+    return map;
+  }, [currentPlacements]);
+
+  const selectedRoomClearArea = selectedRoom?.room_id ? placementAreaMap.get(selectedRoom.room_id) : undefined;
+
+  const roomChips = useMemo(() => {
+    return currentPlacements.map((p) => {
+      const baseRoomId = p.room_id.replace(FLOOR_SUFFIX_RE, '');
+      const isTerraceBand = baseRoomId === 'terrace_band' || baseRoomId.includes('terrace') || (p as { zone_category?: string }).zone_category === 'terrace';
+      const isBalcony = baseRoomId === 'balcony' || baseRoomId === 'apt_balcony';
+
+      const meta = resolveRoomMeta(
+        p.room_id,
+        baseRoomId,
+        p.is_core,
+        isTerraceBand,
+        isBalcony,
+        p.room_name,
+        p.zone
+      );
+      const chipDotColor = meta.dotColor;
+      const chipLabel = isTerraceBand ? 'Open Terrace / Sky Deck' : (isBalcony ? 'Covered Balcony' : (meta.label || p.room_name));
+      const chipZone = isTerraceBand ? 'TERRACE' : (isBalcony ? (p.zone || 'NE') : (meta.zone || p.zone));
+
+      return {
+        roomId: p.room_id,
+        isCore: p.is_core,
+        isTerraceBand,
+        areaSqm: p.area_sqm,
+        chipDotColor,
+        chipLabel,
+        chipZone,
+      };
+    });
+  }, [currentPlacements]);
+
+  const interiorWedgeZones = useMemo(
+    () => effectiveSitePlan?.wedge_zones?.filter((w) => w.is_interior_side) ?? [],
+    [effectiveSitePlan?.wedge_zones]
   );
 
   const handleZoomIn = () => setZoom((z) => Math.min(2.5, +(z + 0.25).toFixed(2)));
@@ -711,8 +720,9 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
 
   const handleDownloadSvg = () => {
     if (isStale) return;
-    if (!sanitizedSvg) return;
-    const blob = new Blob([sanitizedSvg], { type: 'image/svg+xml;charset=utf-8' });
+    const svgContent = modalSvg || sanitizeBlueprintSvg(activeSvg, ghostVisible);
+    if (!svgContent) return;
+    const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -840,31 +850,20 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   const handleMouseUp = () => setIsPanning(false);
 
   /* ---------- sheet gestures (touch pan/pinch; fixed-fidelity artifact) ---------- */
-  const cardGestureRef = useRef<SheetGestureState>({ mode: 'none', dist: 0, zoom: 1, x: 0, y: 0 });
-  const modalGestureRef = useRef<SheetGestureState>({ mode: 'none', dist: 0, zoom: 1, x: 0, y: 0 });
-  const lastTapRef = useRef<{ t: number; x: number; y: number }>({ t: 0, x: 0, y: 0 });
   const dragMovedRef = useRef<boolean>(false);
   const cardCanvasRef = useRef<HTMLDivElement>(null);
   const modalCanvasRef = useRef<HTMLDivElement>(null);
 
-  const cardGestures = makeSheetGestures({
-    gestureRef: cardGestureRef,
-    panStartRef: panStartRef,
-    movedRef: dragMovedRef,
-    lastTapRef,
+  const cardGestures = useSheetGestures({
     getPan: () => pan,
-    setPan: setPan,
+    setPan,
     getZoom: () => zoom,
-    setZoom: setZoom,
+    setZoom,
     minZoom: 1.0,
     maxZoom: 2.5,
     onDoubleTap: () => setZoom((z) => (z > 1.5 ? 1.0 : Math.min(2.5, z + 0.5))),
   });
-  const modalGestures = makeSheetGestures({
-    gestureRef: modalGestureRef,
-    panStartRef: modalPanStartRef,
-    movedRef: dragMovedRef,
-    lastTapRef,
+  const modalGestures = useSheetGestures({
     getPan: () => modalPan,
     setPan: setModalPan,
     getZoom: () => modalZoom,
@@ -903,7 +902,6 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   const handleModalMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     setIsModalPanning(true);
-    dragMovedRef.current = false;
     modalDragStartRef.current = { x: e.clientX, y: e.clientY };
     modalPanStartRef.current = { ...modalPan };
   };
@@ -911,7 +909,6 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
   const handleModalMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!isModalPanning) return;
-      dragMovedRef.current = true;
       const dx = e.clientX - modalDragStartRef.current.x;
       const dy = e.clientY - modalDragStartRef.current.y;
       setModalPan({
@@ -958,11 +955,10 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             disabled={unavailable}
             title={unavailable ? 'This sheet has no addressable plan layers to focus' : `${option.label} — ${option.hint}`}
             onClick={() => changeViewMode(option.id)}
-            className={`bw-touch-target h-7 sm:h-8 px-2 sm:px-2.5 rounded-[6px] sm:rounded-[7px] text-[10px] sm:text-[11px] font-semibold transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 disabled:opacity-40 disabled:cursor-not-allowed ${
-              active
+            className={`bw-touch-target h-7 sm:h-8 px-2 sm:px-2.5 rounded-[6px] sm:rounded-[7px] text-[10px] sm:text-[11px] font-semibold transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 disabled:opacity-40 disabled:cursor-not-allowed ${active
                 ? 'bg-[var(--segmented-active-bg)] text-[var(--segmented-active-label)] bw-segmented-active-shadow cursor-default'
                 : 'text-[var(--text-1)] cursor-pointer active:scale-[0.97]'
-            }`}
+              }`}
           >
             {isModal ? option.label : option.short}
           </button>
@@ -1001,9 +997,8 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
 
     return (
       <div
-        className={`flex items-center gap-1.5 overflow-x-auto py-1.5 px-2.5 sm:px-3.5 border-b border-[var(--hairline)] ${
-          isModal ? 'bg-[var(--fill)]/40' : 'bg-[var(--fill)]/20'
-        } overscroll-x-contain touch-pan-x [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}
+        className={`flex items-center gap-1.5 overflow-x-auto py-1.5 px-2.5 sm:px-3.5 border-b border-[var(--hairline)] ${isModal ? 'bg-[var(--fill)]/40' : 'bg-[var(--fill)]/20'
+          } overscroll-x-contain touch-pan-x [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}
       >
         <div className="flex items-center gap-1 mr-1 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-[var(--text-3)] shrink-0 select-none">
           <Icon name="layers" size={13} className="text-[var(--accent-ink)]" />
@@ -1017,18 +1012,16 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             data-testid="tab-site-plan"
             aria-pressed={viewTab === 'site'}
             onClick={() => setViewTab('site')}
-            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-[8px] sm:rounded-[9px] text-[11px] sm:text-[12px] transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              viewTab === 'site'
+            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-[8px] sm:rounded-[9px] text-[11px] sm:text-[12px] transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${viewTab === 'site'
                 ? 'bg-emerald-700 text-white shadow-xs font-semibold ring-1 ring-white/20'
                 : 'bg-[var(--fill)] text-[var(--text-1)] hover:text-[var(--text-1)] hover:bg-[var(--fill-hover)] font-medium'
-            }`}
+              }`}
           >
             <Icon name="compass" size={13} />
             <span>Site Plan</span>
             <span
-              className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ${
-                viewTab === 'site' ? 'bg-black/20 text-white' : 'bg-emerald-500/20 text-emerald-900 dark:text-emerald-200'
-              }`}
+              className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ${viewTab === 'site' ? 'bg-black/20 text-white' : 'bg-emerald-500/20 text-emerald-900 dark:text-emerald-200'
+                }`}
             >
               10.SP
             </span>
@@ -1055,25 +1048,22 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                 setViewTab('floor');
                 setActiveFloorIndex(idx);
               }}
-              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-[8px] sm:rounded-[9px] text-[11px] sm:text-[12px] transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                isActive
+              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-[8px] sm:rounded-[9px] text-[11px] sm:text-[12px] transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${isActive
                   ? 'bg-[var(--accent)] text-white shadow-xs font-semibold ring-1 ring-white/20'
                   : 'bg-[var(--fill)] text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--fill-hover)] font-medium'
-              }`}
+                }`}
             >
               <span>{tabLabel}</span>
               <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                  isActive ? 'bg-black/20 text-white' : 'bg-black/5 dark:bg-white/10 text-[var(--text-1)]'
-                }`}
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${isActive ? 'bg-black/20 text-white' : 'bg-black/5 dark:bg-white/10 text-[var(--text-1)]'
+                  }`}
               >
                 +{elevation}m
               </span>
               {isGround && (
                 <span
-                  className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ${
-                    isActive ? 'bg-amber-400 text-amber-950' : 'bg-amber-500/15 text-[var(--semantic-amber-ink)]'
-                  }`}
+                  className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ${isActive ? 'bg-amber-400 text-amber-950' : 'bg-amber-500/15 text-[var(--semantic-amber-ink)]'
+                    }`}
                 >
                   Anchor
                 </span>
@@ -1215,22 +1205,20 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
             <button
               type="button"
               onClick={() => setMode('cad')}
-              className={`h-6 px-1.5 sm:px-2.5 rounded-[6px] sm:rounded-[7px] text-[10px] sm:text-[11px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
-                mode === 'cad'
+              className={`h-6 px-1.5 sm:px-2.5 rounded-[6px] sm:rounded-[7px] text-[10px] sm:text-[11px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${mode === 'cad'
                   ? 'bg-[var(--segmented-active-bg)] text-[var(--segmented-active-label)] bw-segmented-active-shadow'
                   : 'text-[var(--text-2)] hover:text-[var(--text-1)]'
-              }`}
+                }`}
             >
               CAD
             </button>
             <button
               type="button"
               onClick={() => setMode('paper')}
-              className={`h-6 px-1.5 sm:px-2.5 rounded-[6px] sm:rounded-[7px] text-[10px] sm:text-[11px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
-                mode === 'paper'
+              className={`h-6 px-1.5 sm:px-2.5 rounded-[6px] sm:rounded-[7px] text-[10px] sm:text-[11px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${mode === 'paper'
                   ? 'bg-[var(--segmented-active-bg)] text-[var(--segmented-active-label)] bw-segmented-active-shadow'
                   : 'text-[var(--text-2)] hover:text-[var(--text-1)]'
-              }`}
+                }`}
             >
               Paper
             </button>
@@ -1248,16 +1236,15 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                 activeFloorIndex === 0
                   ? 'Ground Floor is the primary Anchor Core (Ghost overlay appears on upper floors)'
                   : showGhostOverlay
-                  ? 'Hide F0 Core Ghost Overlay'
-                  : 'Show F0 Core Ghost Overlay (Verifying vertical stacking alignment)'
+                    ? 'Hide F0 Core Ghost Overlay'
+                    : 'Show F0 Core Ghost Overlay (Verifying vertical stacking alignment)'
               }
-              className={`h-6 sm:h-7 px-1.5 sm:px-2.5 rounded-[7px] sm:rounded-[9px] text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out cursor-pointer select-none active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 disabled:active:scale-100 ${
-                activeFloorIndex === 0
+              className={`h-6 sm:h-7 px-1.5 sm:px-2.5 rounded-[7px] sm:rounded-[9px] text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out cursor-pointer select-none active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 disabled:active:scale-100 ${activeFloorIndex === 0
                   ? 'opacity-50 cursor-not-allowed bg-[var(--fill)] text-[var(--text-3)]'
                   : showGhostOverlay
-                  ? 'bg-amber-500/15 text-[var(--semantic-amber-ink)] border border-amber-500/30 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.12),0_1px_3px_rgba(245,158,11,0.15)]'
-                  : 'bg-[var(--fill)] text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--fill-hover)]'
-              }`}
+                    ? 'bg-amber-500/15 text-[var(--semantic-amber-ink)] border border-amber-500/30 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.12),0_1px_3px_rgba(245,158,11,0.15)]'
+                    : 'bg-[var(--fill)] text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--fill-hover)]'
+                }`}
             >
               <Icon
                 name="layers"
@@ -1322,11 +1309,10 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                 : 'Export Multi-Page Architectural PDF Dossier (Cover Sheet 10.0 + Floor Sheets 10.1-10.N)'
             }
             aria-label="Export Dossier (PDF)"
-            className={`h-6 sm:h-7 px-1.5 sm:px-2.5 rounded-[7px] sm:rounded-[9px] text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out select-none ${
-              isStale
+            className={`h-6 sm:h-7 px-1.5 sm:px-2.5 rounded-[7px] sm:rounded-[9px] text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out select-none ${isStale
                 ? 'opacity-40 cursor-not-allowed bg-[var(--fill)] text-[var(--text-3)] border border-[var(--hairline)]'
                 : 'bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 text-red-800 dark:text-red-200 border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_1px_2px_rgba(220,38,38,0.12)] cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100'
-            }`}
+              }`}
           >
             {isExportingPdf ? (
               <>
@@ -1376,7 +1362,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
         onClick={() => {
           // The whole canvas opens the modal — but a drag that ended here is a
           // pan gesture, not a click (mouse and touch alike).
-          if (dragMovedRef.current) return;
+          if (dragMovedRef.current || cardGestures.movedRef.current) return;
           setIsModalOpen(true);
         }}
         title="Click to open full-size blueprint modal"
@@ -1487,18 +1473,16 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
 
           {/* Parking Envelope & ECS Coexistence */}
           {effectiveSitePlan.parking && (
-            <div className={`p-2.5 rounded-[8px] border text-[11px] flex flex-col gap-1.5 ${
-              effectiveSitePlan.parking.coexistence_status === 'COEXISTENT'
+            <div className={`p-2.5 rounded-[8px] border text-[11px] flex flex-col gap-1.5 ${effectiveSitePlan.parking.coexistence_status === 'COEXISTENT'
                 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-200'
                 : 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-200'
-            }`}>
+              }`}>
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${
-                    effectiveSitePlan.parking.coexistence_status === 'COEXISTENT'
+                  <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${effectiveSitePlan.parking.coexistence_status === 'COEXISTENT'
                       ? 'bg-emerald-500/25 text-emerald-800 dark:text-emerald-200'
                       : 'bg-amber-500/25 text-amber-800 dark:text-amber-200'
-                  }`}>
+                    }`}>
                     Parking ({effectiveSitePlan.parking.provided_ecs}/{effectiveSitePlan.parking.required_ecs} ECS)
                     {ECS_DISCLOSURE}
                   </span>
@@ -1583,18 +1567,17 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
               {Object.entries(effectiveSitePlan.checklist).map(([key, val]) => (
                 <span
                   key={key}
-                  className={`px-1.5 py-0.5 rounded whitespace-nowrap border ${
-                    val
+                  className={`px-1.5 py-0.5 rounded whitespace-nowrap border ${val
                       ? 'bg-emerald-500/10 text-[var(--semantic-green-ink)] border-emerald-500/30'
                       : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30'
-                  }`}
+                    }`}
                 >
                   {val ? (
                     <Icon name="check" size={11} className="inline-block align-[-2px] text-[var(--semantic-green-ink)]" />
                   ) : (
                     <Icon name="x" size={11} className="inline-block align-[-2px] text-[var(--semantic-red-ink)]" />
                   )}{' '}
-                  {key.replace(/_/g, ' ')}
+                  {key.replace(UNDERSCORE_RE, ' ')}
                 </span>
               ))}
             </div>
@@ -1629,61 +1612,45 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
               </span>
             )}
           </div>
-          {currentPlacements.map((p, pIdx) => {
-            const baseRoomId = p.room_id.replace(/_F\d+$/, '');
-            const isTerraceBand = baseRoomId === 'terrace_band' || baseRoomId.includes('terrace') || (p as any).zone_category === 'terrace';
-            const isBalcony = baseRoomId === 'balcony' || baseRoomId === 'apt_balcony';
-
-            const meta = ROOM_METADATA[p.room_id] || ROOM_METADATA[baseRoomId] || {
-              dotColor: p.is_core ? '#8B5CF6' : (isTerraceBand ? '#0EA5E9' : (isBalcony ? '#10B981' : '#64748B')),
-              label: p.room_name,
-              zone: p.zone,
-            };
-            const chipDotColor = isTerraceBand ? '#0EA5E9' : (isBalcony ? '#10B981' : meta.dotColor);
-            const chipLabel = isTerraceBand ? 'Open Terrace / Sky Deck' : (isBalcony ? 'Covered Balcony' : (meta.label || p.room_name));
-            const chipZone = isTerraceBand ? 'TERRACE' : (isBalcony ? (p.zone || 'NE') : (meta.zone || p.zone));
-
-            return (
-              <button
-                type="button"
-                key={`${p.room_id}-${pIdx}`}
-                data-testid={`room-chip-${p.room_id}`}
-                aria-pressed={activeRoomId === p.room_id}
-                onClick={() => setSelectedRoomId((current) => (current === p.room_id ? null : p.room_id))}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium whitespace-nowrap select-none border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
-                  activeRoomId === p.room_id
-                    ? 'ring-2 ring-[var(--accent)]/60 border-[var(--accent)]/60'
-                    : ''
-                } ${
-                  p.is_core
-                    ? 'bg-purple-500/10 border-purple-500/30 text-purple-700 dark:text-purple-300'
-                    : isTerraceBand
+          {roomChips.map((chip, pIdx) => (
+            <button
+              type="button"
+              key={`${chip.roomId}-${pIdx}`}
+              data-testid={`room-chip-${chip.roomId}`}
+              aria-pressed={activeRoomId === chip.roomId}
+              onClick={() => setSelectedRoomId((current) => (current === chip.roomId ? null : chip.roomId))}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium whitespace-nowrap select-none border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${activeRoomId === chip.roomId
+                  ? 'ring-2 ring-[var(--accent)]/60 border-[var(--accent)]/60'
+                  : ''
+                } ${chip.isCore
+                  ? 'bg-purple-500/10 border-purple-500/30 text-purple-700 dark:text-purple-300'
+                  : chip.isTerraceBand
                     ? 'bg-sky-500/10 border-sky-500/30 text-sky-800 dark:text-sky-200'
                     : 'bg-[var(--fill)] border-transparent text-[var(--text-1)]'
                 }`}
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs"
-                  style={{ backgroundColor: chipDotColor }}
-                />                  <span className="text-[11px] font-mono font-semibold">[{pIdx + 1}]</span>
-                  <span className="text-[12px] font-medium">{chipLabel}</span>
-                  {p.area_sqm !== undefined && (
-                    <span className="text-[11px] font-mono">{p.area_sqm.toFixed(2)}m²</span>
-                  )}
-                <span className="text-[10px] text-[var(--text-3)] font-normal">({chipZone})</span>
-                {p.is_core && (
-                  <span className="text-[9px] px-1 py-0.2 rounded font-bold uppercase bg-purple-500/20 text-purple-800 dark:text-purple-200 tracking-wider">
-                    Core
-                  </span>
-                )}
-                {isTerraceBand && (
-                  <span className="text-[9px] px-1.5 py-0.2 rounded font-bold uppercase bg-sky-500/20 text-sky-700 dark:text-sky-300 tracking-wider">
-                    TERRACE / Non-Carpet
-                  </span>
-                )}
-              </button>
-            );
-          })}
+            >
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs"
+                style={{ backgroundColor: chip.chipDotColor }}
+              />
+              <span className="text-[11px] font-mono font-semibold">[{pIdx + 1}]</span>
+              <span className="text-[12px] font-medium">{chip.chipLabel}</span>
+              {chip.areaSqm !== undefined && (
+                <span className="text-[11px] font-mono">{chip.areaSqm.toFixed(2)}m²</span>
+              )}
+              <span className="text-[10px] text-[var(--text-3)] font-normal">({chip.chipZone})</span>
+              {chip.isCore && (
+                <span className="text-[9px] px-1 py-0.2 rounded font-bold uppercase bg-purple-500/20 text-purple-800 dark:text-purple-200 tracking-wider">
+                  Core
+                </span>
+              )}
+              {chip.isTerraceBand && (
+                <span className="text-[9px] px-1.5 py-0.2 rounded font-bold uppercase bg-sky-500/20 text-sky-700 dark:text-sky-300 tracking-wider">
+                  TERRACE / Non-Carpet
+                </span>
+              )}
+            </button>
+          ))}
           {selectedRoom && (
             <div
               data-testid="room-inspector"
@@ -1780,7 +1747,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
               </div>
             </div>
           )}
-          {safeFloorIndex === 0 && effectiveSitePlan?.wedge_zones?.filter(w => w.is_interior_side).map((wz) => (
+          {safeFloorIndex === 0 && interiorWedgeZones.map((wz) => (
             <div
               key={`interior-wedge-${wz.wedge_id}`}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium whitespace-nowrap select-none border border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200"
@@ -1875,22 +1842,20 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                     <button
                       type="button"
                       onClick={() => setMode('cad')}
-                      className={`h-6 px-2.5 sm:px-3 rounded-[6px] sm:rounded-[7px] text-[11px] sm:text-[12px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
-                        mode === 'cad'
+                      className={`h-6 px-2.5 sm:px-3 rounded-[6px] sm:rounded-[7px] text-[11px] sm:text-[12px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${mode === 'cad'
                           ? 'bg-[var(--segmented-active-bg)] text-[var(--segmented-active-label)] bw-segmented-active-shadow'
                           : 'text-[var(--text-1)] hover:text-[var(--text-1)]'
-                      }`}
+                        }`}
                     >
                       CAD
                     </button>
                     <button
                       type="button"
                       onClick={() => setMode('paper')}
-                      className={`h-6 px-2.5 sm:px-3 rounded-[6px] sm:rounded-[7px] text-[11px] sm:text-[12px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
-                        mode === 'paper'
+                      className={`h-6 px-2.5 sm:px-3 rounded-[6px] sm:rounded-[7px] text-[11px] sm:text-[12px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${mode === 'paper'
                           ? 'bg-[var(--segmented-active-bg)] text-[var(--segmented-active-label)] bw-segmented-active-shadow'
                           : 'text-[var(--text-1)] hover:text-[var(--text-1)]'
-                      }`}
+                        }`}
                     >
                       Paper
                     </button>
@@ -1906,16 +1871,15 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                         safeFloorIndex === 0
                           ? 'Ground Floor is the primary Anchor Core'
                           : showGhostOverlay
-                          ? 'Hide F0 Core Ghost Overlay'
-                          : 'Show F0 Core Ghost Overlay'
+                            ? 'Hide F0 Core Ghost Overlay'
+                            : 'Show F0 Core Ghost Overlay'
                       }
-                      className={`h-7 sm:h-8 px-2 sm:px-2.5 rounded-[8px] sm:rounded-[9px] text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out cursor-pointer mr-1 select-none active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 disabled:active:scale-100 ${
-                        safeFloorIndex === 0
+                      className={`h-7 sm:h-8 px-2 sm:px-2.5 rounded-[8px] sm:rounded-[9px] text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out cursor-pointer mr-1 select-none active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 disabled:active:scale-100 ${safeFloorIndex === 0
                           ? 'opacity-50 cursor-not-allowed bg-[var(--fill)] text-[var(--text-3)]'
                           : showGhostOverlay
-                          ? 'bg-amber-500/15 text-[var(--semantic-amber-ink)] border border-amber-500/30 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.12),0_1px_3px_rgba(245,158,11,0.15)]'
-                          : 'bg-[var(--fill)] text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--fill-hover)]'
-                      }`}
+                            ? 'bg-amber-500/15 text-[var(--semantic-amber-ink)] border border-amber-500/30 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.12),0_1px_3px_rgba(245,158,11,0.15)]'
+                            : 'bg-[var(--fill)] text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--fill-hover)]'
+                        }`}
                     >
                       <Icon
                         name="layers"
@@ -1976,11 +1940,10 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                         ? 'Parameters changed — regenerate blueprint before exporting.'
                         : 'Export Multi-Page Architectural PDF Dossier'
                     }
-                    className={`h-7 sm:h-8 px-2 sm:px-3 rounded-[8px] sm:rounded-[9px] text-[11px] sm:text-[12px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out mr-1 sm:mr-2 select-none ${
-                      isStale
+                    className={`h-7 sm:h-8 px-2 sm:px-3 rounded-[8px] sm:rounded-[9px] text-[11px] sm:text-[12px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out mr-1 sm:mr-2 select-none ${isStale
                         ? 'opacity-40 cursor-not-allowed bg-[var(--fill)] text-[var(--text-3)] border border-[var(--hairline)]'
                         : 'bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 text-red-800 dark:text-red-200 border border-red-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_1px_2px_rgba(220,38,38,0.15)] cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100'
-                    }`}
+                      }`}
                   >
                     {isExportingPdf ? (
                       <>
@@ -2008,11 +1971,10 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                         ? 'Parameters changed — regenerate blueprint before exporting.'
                         : 'Export SVG'
                     }
-                    className={`h-7 sm:h-8 px-2.5 sm:px-3.5 rounded-[8px] sm:rounded-[9px] text-[11px] sm:text-[12px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out select-none mr-1 sm:mr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/60 ${
-                      isStale
+                    className={`h-7 sm:h-8 px-2.5 sm:px-3.5 rounded-[8px] sm:rounded-[9px] text-[11px] sm:text-[12px] font-semibold flex items-center gap-1 sm:gap-1.5 transition-colors duration-150 ease-out select-none mr-1 sm:mr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/60 ${isStale
                         ? 'opacity-40 cursor-not-allowed bg-[var(--fill)] text-[var(--text-3)] border border-[var(--hairline)]'
                         : 'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] active:bg-[var(--accent-press)] active:scale-[0.97] cursor-pointer shadow-[0_1px_3px_rgba(0,113,227,0.35)]'
-                    }`}
+                      }`}
                   >
                     <Icon name="download" size={13} />
                     <span className="whitespace-nowrap hidden sm:inline">Export SVG</span>
@@ -2083,7 +2045,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                     ref={modalSheetRef}
                     data-testid="blueprint-sheet-modal"
                     className="relative flex items-center justify-center w-full h-full drop-shadow-xl"
-                    dangerouslySetInnerHTML={{ __html: sanitizedSvg }}
+                    dangerouslySetInnerHTML={{ __html: modalSvg }}
                   />
                 </div>
               </div>
@@ -2120,60 +2082,43 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                       </span>
                     )}
                   </div>
-                  {currentPlacements.map((p, pIdx) => {
-                    const baseRoomId = p.room_id.replace(/_F\d+$/, '');
-                    const isTerraceBand = baseRoomId === 'terrace_band' || baseRoomId.includes('terrace') || (p as any).zone_category === 'terrace';
-                    const isBalcony = baseRoomId === 'balcony' || baseRoomId === 'apt_balcony';
-
-                    const meta = ROOM_METADATA[p.room_id] || ROOM_METADATA[baseRoomId] || {
-                      dotColor: p.is_core ? '#8B5CF6' : (isTerraceBand ? '#0EA5E9' : (isBalcony ? '#10B981' : '#64748B')),
-                      label: p.room_name,
-                      zone: p.zone,
-                    };
-                    const chipDotColor = isTerraceBand ? '#0EA5E9' : (isBalcony ? '#10B981' : meta.dotColor);
-                    const chipLabel = isTerraceBand ? 'Open Terrace / Sky Deck' : (isBalcony ? 'Covered Balcony' : (meta.label || p.room_name));
-                    const chipZone = isTerraceBand ? 'TERRACE' : (isBalcony ? (p.zone || 'NE') : (meta.zone || p.zone));
-
-                    return (
-                      <button
-                        type="button"
-                        key={`modal-legend-${p.room_id}-${pIdx}`}
-                        data-testid={`modal-room-chip-${p.room_id}`}
-                        aria-pressed={activeRoomId === p.room_id}
-                        onClick={() => setSelectedRoomId((current) => (current === p.room_id ? null : p.room_id))}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium whitespace-nowrap select-none border cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
-                          activeRoomId === p.room_id ? 'ring-2 ring-[var(--accent)]/60 border-[var(--accent)]/60' : ''
-                        } ${
-                          p.is_core
-                            ? 'bg-purple-500/10 border-purple-500/30 text-purple-700 dark:text-purple-300'
-                            : isTerraceBand
+                  {roomChips.map((chip, pIdx) => (
+                    <button
+                      type="button"
+                      key={`modal-legend-${chip.roomId}-${pIdx}`}
+                      data-testid={`modal-room-chip-${chip.roomId}`}
+                      aria-pressed={activeRoomId === chip.roomId}
+                      onClick={() => setSelectedRoomId((current) => (current === chip.roomId ? null : chip.roomId))}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium whitespace-nowrap select-none border cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${activeRoomId === chip.roomId ? 'ring-2 ring-[var(--accent)]/60 border-[var(--accent)]/60' : ''
+                        } ${chip.isCore
+                          ? 'bg-purple-500/10 border-purple-500/30 text-purple-700 dark:text-purple-300'
+                          : chip.isTerraceBand
                             ? 'bg-sky-500/10 border-sky-500/30 text-sky-800 dark:text-sky-200'
                             : 'bg-[var(--fill)] border-transparent text-[var(--text-1)]'
                         }`}
-                      >
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs"
-                          style={{ backgroundColor: chipDotColor }}
-                        />
-                        <span className="text-[11px] font-mono font-semibold">[{pIdx + 1}]</span>
-                        <span className="text-[12px] font-medium">{chipLabel}</span>
-                        {p.area_sqm !== undefined && (
-                          <span className="text-[11px] font-mono">{p.area_sqm.toFixed(1)}m²</span>
-                        )}
-                        <span className="text-[11px] text-[var(--text-3)] font-normal">({chipZone})</span>
-                        {p.is_core && (
-                          <span className="text-[9px] px-1 py-0.2 rounded font-bold uppercase bg-purple-500/20 text-purple-800 dark:text-purple-200 tracking-wider">
-                            Core
-                          </span>
-                        )}
-                        {isTerraceBand && (
-                          <span className="text-[9px] px-1.5 py-0.2 rounded font-bold uppercase bg-sky-500/20 text-sky-700 dark:text-sky-300 tracking-wider">
-                            TERRACE / Non-Carpet
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                    >
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs"
+                        style={{ backgroundColor: chip.chipDotColor }}
+                      />
+                      <span className="text-[11px] font-mono font-semibold">[{pIdx + 1}]</span>
+                      <span className="text-[12px] font-medium">{chip.chipLabel}</span>
+                      {chip.areaSqm !== undefined && (
+                        <span className="text-[11px] font-mono">{chip.areaSqm.toFixed(1)}m²</span>
+                      )}
+                      <span className="text-[11px] text-[var(--text-3)] font-normal">({chip.chipZone})</span>
+                      {chip.isCore && (
+                        <span className="text-[9px] px-1 py-0.2 rounded font-bold uppercase bg-purple-500/20 text-purple-800 dark:text-purple-200 tracking-wider">
+                          Core
+                        </span>
+                      )}
+                      {chip.isTerraceBand && (
+                        <span className="text-[9px] px-1.5 py-0.2 rounded font-bold uppercase bg-sky-500/20 text-sky-700 dark:text-sky-300 tracking-wider">
+                          TERRACE / Non-Carpet
+                        </span>
+                      )}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
