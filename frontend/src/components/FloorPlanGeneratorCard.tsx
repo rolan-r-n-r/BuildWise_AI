@@ -10,8 +10,15 @@ import {
 } from '../services/warningReport';
 import type { RemediationOption } from '../services/types';
 import { generateFloorPlan } from '../services/api';
-import { BlueprintViewer } from './BlueprintViewer';
 import { Icon } from './Icon';
+
+// Code-split heavy CAD/SVG BlueprintViewer
+const BlueprintViewer = React.lazy(() =>
+  import('./BlueprintViewer').then((m) => ({ default: m.BlueprintViewer }))
+);
+const preloadBlueprintViewer = () => {
+  void import('./BlueprintViewer');
+};
 import {
   buildPlotPolygonPayload,
   metricsFor,
@@ -195,22 +202,33 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
 
       if (isTypologyChanged || !hasValidRooms) {
         // Switch to sensible default selection for the newly selected typology
-        const defaultSelection = availableRooms
-          .filter((r) => r.required || (activeFloors >= 2 && r.isCore))
-          .map((r) => r.id);
+        const defaultSelection: string[] = [];
+        for (const r of availableRooms) {
+          if (r.required || (activeFloors >= 2 && r.isCore)) {
+            defaultSelection.push(r.id);
+          }
+        }
 
         setSelectedRooms(defaultSelection.length >= 3 ? defaultSelection : availableRooms.slice(0, 4).map((r) => r.id));
       } else if (isFloorsChanged) {
         if (activeFloors >= 2) {
           // Auto-include vertical core rooms if multiple storeys requested
-          const coreRooms = availableRooms.filter((r) => r.isCore).map((r) => r.id);
+          const coreRooms: string[] = [];
+          for (const r of availableRooms) {
+            if (r.isCore) coreRooms.push(r.id);
+          }
           setSelectedRooms((prev) => Array.from(new Set([...prev, ...coreRooms])));
         } else {
           // Exclude vertical core rooms when switching back to single storey to kill cross-run bleed
-          const coreRoomIds = new Set(availableRooms.filter((r) => r.isCore).map((r) => r.id));
+          const coreRoomIds = new Set<string>();
+          const requiredRoomIds: string[] = [];
+          for (const r of availableRooms) {
+            if (r.isCore) coreRoomIds.add(r.id);
+            if (r.required) requiredRoomIds.push(r.id);
+          }
           setSelectedRooms((prev) => {
             const filtered = prev.filter((r) => !coreRoomIds.has(r));
-            return filtered.length >= 3 ? filtered : availableRooms.filter((r) => r.required).map((r) => r.id);
+            return filtered.length >= 3 ? filtered : requiredRoomIds;
           });
         }
       }
@@ -304,6 +322,7 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
   const viewerReady = planKey !== null && readyPlanKey === planKey;
   useEffect(() => {
     if (!planKey) return;
+    preloadBlueprintViewer();
     let cancelled = false;
     const mount = () => {
       if (cancelled) return;
@@ -321,13 +340,6 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
       else clearTimeout(handle);
     };
   }, [planKey]);
-
-  // Synchronize when parent activeFloorPlan changes
-  useEffect(() => {
-    if (activeFloorPlan !== undefined) {
-      setLocalFloorPlan(activeFloorPlan);
-    }
-  }, [activeFloorPlan]);
 
   const activeBandsPayload = (() => {
     if (siteMode !== 'rectangle') return undefined;
@@ -577,6 +589,9 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
       timedOut = true;
       controller.abort();
     }, timeoutMs);
+
+    // Warm the BlueprintViewer bundle while solver computes
+    preloadBlueprintViewer();
 
     try {
       const resp = await generateFloorPlan(finalReq, controller.signal);
@@ -1873,21 +1888,30 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
               behind a same-height placeholder so the arrival is chunked without
               moving anything. */}
           {viewerReady ? (
-            <BlueprintViewer
-              svgString={floorPlan.svg_blueprint}
-              svgPaperString={floorPlan.svg_blueprint_paper}
-              placements={floorPlan.placements}
-              plotWidthM={plotWidth}
-              plotDepthM={plotDepth}
-              multiStorey={floorPlan.multi_storey}
-              sitePlan={floorPlan.site_plan || floorPlan.multi_storey?.site_plan}
-              generationTimestamp={floorPlan.generated_at}
-              generationId={floorPlan.generation_id}
-              storeys={activeFloors}
-              isStale={isPlanStale}
-              requestedTypology={activeTypology}
-              planVerdict={planVerdict}
-            />
+            <React.Suspense
+              fallback={
+                <Skeleton
+                  className="h-[360px] w-full rounded-[16px]"
+                  label="Rendering architectural blueprint"
+                />
+              }
+            >
+              <BlueprintViewer
+                svgString={floorPlan.svg_blueprint}
+                svgPaperString={floorPlan.svg_blueprint_paper}
+                placements={floorPlan.placements}
+                plotWidthM={plotWidth}
+                plotDepthM={plotDepth}
+                multiStorey={floorPlan.multi_storey}
+                sitePlan={floorPlan.site_plan || floorPlan.multi_storey?.site_plan}
+                generationTimestamp={floorPlan.generated_at}
+                generationId={floorPlan.generation_id}
+                storeys={activeFloors}
+                isStale={isPlanStale}
+                requestedTypology={activeTypology}
+                planVerdict={planVerdict}
+              />
+            </React.Suspense>
           ) : (
             <Skeleton
               className="h-[360px] w-full rounded-[16px]"

@@ -144,10 +144,18 @@ export const CoordinatesInput: React.FC<CoordinatesInputProps> = ({
   // Re-measure on scroll/resize to keep portal aligned
   useEffect(() => {
     if (!isSuggestionsOpen) return;
-    const reposition = () => measureDropdown();
-    window.addEventListener('scroll', reposition, true);
-    window.addEventListener('resize', reposition);
+    let rafId: number | null = null;
+    const reposition = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        measureDropdown();
+      });
+    };
+    window.addEventListener('scroll', reposition, { capture: true, passive: true });
+    window.addEventListener('resize', reposition, { passive: true });
     return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
       window.removeEventListener('scroll', reposition, true);
       window.removeEventListener('resize', reposition);
     };
