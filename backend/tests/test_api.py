@@ -732,3 +732,11 @@ def test_request_body_size_limit_rejection():
     finally:
         main_mod.MAX_REQUEST_BODY_BYTES = original_max
 
+
+def test_app_lifespan_startup_and_shutdown():
+    """Ensure the FastAPI lifespan context manager starts up and shuts down cleanly."""
+    with TestClient(app) as test_client:
+        resp = test_client.get("/api/health")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "healthy"
+

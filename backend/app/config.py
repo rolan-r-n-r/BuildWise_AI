@@ -31,6 +31,7 @@ def _parse_cors_origins(raw: str) -> List[str]:
 
 
 class Settings:
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", os.getenv("ENV", "development"))
     HOST: str = os.getenv("HOST", "127.0.0.1")
     PORT: int = int(os.getenv("PORT", "8000"))
     CORS_ORIGINS: List[str] = _parse_cors_origins(
