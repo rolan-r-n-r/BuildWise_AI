@@ -50,19 +50,19 @@ export type IconName =
   | 'file-code'
   | 'chevron-right';
 
-interface IconProps {
+export interface IconProps {
   name: IconName;
   size?: number;
   className?: string;
   strokeWidth?: number;
 }
 
-export const Icon: React.FC<IconProps> = ({
+export const Icon = React.memo<IconProps>(function Icon({
   name,
   size = 18,
   className = '',
   strokeWidth = 1.75,
-}) => {
+}) {
   const commonProps = {
     width: size,
     height: size,
@@ -457,4 +457,4 @@ export const Icon: React.FC<IconProps> = ({
     default:
       return null;
   }
-};
+});
