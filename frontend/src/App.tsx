@@ -29,7 +29,8 @@ import type { Map as MaplibreMap } from 'maplibre-gl';
 import { Icon } from './components/Icon';
 import {
   clearSessionDataStorage,
-  createInitialSessionData,
+  restoreSessionData,
+  saveActiveSession,
   sessionDataReducer,
   stripTransientUrl,
   type SiteLocation,
@@ -213,7 +214,7 @@ const AppShell: React.FC = () => {
   const [session, dispatchSession] = useReducer(
     sessionDataReducer,
     deepLinkSite,
-    createInitialSessionData
+    restoreSessionData
   );
   const {
     request,
@@ -228,6 +229,14 @@ const AppShell: React.FC = () => {
     pendingSiteMove,
     sessionEpoch,
   } = session;
+
+  // Persist session to local storage so user does not lose work on page refresh
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveActiveSession(session);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [session]);
 
   // Destructive reset confirmation, and the token that returns the map camera
   // to its first-run view (MapCanvas owns the camera, not this component).

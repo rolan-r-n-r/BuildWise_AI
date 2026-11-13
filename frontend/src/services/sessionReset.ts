@@ -191,6 +191,105 @@ export function sessionDataReducer(
 export const REPORT_SECTIONS_KEY = 'bw.report.sections.v1';
 /** sessionStorage prefix for the report's remembered per-tab scroll offset. */
 export const REPORT_SCROLL_PREFIX = 'bw.report.scroll.';
+/** localStorage key holding the active session state across page refreshes. */
+export const ACTIVE_SESSION_STORAGE_KEY = 'bw.session.active.v1';
+
+/**
+ * Checks whether a session state equals the default pristine first-run state.
+ */
+export function isPristineSession(state: SessionDataState): boolean {
+  if (state.boundary !== null) return false;
+  if (state.analysisData !== null) return false;
+  if (state.floorPlanData !== null) return false;
+  if (state.siteVisionData !== null) return false;
+  if (state.overrideLandRate !== null || state.overridePlotArea !== null) return false;
+  if (state.testWarnings !== null) return false;
+  if (
+    state.site &&
+    (Math.abs(state.site.latitude - DEFAULT_SITE.latitude) > 1e-4 ||
+      Math.abs(state.site.longitude - DEFAULT_SITE.longitude) > 1e-4)
+  ) {
+    return false;
+  }
+  if (
+    state.request.built_up_area_sqft !== PRISTINE_REQUEST.built_up_area_sqft ||
+    state.request.quality_grade !== PRISTINE_REQUEST.quality_grade ||
+    state.request.building_typology !== PRISTINE_REQUEST.building_typology ||
+    state.request.floors !== PRISTINE_REQUEST.floors ||
+    state.request.ground_coverage_ratio !== PRISTINE_REQUEST.ground_coverage_ratio
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Saves non-pristine session state to localStorage so refreshes do not lose user progress.
+ */
+export function saveActiveSession(state: SessionDataState): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (isPristineSession(state)) {
+      window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+      return;
+    }
+    const payload = {
+      site: state.site,
+      boundary: state.boundary,
+      request: state.request,
+      analysisData: state.analysisData,
+      siteVisionData: state.siteVisionData,
+      floorPlanData: state.floorPlanData,
+      overrideLandRate: state.overrideLandRate,
+      overridePlotArea: state.overridePlotArea,
+      savedAt: Date.now(),
+    };
+    window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    /* storage quota exceeded or disabled */
+  }
+}
+
+/**
+ * Loads the active session snapshot from localStorage.
+ */
+export function loadActiveSession(): Partial<SessionDataState> | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Restores session from localStorage if present, falling back to createInitialSessionData.
+ */
+export function restoreSessionData(
+  deepLinkSite: SiteLocation | null = null,
+  provider: AiProvider = 'groq',
+): SessionDataState {
+  const pristine = createInitialSessionData(deepLinkSite, provider);
+  if (typeof window === 'undefined') return pristine;
+  const saved = loadActiveSession();
+  if (!saved) return pristine;
+
+  return {
+    ...pristine,
+    site: deepLinkSite ?? saved.site ?? pristine.site,
+    boundary: saved.boundary ?? null,
+    request: { ...pristine.request, ...(saved.request ?? {}) },
+    analysisData: saved.analysisData ?? null,
+    siteVisionData: saved.siteVisionData ?? null,
+    floorPlanData: saved.floorPlanData ?? null,
+    overrideLandRate: saved.overrideLandRate ?? null,
+    overridePlotArea: saved.overridePlotArea ?? null,
+  };
+}
 
 /**
  * A reset drops these. Everything else in storage is a preference or an
@@ -205,6 +304,7 @@ export function clearSessionDataStorage(): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.removeItem(REPORT_SECTIONS_KEY);
+    window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
   } catch {
     /* storage unavailable — nothing persisted to clear */
   }
