@@ -489,32 +489,35 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
    * first view for reading. It runs before paint, so there is no zoom animation
    * on open and no camera-style disorientation.
    */
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!isModalOpen) return;
-    const canvas = modalCanvasRef.current;
-    const sheet = modalSheetRef.current;
-    const svg = sheet?.querySelector('svg');
-    if (!canvas || !svg) return;
-    const viewBox = svg.viewBox?.baseVal;
-    const intrinsicW = viewBox?.width || svg.width.baseVal.value || 495;
-    const intrinsicH = viewBox?.height || svg.height.baseVal.value || 1386;
-    if (!(intrinsicW > 0) || !(intrinsicH > 0)) return;
-    const pad = 48;
-    if (effectiveViewMode !== 'sheet') {
-      // Plan Focus / Fit Width already frame the readable area; an extra
-      // opening zoom would crop it again. Reset only the transform.
-      setModalZoom(1);
+    const rafId = requestAnimationFrame(() => {
+      const canvas = modalCanvasRef.current;
+      const sheet = modalSheetRef.current;
+      const svg = sheet?.querySelector('svg');
+      if (!canvas || !svg) return;
+      const viewBox = svg.viewBox?.baseVal;
+      const intrinsicW = viewBox?.width || svg.width.baseVal.value || 495;
+      const intrinsicH = viewBox?.height || svg.height.baseVal.value || 1386;
+      if (!(intrinsicW > 0) || !(intrinsicH > 0)) return;
+      const pad = 48;
+      if (effectiveViewMode !== 'sheet') {
+        // Plan Focus / Fit Width already frame the readable area; an extra
+        // opening zoom would crop it again. Reset only the transform.
+        setModalZoom(1);
+        setModalPan({ x: 0, y: 0 });
+        return;
+      }
+      const baseScale = Math.min(
+        Math.max(1, canvas.clientWidth - pad) / intrinsicW,
+        Math.max(1, canvas.clientHeight - pad) / intrinsicH
+      );
+      const targetWidth = Math.min(Math.max(1, canvas.clientWidth - 32), 720);
+      const readableZoom = targetWidth / Math.max(1, intrinsicW * baseScale);
+      setModalZoom(Number(Math.min(3.5, Math.max(2, readableZoom)).toFixed(2)));
       setModalPan({ x: 0, y: 0 });
-      return;
-    }
-    const baseScale = Math.min(
-      Math.max(1, canvas.clientWidth - pad) / intrinsicW,
-      Math.max(1, canvas.clientHeight - pad) / intrinsicH
-    );
-    const targetWidth = Math.min(Math.max(1, canvas.clientWidth - 32), 720);
-    const readableZoom = targetWidth / Math.max(1, intrinsicW * baseScale);
-    setModalZoom(Number(Math.min(3.5, Math.max(2, readableZoom)).toFixed(2)));
-    setModalPan({ x: 0, y: 0 });
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [isModalOpen, sheetKey, mode, safeFloorIndex, effectiveViewMode]);
 
   const selectedRoomWindows = useMemo(() => {

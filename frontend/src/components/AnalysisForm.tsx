@@ -961,7 +961,7 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
             onClick={handleCta}
           />
         )}
-        {isLoading && (
+        {isLoading ? (
           <p
             data-testid="run-microcopy"
             aria-live="polite"
@@ -969,7 +969,14 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
           >
             Running the deterministic pipeline - the report opens automatically when it completes.
           </p>
-        )}
+        ) : !hasCoordinates ? (
+          <p
+            data-testid="capture-hint-microcopy"
+            className="mt-2 text-[11px] text-[var(--text-3)] text-center leading-snug"
+          >
+            Click to launch the plot boundary capture wizard (Step Zero).
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -986,6 +993,11 @@ const CtaButton: React.FC<{
     type="button"
     onClick={onClick}
     disabled={!enabled || isLoading}
+    title={
+      hasCoordinates
+        ? 'Run deterministic site feasibility analysis'
+        : 'Open the plot boundary capture wizard on the map'
+    }
     className={`w-full h-11 px-4 rounded-[12px] font-semibold text-[13px] sm:text-[14px] flex items-center justify-center gap-2 transition-colors duration-150 select-none shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40 ${
       isLoading
         ? 'bg-[var(--fill)] text-[var(--text-3)] cursor-not-allowed opacity-90'
