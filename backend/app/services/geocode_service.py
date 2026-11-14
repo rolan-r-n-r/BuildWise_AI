@@ -115,7 +115,6 @@ class GeocodeResult:
 # --------------------------------------------------------------------------- #
 
 async def _search_nominatim(query: str) -> List[GeocodeResult]:
-    await _nominatim_throttle()
     params = {
         "format": "jsonv2",
         "limit": str(_MAX_RESULTS),
@@ -124,14 +123,34 @@ async def _search_nominatim(query: str) -> List[GeocodeResult]:
     }
     headers = {"User-Agent": _NOMINATIM_UA}
 
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        resp = await client.get(
-            "https://nominatim.openstreetmap.org/search",
-            params=params,
-            headers=headers,
-        )
-        resp.raise_for_status()
-        items = resp.json()
+    items = None
+    max_attempts = 2
+    for attempt in range(1, max_attempts + 1):
+        await _nominatim_throttle()
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                resp = await client.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params=params,
+                    headers=headers,
+                )
+                if resp.status_code in (429, 502, 503, 504) and attempt < max_attempts:
+                    logger.warning(
+                        "Nominatim search returned %d on attempt %d; retrying after backoff",
+                        resp.status_code,
+                        attempt,
+                    )
+                    await asyncio.sleep(1.0)
+                    continue
+                resp.raise_for_status()
+                items = resp.json()
+                break
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            if attempt < max_attempts:
+                logger.warning("Nominatim search request error on attempt %d: %s; retrying", attempt, exc)
+                await asyncio.sleep(1.0)
+                continue
+            raise
 
     if not isinstance(items, list):
         return []
@@ -257,31 +276,47 @@ async def reverse_geocode_probe(lat: float, lon: float) -> Dict[str, Any]:
     if cached is not None:
         return {**cached, "cached": True}
 
-    try:
-        await _nominatim_throttle()
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(
-                "https://nominatim.openstreetmap.org/reverse",
-                params={
-                    "lat": f"{lat:.6f}",
-                    "lon": f"{lon:.6f}",
-                    "format": "jsonv2",
-                    "zoom": "16",
-                    "addressdetails": "1",
-                },
-                headers={"User-Agent": _NOMINATIM_UA},
-            )
-            resp.raise_for_status()
-            payload = resp.json()
-    except Exception as exc:
-        logger.warning("Reverse geocode probe error: %s", exc)
-        return {
-            "address": None,
-            "water": False,
-            "water_name": None,
-            "is_fallback": True,
-            "cached": False,
-        }
+    payload = None
+    max_attempts = 2
+    for attempt in range(1, max_attempts + 1):
+        try:
+            await _nominatim_throttle()
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                resp = await client.get(
+                    "https://nominatim.openstreetmap.org/reverse",
+                    params={
+                        "lat": f"{lat:.6f}",
+                        "lon": f"{lon:.6f}",
+                        "format": "jsonv2",
+                        "zoom": "16",
+                        "addressdetails": "1",
+                    },
+                    headers={"User-Agent": _NOMINATIM_UA},
+                )
+                if resp.status_code in (429, 502, 503, 504) and attempt < max_attempts:
+                    logger.warning(
+                        "Nominatim reverse probe returned %d on attempt %d; retrying after backoff",
+                        resp.status_code,
+                        attempt,
+                    )
+                    await asyncio.sleep(1.0)
+                    continue
+                resp.raise_for_status()
+                payload = resp.json()
+                break
+        except Exception as exc:
+            if attempt < max_attempts:
+                logger.warning("Nominatim reverse probe exception on attempt %d: %s; retrying", attempt, exc)
+                await asyncio.sleep(1.0)
+                continue
+            logger.warning("Reverse geocode probe error: %s", exc)
+            return {
+                "address": None,
+                "water": False,
+                "water_name": None,
+                "is_fallback": True,
+                "cached": False,
+            }
 
     if not isinstance(payload, dict) or payload.get("error"):
         return {

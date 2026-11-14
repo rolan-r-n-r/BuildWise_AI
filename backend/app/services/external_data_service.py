@@ -1,3 +1,4 @@
+import asyncio
 import math
 import httpx
 from datetime import datetime, timedelta, timezone
@@ -19,24 +20,57 @@ async def fetch_reverse_geocode(lat: float, lon: float) -> Tuple[str, bool]:
     if cached:
         return cached, False
 
+    # Cross-cache hit: reuse probe result if coordinate was already inspected
+    try:
+        from app.services.geocode_service import _cache as probe_cache
+        probe_val = probe_cache.get(f"rev:{lat:.4f}:{lon:.4f}")
+        if probe_val and probe_val.get("address") and not probe_val.get("is_fallback"):
+            display_name = probe_val["address"]
+            parts = [p.strip() for p in display_name.split(",")]
+            shortened = ", ".join(parts[:4]) if len(parts) > 4 else display_name
+            cache.set(lat, lon, "geocode", shortened)
+            return shortened, False
+    except Exception:
+        pass
+
     url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&zoom=14&addressdetails=1"
     headers = {"User-Agent": USER_AGENT}
 
-    try:
-        await _nominatim_throttle()
-        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT_SECONDS) as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                display_name = data.get("display_name")
-                if display_name:
-                    # Clean up and shorten address
-                    parts = [p.strip() for p in display_name.split(",")]
-                    shortened = ", ".join(parts[:4]) if len(parts) > 4 else display_name
-                    cache.set(lat, lon, "geocode", shortened)
-                    return shortened, False
-    except Exception:
-        pass
+    max_attempts = 2
+    for attempt in range(1, max_attempts + 1):
+        try:
+            await _nominatim_throttle()
+            async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT_SECONDS) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code in (429, 502, 503, 504) and attempt < max_attempts:
+                    await asyncio.sleep(1.0)
+                    continue
+                if resp.status_code == 200:
+                    data = resp.json()
+                    display_name = data.get("display_name")
+                    if display_name:
+                        # Clean up and shorten address
+                        parts = [p.strip() for p in display_name.split(",")]
+                        shortened = ", ".join(parts[:4]) if len(parts) > 4 else display_name
+                        cache.set(lat, lon, "geocode", shortened)
+                        try:
+                            from app.services.geocode_service import _cache as probe_cache
+                            probe_cache.set(f"rev:{lat:.4f}:{lon:.4f}", {
+                                "address": display_name,
+                                "water": False,
+                                "water_name": None,
+                                "is_fallback": False,
+                                "cached": False,
+                            })
+                        except Exception:
+                            pass
+                        return shortened, False
+                break
+        except Exception:
+            if attempt < max_attempts:
+                await asyncio.sleep(1.0)
+                continue
+            break
 
     fallback_name = f"Site Location ({abs(lat):.4f}{'N' if lat>=0 else 'S'}, {abs(lon):.4f}{'E' if lon>=0 else 'W'})"
     return fallback_name, True
