@@ -17,6 +17,7 @@ interface AppHeaderProps {
   isMobileResultsOpen?: boolean;
   onToggleMobileResults?: () => void;
   hasResults?: boolean;
+  onOpenSavedProjects?: () => void;
   /** Focus-return targets for the compact-tier drawers. */
   headerControlToggleRef?: React.Ref<HTMLButtonElement>;
   headerResultsToggleRef?: React.Ref<HTMLButtonElement>;
@@ -108,6 +109,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   isMobileResultsOpen = false,
   onToggleMobileResults,
   hasResults = false,
+  onOpenSavedProjects,
   headerControlToggleRef,
   headerResultsToggleRef,
 }) => {
@@ -300,6 +302,20 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             aria-keyshortcuts="T"
           >
             <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
+          </button>
+        )}
+
+        {/* Secondary action: Saved Projects button */}
+        {onOpenSavedProjects && (
+          <button
+            type="button"
+            onClick={onOpenSavedProjects}
+            className="bw-touch-target relative flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[12px] font-medium text-[var(--text-1)] bg-[var(--fill)] hover:bg-[var(--fill-hover)] rounded-[10px] transition-colors shrink-0 active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] cursor-pointer"
+            title="View saved feasibility studies"
+            aria-label="View saved feasibility studies"
+          >
+            <Icon name="folder" size={14} className="text-[var(--text-2)] shrink-0" />
+            <span className="hidden sm:inline">Projects</span>
           </button>
         )}
 

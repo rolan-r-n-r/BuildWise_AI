@@ -140,6 +140,7 @@ export interface ReportSheetProps {
   activeTab: ResultsTab;
   onTabChange: (tab: ResultsTab) => void;
   sharedBoundary?: SharedBoundaryState | null;
+  onSaveProject?: () => void;
 }
 
 const TABS: {
@@ -252,6 +253,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
   reportPayload,
   activeTab,
   onTabChange,
+  onSaveProject,
 }) => {
   const [copiedRef, setCopiedRef] = useState(false);
   const [activeSection, setActiveSection] = useState<string>('');
@@ -878,6 +880,19 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
               />
             </span>
 
+            {/* Save Project Study button */}
+            {onSaveProject && (
+              <button
+                type="button"
+                onClick={onSaveProject}
+                className="h-8 px-2.5 sm:px-3 rounded-[10px] bg-[var(--accent)] hover:brightness-105 active:brightness-95 text-white text-[12px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer select-none"
+                title="Save feasibility study to database"
+              >
+                <Icon name="bookmark" size={13} />
+                <span className="hidden sm:inline">Save</span>
+              </button>
+            )}
+
             {/* Download PDF button (primary) */}
             <DownloadReportButton payload={reportPayload} variant="compact" />
 
@@ -1066,6 +1081,17 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                       </span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {onSaveProject && (
+                        <button
+                          type="button"
+                          onClick={onSaveProject}
+                          className="h-8 px-3 rounded-[10px] bg-[var(--accent)] hover:brightness-105 active:brightness-95 text-white text-[12px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer select-none"
+                          title="Save feasibility study to database"
+                        >
+                          <Icon name="bookmark" size={13} />
+                          <span>Save Study</span>
+                        </button>
+                      )}
                       <DownloadReportButton payload={reportPayload} variant="compact" />
                       <button
                         type="button"
