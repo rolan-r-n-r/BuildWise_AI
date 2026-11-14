@@ -355,7 +355,8 @@ async def evaluate_hazard_profile(
     lat: float,
     lon: float,
     elevation_m: float,
-    address: str
+    address: str,
+    raw_telemetry: Optional[Tuple[Any, Any, Any]] = None,
 ) -> Tuple[HazardProfile, List[str]]:
     """
     Evaluates comprehensive hazard history and climate stress profile.
@@ -364,21 +365,24 @@ async def evaluate_hazard_profile(
     warnings: List[str] = []
 
     # The three hazard telemetry sources are independent upstreams with their
-    # own caches and timeouts.  Sequentially they cost the SUM of their
-    # latencies on a cold site (measured 8.8 s: USGS -> GloFAS -> ERA5), and the
-    # analysis endpoint waits on all of it.  Fetching them together makes the
-    # hazard block cost the SLOWEST source instead.  The results are still
-    # consumed in the original seismic -> flood -> storm order below, so warning
-    # order and every profile field are unchanged.
-    (
-        (seismic_res, s_fallback),
-        (flood_ratio, f_fallback),
-        (storm_gust, storm_extreme_days, st_fallback),
-    ) = await asyncio.gather(
-        fetch_usgs_seismic_data(lat, lon),
-        fetch_open_meteo_flood_data(lat, lon),
-        fetch_era5_storm_data(lat, lon),
-    )
+    # own caches and timeouts. When raw_telemetry is supplied (started concurrently
+    # at the API route level), the pre-fetched results are consumed directly.
+    if raw_telemetry is not None:
+        (
+            (seismic_res, s_fallback),
+            (flood_ratio, f_fallback),
+            (storm_gust, storm_extreme_days, st_fallback),
+        ) = raw_telemetry
+    else:
+        (
+            (seismic_res, s_fallback),
+            (flood_ratio, f_fallback),
+            (storm_gust, storm_extreme_days, st_fallback),
+        ) = await asyncio.gather(
+            fetch_usgs_seismic_data(lat, lon),
+            fetch_open_meteo_flood_data(lat, lon),
+            fetch_era5_storm_data(lat, lon),
+        )
 
     # 1. Seismic
     if s_fallback:

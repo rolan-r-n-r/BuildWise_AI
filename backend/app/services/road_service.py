@@ -314,9 +314,9 @@ async def fetch_nearest_road(
         if remaining <= 0:
             break
 
+        started = time.monotonic()
         try:
             await _overpass_throttle()
-            started = time.monotonic()
             # Trim the read timeout to the remaining budget (never below 1 s so
             # httpx still gets a usable timeout object). _MIN_RETRY_BUDGET_S
             # guarantees this stays above the server-side window.
