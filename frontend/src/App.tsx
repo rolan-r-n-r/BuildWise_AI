@@ -98,6 +98,12 @@ const AnalysisHUD = React.lazy(() =>
 const ConfirmResetDialog = React.lazy(() =>
   import('./components/ConfirmResetDialog').then((m) => ({ default: m.ConfirmResetDialog })),
 );
+const SaveProjectModal = React.lazy(() =>
+  import('./components/SaveProjectModal').then((m) => ({ default: m.SaveProjectModal })),
+);
+const SavedProjectsDrawer = React.lazy(() =>
+  import('./components/SavedProjectsDrawer').then((m) => ({ default: m.SavedProjectsDrawer })),
+);
 
 const PIPELINE_STAGES = [
   'Geocoding site address...',
@@ -242,6 +248,8 @@ const AppShell: React.FC = () => {
   // to its first-run view (MapCanvas owns the camera, not this component).
   const [confirmResetOpen, setConfirmResetOpen] = useState<boolean>(false);
   const [mapViewResetToken, setMapViewResetToken] = useState<number>(0);
+  const [isSaveProjectOpen, setIsSaveProjectOpen] = useState<boolean>(false);
+  const [isSavedProjectsOpen, setIsSavedProjectsOpen] = useState<boolean>(false);
 
   /**
    * THE site location — one value pair, one owner, no second copy to drift.
@@ -441,6 +449,13 @@ const AppShell: React.FC = () => {
       openReportCtaRef.current?.focus();
     }, 50);
   }, []);
+
+  const handleLoadProject = useCallback((project: import('./services/projectApi').ProjectDetail) => {
+    dispatchSession({ type: 'loadProject', project });
+    if (project.analysis_data) {
+      handleOpenReport();
+    }
+  }, [handleOpenReport]);
 
   // Deep-link from the generator card ("Edit on map"): the capture sheet lives
   // in the map layer (z-0) while the report sheet is a modal (z-[2000]), so the
@@ -1226,6 +1241,7 @@ const AppShell: React.FC = () => {
         activeAiProvider={request.ai_provider}
         serverStatus={serverStatus}
         onOpenMethodology={() => setIsMethodologyOpen(true)}
+        onOpenSavedProjects={() => setIsSavedProjectsOpen(true)}
         onReset={requestReset}
         warnings={warnings}
         isWarningDismissed={isWarningDismissed}
@@ -1558,6 +1574,7 @@ const AppShell: React.FC = () => {
           reportPayload={reportPayload!}
           activeTab={activeResultsTab}
           onTabChange={setActiveResultsTab}
+          onSaveProject={() => setIsSaveProjectOpen(true)}
         />
         </Suspense>
       )}
@@ -1570,6 +1587,41 @@ const AppShell: React.FC = () => {
           onConfirm={performReset}
         />
       </React.Suspense>
+
+      {/* Save project feasibility study dialog */}
+      {isSaveProjectOpen && (
+        <React.Suspense fallback={null}>
+          <SaveProjectModal
+            isOpen={isSaveProjectOpen}
+            onClose={() => setIsSaveProjectOpen(false)}
+            onSaveSuccess={(savedProject) => {
+              dispatchSession({
+                type: 'setActiveProject',
+                id: savedProject.id,
+                name: savedProject.name,
+              });
+            }}
+            session={session}
+            formattedAddress={analysisData?.formatted_address}
+          />
+        </React.Suspense>
+      )}
+
+      {/* Saved projects archive drawer */}
+      {isSavedProjectsOpen && (
+        <React.Suspense fallback={null}>
+          <SavedProjectsDrawer
+            isOpen={isSavedProjectsOpen}
+            onClose={() => setIsSavedProjectsOpen(false)}
+            onLoadProject={handleLoadProject}
+            onDeleteProject={(deletedId) => {
+              if (session.activeProjectId === deletedId) {
+                dispatchSession({ type: 'clearActiveProject' });
+              }
+            }}
+          />
+        </React.Suspense>
+      )}
 
       {/* Design system: keyboard shortcuts sheet + toast viewport */}
       <ShortcutsSheet open={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />
