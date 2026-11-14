@@ -53,6 +53,11 @@ from app.services import (
 
 from app.ai import get_ai_adapter, generate_room_program
 from app.services.geocode_service import geocode_search, reverse_geocode_probe
+from app.services.hazard_service import (
+    fetch_usgs_seismic_data,
+    fetch_open_meteo_flood_data,
+    fetch_era5_storm_data,
+)
 from app.services.methodology import methodology_notes
 from app.services.external_data_service import fetch_elevation_samples
 from app.services.road_service import fetch_nearest_road, fetch_facility_count
@@ -76,6 +81,9 @@ async def lifespan(app: FastAPI):
         f"trusted_proxies={len(settings.TRUSTED_PROXIES)}"
     )
     try:
+        from app.db import init_db
+        init_db()
+        logger.info("Initialized BuildWise SQLite persistence layer.")
         yield
     finally:
         logger.info("Shutting down BuildWise backend cleanly.")
@@ -424,27 +432,55 @@ async def analyze_site(req: AnalysisRequest, request: Request):
     # the slowest source.  The response assembly is untouched and still runs in
     # the original order, so warnings, provenance timestamps and degraded-mode
     # flags read exactly as before.
+    # ALL 8 INDEPENDENT UPSTREAMS RUN CONCURRENTLY FROM T=0.
+    # Geocode, elevation, microclimate, nearest road, facilities, USGS seismic,
+    # GloFAS flood discharge, and ERA5 storm history share no inputs and are all
+    # launched simultaneously so the cold telemetry fetch costs only the single
+    # slowest source.
     geocode_task = asyncio.create_task(fetch_reverse_geocode(req.latitude, req.longitude))
     elevation_task = asyncio.create_task(fetch_elevation_and_slope(req.latitude, req.longitude))
     climate_task = asyncio.create_task(fetch_climate_data(req.latitude, req.longitude))
     road_task = asyncio.create_task(fetch_nearest_road(req.latitude, req.longitude))
     facility_task = asyncio.create_task(fetch_facility_count(req.latitude, req.longitude))
+    seismic_task = asyncio.create_task(fetch_usgs_seismic_data(req.latitude, req.longitude))
+    flood_task = asyncio.create_task(fetch_open_meteo_flood_data(req.latitude, req.longitude))
+    storm_task = asyncio.create_task(fetch_era5_storm_data(req.latitude, req.longitude))
 
     address, address_fallback = await geocode_task
     elevation_m, slope_pct, elev_fallback = await elevation_task
-    # The hazard profile needs only the address and the elevation, both of which
-    # land in ~1 s; the road lookup is the slow leg (up to its 17 s budget).
-    # Starting the hazard fetch HERE lets it overlap that wait instead of
-    # queueing behind it: cold analysis measured 22.5 s sequential -> 13.2 s
-    # gathered -> 9.7 s with this overlap.
-    hazard_task = asyncio.create_task(
-        evaluate_hazard_profile(
+
+    # Collect the pre-started hazard telemetry tasks and resolve hazard profile
+    async def _resolve_hazard_profile():
+        raw_telemetry = (
+            await seismic_task,
+            await flood_task,
+            await storm_task,
+        )
+        return await evaluate_hazard_profile(
             lat=req.latitude,
             lon=req.longitude,
             elevation_m=elevation_m,
             address=address,
+            raw_telemetry=raw_telemetry,
+        )
+
+    hazard_task = asyncio.create_task(_resolve_hazard_profile())
+
+    # Real cardinal elevation samples (cache hit after
+    # the call above) are threaded into the Vastu slope reading.
+    elevation_samples, _samples_fallback = await fetch_elevation_samples(req.latitude, req.longitude)
+    # Vastu needs only the terrain samples, and its own road-approach lookup is
+    # a second Overpass round trip. Starting it here runs that call alongside
+    # climate, road, facilities, and hazard work.
+    vastu_task = asyncio.create_task(
+        evaluate_vastu_advisory(
+            lat=req.latitude,
+            lon=req.longitude,
+            elevation_m=elevation_m,
+            elevation_samples=elevation_samples,
         )
     )
+
     climate, climate_fallback = await climate_task
     road_result, _road_cache_hit, road_warning = await road_task
     facility_count, facility_fallback = await facility_task
@@ -466,21 +502,6 @@ async def analyze_site(req: AnalysisRequest, request: Request):
     if elev_fallback:
         warnings.append("Topographic elevation service unreachable. Synthetic contour gradient applied.")
         is_degraded = True
-
-    # Real cardinal elevation samples (cache hit after
-    # the call above) are threaded into the Vastu slope reading.
-    elevation_samples, _samples_fallback = await fetch_elevation_samples(req.latitude, req.longitude)
-    # Vastu needs only the terrain samples, and its own road-approach lookup is
-    # a second Overpass round trip.  Starting it here runs that call alongside
-    # the MCDA/hazard work instead of adding it after them.
-    vastu_task = asyncio.create_task(
-        evaluate_vastu_advisory(
-            lat=req.latitude,
-            lon=req.longitude,
-            elevation_m=elevation_m,
-            elevation_samples=elevation_samples,
-        )
-    )
 
     data_sources["climate"] = {
         "source": "Open-Meteo Forecast + ERA5 Archive",
@@ -1188,4 +1209,119 @@ async def parse_requirements_endpoint(req: ParseRequirementsRequest):
         logger.warning(f"Error parsing requirements: {e}")
         from app.ai.requirements_parser import parse_client_requirements_fallback
         return parse_client_requirements_fallback(req.requirements_text)
+
+
+# ============================================================================
+# Project Feasibility Study Persistence Endpoints (SQLite)
+# ============================================================================
+from app.schemas.project import (  # noqa: E402
+    ProjectCreate,
+    ProjectDetail,
+    ProjectListResponse,
+    ProjectUpdate,
+)
+from app.db import ProjectRepository  # noqa: E402
+
+
+@app.post("/api/projects", response_model=ProjectDetail, status_code=201)
+async def create_project(project: ProjectCreate, overwrite: bool = Query(default=False)):
+    """Save an analysis session as a named project study."""
+    try:
+        return await asyncio.to_thread(ProjectRepository.create, project, overwrite=overwrite)
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith("PROJECT_EXISTS:"):
+            parts = msg.split(":", 2)
+            existing_id = parts[1]
+            existing_name = parts[2] if len(parts) > 2 else project.name
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "PROJECT_NAME_EXISTS",
+                    "message": f"A study named '{existing_name}' already exists.",
+                    "existing_id": existing_id,
+                },
+            )
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Failed to create project")
+        raise HTTPException(status_code=500, detail="Failed to save project study.")
+
+
+@app.put("/api/projects/{project_id}", response_model=ProjectDetail)
+async def overwrite_project(project_id: str, project: ProjectCreate):
+    """Overwrite an existing project study with updated parameters and analysis."""
+    try:
+        updated = await asyncio.to_thread(ProjectRepository.overwrite, project_id, project)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Project not found.")
+        return updated
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith("PROJECT_EXISTS:"):
+            parts = msg.split(":", 2)
+            existing_id = parts[1]
+            existing_name = parts[2] if len(parts) > 2 else project.name
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "PROJECT_NAME_EXISTS",
+                    "message": f"A study named '{existing_name}' already exists.",
+                    "existing_id": existing_id,
+                },
+            )
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Failed to overwrite project")
+        raise HTTPException(status_code=500, detail="Failed to overwrite project study.")
+
+
+@app.get("/api/projects", response_model=ProjectListResponse)
+async def list_projects(
+    bookmarked: bool = Query(default=False),
+    search: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    """List saved projects with optional bookmark filtering and keyword search."""
+    try:
+        items, total = await asyncio.to_thread(
+            ProjectRepository.list,
+            bookmarked_only=bookmarked,
+            search=search,
+            limit=limit,
+            offset=offset,
+        )
+        return ProjectListResponse(items=items, total=total)
+    except Exception:
+        logger.exception("Failed to list projects")
+        raise HTTPException(status_code=500, detail="Failed to retrieve projects.")
+
+
+@app.get("/api/projects/{project_id}", response_model=ProjectDetail)
+async def get_project(project_id: str):
+    """Retrieve full details of a saved project study."""
+    project = await asyncio.to_thread(ProjectRepository.get_by_id, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    return project
+
+
+@app.patch("/api/projects/{project_id}", response_model=ProjectDetail)
+async def update_project(project_id: str, patch: ProjectUpdate):
+    """Update project metadata or toggle bookmark."""
+    project = await asyncio.to_thread(ProjectRepository.update, project_id, patch)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    return project
+
+
+@app.delete("/api/projects/{project_id}")
+async def delete_project(project_id: str):
+    """Delete a saved project study."""
+    deleted = await asyncio.to_thread(ProjectRepository.delete, project_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    return {"status": "deleted", "id": project_id}
+
 
