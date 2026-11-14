@@ -50,6 +50,10 @@ class Settings:
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    DATABASE_PATH: str = os.getenv(
+        "DATABASE_PATH",
+        str(Path(__file__).resolve().parent.parent / "data" / "buildwise.db"),
+    )
 
 settings = Settings()
 
