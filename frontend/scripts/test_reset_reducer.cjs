@@ -252,6 +252,7 @@ function makeWindow() {
   globalThis.window = win;
   win.localStorage.setItem(REPORT_SECTIONS_KEY, '{"overview":false}');
   win.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, '{"dirty":true}');
+  win.sessionStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, '{"dirty":true}');
   win.localStorage.setItem('buildwise.units', 'imperial');
   win.localStorage.setItem('bw.coach.capture', 'dismissed');
   win.sessionStorage.setItem(`${REPORT_SCROLL_PREFIX}overview`, '640');
@@ -260,7 +261,8 @@ function makeWindow() {
   win.sessionStorage.setItem('bw.assisted.continue', '1');
   clearSessionDataStorage();
   check(win.localStorage.getItem(REPORT_SECTIONS_KEY) === null, 'report section map is dropped');
-  check(win.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY) === null, 'active session snapshot is dropped on reset');
+  check(win.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY) === null, 'active session snapshot is dropped from localStorage on reset');
+  check(win.sessionStorage.getItem(ACTIVE_SESSION_STORAGE_KEY) === null, 'active session snapshot is dropped from sessionStorage on reset');
   check(
     win.sessionStorage.getItem(`${REPORT_SCROLL_PREFIX}overview`) === null &&
       win.sessionStorage.getItem(`${REPORT_SCROLL_PREFIX}cost_plan`) === null,
@@ -300,14 +302,14 @@ function makeWindow() {
     request: { ...firstRun.request, built_up_area_sqft: 3500 },
   };
   saveActiveSession(sessionToSave);
-  check(win.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY) !== null, 'non-pristine session is saved');
+  check(win.sessionStorage.getItem(ACTIVE_SESSION_STORAGE_KEY) !== null, 'non-pristine session is saved');
   const restored = restoreSessionData();
   check(restored.site.latitude === 13.0827 && restored.site.longitude === 80.2707, 'restored site coordinates match');
   check(restored.request.built_up_area_sqft === 3500, 'restored parameters match');
 
   // Saving a pristine session cleans up the stored key
   saveActiveSession(firstRun);
-  check(win.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY) === null, 'pristine session cleans up active storage key');
+  check(win.sessionStorage.getItem(ACTIVE_SESSION_STORAGE_KEY) === null, 'pristine session cleans up active storage key');
 
   console.log(`\n${failures === 0 ? 'PASS' : `FAIL (${failures})`} — reset reducer contract`);
   process.exit(failures === 0 ? 0 : 1);
