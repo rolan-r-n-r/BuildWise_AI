@@ -15,6 +15,7 @@ PRODUCT.md
 .env
 .env*.local
 !.env.example
+audit_output/
 
 # Python
 __pycache__/
@@ -34,6 +35,11 @@ docs_ignore/
 backend/tests/golden_snapshots/
 golden_snapshots/
 desktop.ini
+*.db
+*.db-shm
+*.db-wal
+backend/data/*.db
+backend/data/*.db-*
 
 # Logs
 logs/
