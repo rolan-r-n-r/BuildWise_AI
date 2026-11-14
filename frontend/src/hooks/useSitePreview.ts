@@ -53,17 +53,22 @@ export function useSitePreview({
   // latch) means re-committing a plot, or carrying it to a new pin, draws the
   // overlay again instead of leaving the site permanently preview-less.
   const dismissedKeyRef = useRef<string | null>(null);
-  const boundaryKey = boundary
-    ? [
-        boundary.origin.lat.toFixed(7),
-        boundary.origin.lon.toFixed(7),
-        boundary.frontageEdgeIndex ?? '',
-        boundary.vertices.map((v) => `${v.x},${v.y}`).join(';'),
-      ].join('|')
-    : null;
+  const boundaryKey =
+    boundary && Array.isArray(boundary.vertices) && boundary.origin
+      ? [
+          boundary.origin.lat.toFixed(7),
+          boundary.origin.lon.toFixed(7),
+          boundary.frontageEdgeIndex ?? '',
+          boundary.vertices.map((v) => `${v.x},${v.y}`).join(';'),
+        ].join('|')
+      : null;
 
   useEffect(() => {
-    const valid = enabled && boundary !== null && boundary.vertices.length >= 3;
+    const valid =
+      enabled &&
+      boundary !== null &&
+      Array.isArray(boundary.vertices) &&
+      boundary.vertices.length >= 3;
     if (!valid) {
       setPreview(null);
       setError(null);

@@ -1892,6 +1892,15 @@ export const CaptureSheet: React.FC<CaptureSheetProps> = ({
                   </div>
                 );
               })()}
+              {frontageEdge === null && suggestion === null && (
+                <div
+                  data-testid="frontage-unselected-hint"
+                  className="flex items-center gap-1.5 p-2 rounded-[8px] bg-[var(--accent-tint)]/40 border border-[var(--hairline)] text-[11px] text-[var(--accent-ink)]"
+                >
+                  <Icon name="info" size={13} className="shrink-0" />
+                  <span>Select a road frontage edge from the table or click an edge on the map to proceed.</span>
+                </div>
+              )}
               <div className="flex justify-between items-center pt-1">
                 <button
                   type="button"
@@ -1904,6 +1913,11 @@ export const CaptureSheet: React.FC<CaptureSheetProps> = ({
                   type="button"
                   onClick={() => onStepChange('review')}
                   disabled={frontageEdge === null && suggestion === null}
+                  title={
+                    frontageEdge === null && suggestion === null
+                      ? 'Select a road frontage edge above to proceed to Review'
+                      : undefined
+                  }
                   className="text-[12px] font-semibold px-3.5 py-1.5 min-h-[32px] rounded-[8px] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] disabled:hover:bg-[var(--accent)] active:scale-95 transition-colors disabled:opacity-40 shadow-sm cursor-pointer disabled:cursor-not-allowed"
                 >
                   Review

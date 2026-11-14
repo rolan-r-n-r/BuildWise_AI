@@ -1323,6 +1323,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     });
     popupRef.current = popup;
 
+    // BW-03: Resolve missing style images (OpenFreeMap sprites not in style sheet)
+    // with a transparent 1x1 fallback to silence console warnings and prevent render stalls.
+    map.setMissingStyleImageResolver((id: string) => {
+      try {
+        if (!map.hasImage(id)) {
+          map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
+        }
+      } catch {
+        // Ignore duplicate image registration attempts
+      }
+    });
+
     // Failsafe: if vector style fails to load (e.g. OpenFreeMap network block, rate limit, timeout),
     // gracefully fall back to OSM raster tiles so the user never sees a blank canvas.
     let styleFallbackTimer: ReturnType<typeof setTimeout> | null = null;
