@@ -54,6 +54,14 @@ class Settings:
         "DATABASE_PATH",
         str(Path(__file__).resolve().parent.parent / "data" / "buildwise.db"),
     )
+    BETTER_AUTH_SECRET: str = os.getenv(
+        "BETTER_AUTH_SECRET",
+        "buildwise-production-master-secret-key-change-in-prod-min-32-chars",
+    )
+    BETTER_AUTH_URL: str = os.getenv("BETTER_AUTH_URL", "http://localhost:5173")
+    BREVO_API_KEY: str = os.getenv("BREVO_API_KEY", "")
+    BREVO_SENDER_EMAIL: str = os.getenv("BREVO_SENDER_EMAIL", "security@buildwise.ai")
+    BREVO_SENDER_NAME: str = os.getenv("BREVO_SENDER_NAME", "BuildWise AI")
 
 settings = Settings()
 
