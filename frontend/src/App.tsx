@@ -191,7 +191,17 @@ function useEverMounted(wanted: boolean): boolean {
 
 const AppShell: React.FC = () => {
   // Theme State: 'light' | 'dark'
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window === 'undefined') return 'light';
+    try {
+      const saved = localStorage.getItem('bw-theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+    } catch {}
+    if (document.documentElement.getAttribute('data-theme') === 'dark') return 'dark';
+    if (document.documentElement.classList.contains('dark')) return 'dark';
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+    return 'light';
+  });
 
   // Shared-site deep link (/app?lat=&lon=) parsed once and applied to the
   // INITIAL state before first render, so MapCanvas mounts already centered on the
@@ -585,6 +595,14 @@ const AppShell: React.FC = () => {
   // Synchronize document theme attribute
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    try {
+      localStorage.setItem('bw-theme', theme);
+    } catch {}
   }, [theme]);
 
   const handleToggleTheme = () => {

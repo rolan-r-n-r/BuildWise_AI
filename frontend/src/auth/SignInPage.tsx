@@ -1,6 +1,7 @@
 /**
  * SignInPage.tsx — Secure Email & Password Login Screen.
- * Integrates with Better Auth client signIn.email.
+ * Integrates with Better Auth client signIn.email with caps lock detection,
+ * inline validation, password visibility toggling, and clean redirect preservation.
  */
 import React, { useState, useEffect } from 'react';
 import { AuthLayout } from './AuthLayout';
@@ -14,6 +15,7 @@ export const SignInPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [isCapsOn, setIsCapsOn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -38,10 +40,18 @@ export const SignInPage: React.FC = () => {
     }
   }, [sessionData, sessionPending]);
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.getModifierState && e.getModifierState('CapsLock')) {
+      setIsCapsOn(true);
+    } else {
+      setIsCapsOn(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password) {
-      setErrorMessage('Please enter both your email and password.');
+      setErrorMessage('Please enter both your work email and password.');
       return;
     }
 
@@ -56,7 +66,9 @@ export const SignInPage: React.FC = () => {
       });
 
       if (res.error) {
-        setErrorMessage(res.error.message || 'Invalid email or password. Please try again.');
+        setErrorMessage(
+          res.error.message || 'Invalid email or password. Please verify your credentials and try again.'
+        );
         setIsLoading(false);
         return;
       }
@@ -67,8 +79,10 @@ export const SignInPage: React.FC = () => {
       // Successful login -> navigate to intended destination cleanly
       const destination = getRedirectDestination();
       window.location.replace(destination);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'An unexpected network error occurred. Please try again.');
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'An unexpected network error occurred. Please try again.';
+      setErrorMessage(message);
       setIsLoading(false);
     }
   };
@@ -76,16 +90,17 @@ export const SignInPage: React.FC = () => {
   return (
     <AuthLayout
       title="Welcome back"
-      subtitle="Sign in to your BuildWise account to access your feasibility studies."
+      subtitle="Sign in to your BuildWise account to access your feasibility studies and architectural dossiers."
+      badge="Sign In"
     >
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         {/* Error Notification */}
         {errorMessage && (
           <div
             role="alert"
-            className="p-3 rounded-[12px] bg-[var(--semantic-red)]/10 border border-[var(--semantic-red)]/30 text-[var(--semantic-red-ink)] text-[12px] flex items-start gap-2"
+            className="p-3.5 rounded-[12px] bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-red-700 dark:text-red-300 text-[12px] flex items-start gap-2.5 animate-in fade-in duration-150"
           >
-            <Icon name="alert-triangle" size={14} className="shrink-0 mt-0.5 text-[var(--semantic-red-ink)]" />
+            <Icon name="alert-triangle" size={15} className="shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
             <span className="flex-1 leading-relaxed font-medium">{errorMessage}</span>
           </div>
         )}
@@ -96,19 +111,21 @@ export const SignInPage: React.FC = () => {
             htmlFor="signin-email"
             className="block text-[12px] font-semibold text-[var(--text-1)] mb-1.5"
           >
-            Email Address
+            Work Email Address
           </label>
-          <input
-            id="signin-email"
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={isLoading}
-            placeholder="architect@studio.com"
-            className="w-full h-10 px-3 rounded-[10px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[13px] text-[var(--text-1)] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-colors"
-          />
+          <div className="relative">
+            <input
+              id="signin-email"
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={isLoading}
+              placeholder="architect@studio.com"
+              className="w-full h-11 px-3.5 rounded-[10px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[13.5px] text-[var(--text-1)] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-colors"
+            />
+          </div>
         </div>
 
         {/* Password Field */}
@@ -123,7 +140,7 @@ export const SignInPage: React.FC = () => {
             <button
               type="button"
               onClick={() => navigate(FORGOT_PASSWORD_PATH)}
-              className="text-[11px] font-medium text-[var(--accent)] hover:underline cursor-pointer"
+              className="text-[11.5px] font-medium text-[var(--accent)] hover:underline cursor-pointer"
             >
               Forgot password?
             </button>
@@ -136,19 +153,35 @@ export const SignInPage: React.FC = () => {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onKeyUp={handleKeyDown}
               disabled={isLoading}
               placeholder="••••••••••••"
-              className="w-full h-10 pl-3 pr-10 rounded-[10px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[13px] text-[var(--text-1)] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-colors"
+              className="w-full h-11 pl-3.5 pr-11 rounded-[10px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[13.5px] text-[var(--text-1)] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-colors"
             />
             <button
               type="button"
               onClick={() => setShowPassword((prev) => !prev)}
               aria-label={showPassword ? 'Hide password' : 'Show password'}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[var(--text-1)] p-1 rounded transition-colors"
+              aria-pressed={showPassword}
+              aria-controls="signin-password"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[var(--text-1)] p-2 rounded-md transition-colors cursor-pointer"
             >
-              <Icon name={showPassword ? 'eye-off' : 'eye'} size={15} />
+              <Icon name={showPassword ? 'eye-off' : 'eye'} size={16} />
             </button>
           </div>
+
+          {/* Caps Lock Warning Banner */}
+          {isCapsOn && (
+            <p
+              role="status"
+              aria-live="polite"
+              className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1"
+            >
+              <Icon name="alert-triangle" size={12} />
+              <span>Caps Lock is ON</span>
+            </p>
+          )}
         </div>
 
         {/* Remember Me Checkbox */}
@@ -159,10 +192,10 @@ export const SignInPage: React.FC = () => {
             checked={rememberMe}
             onChange={(e) => setRememberMe(e.target.checked)}
             disabled={isLoading}
-            className="w-4 h-4 rounded border-slate-300 text-[var(--accent)] focus:ring-[var(--accent)] cursor-pointer"
+            className="w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-[var(--accent)] focus:ring-[var(--accent)] cursor-pointer"
           />
-          <label htmlFor="remember-me" className="text-[12px] text-[var(--text-2)] cursor-pointer">
-            Remember this session
+          <label htmlFor="remember-me" className="text-[12.5px] text-[var(--text-2)] cursor-pointer">
+            Remember this session on this computer (7 days)
           </label>
         </div>
 
@@ -170,7 +203,7 @@ export const SignInPage: React.FC = () => {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full h-11 mt-2 rounded-[12px] bg-[var(--accent)] hover:bg-[var(--accent-hover)] active:bg-[var(--accent-press)] text-white text-[13px] font-semibold flex items-center justify-center gap-2 transition-[background-color,transform,opacity] shadow-md active:scale-99 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          className="w-full h-11 mt-2 rounded-[12px] bg-[var(--accent)] hover:bg-[var(--accent-hover)] active:bg-[var(--accent-press)] text-white text-[13.5px] font-semibold flex items-center justify-center gap-2 transition-[background-color,transform,opacity] shadow-md active:scale-99 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
         >
           {isLoading ? (
             <>
@@ -178,14 +211,17 @@ export const SignInPage: React.FC = () => {
               <span>Authenticating...</span>
             </>
           ) : (
-            <span>Sign In</span>
+            <>
+              <span>Sign In</span>
+              <Icon name="chevron-right" size={14} />
+            </>
           )}
         </button>
 
         {/* Switch to Sign Up */}
         <div className="pt-4 text-center border-t border-slate-200/80 dark:border-slate-800/80">
-          <p className="text-[12px] text-[var(--text-2)]">
-            Don't have an account?{' '}
+          <p className="text-[12.5px] text-[var(--text-2)]">
+            Don&apos;t have an account?{' '}
             <button
               type="button"
               onClick={() => navigate(SIGN_UP_PATH)}
