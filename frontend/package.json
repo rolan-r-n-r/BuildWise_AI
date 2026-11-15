@@ -35,6 +35,7 @@
     "test:reset": "node scripts/e2e_reset_contract.cjs"
   },
   "dependencies": {
+    "better-auth": "^1.7.25",
     "framer-motion": "^14.0.0",
     "lenis": "^1.3.26",
     "maplibre-gl": "^6.11.1",
