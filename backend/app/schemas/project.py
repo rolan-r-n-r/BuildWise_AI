@@ -30,6 +30,7 @@ class ProjectUpdate(BaseModel):
 
 class ProjectSummary(BaseModel):
     id: str
+    user_id: Optional[str] = None
     name: str
     description: Optional[str] = None
     latitude: float

@@ -6,8 +6,63 @@ from app.config import settings
 
 
 SCHEMA_SQL = """
+-- Better Auth Core Tables
+CREATE TABLE IF NOT EXISTS user (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    emailVerified INTEGER NOT NULL DEFAULT 0,
+    image TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session (
+    id TEXT PRIMARY KEY,
+    expiresAt TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    ipAddress TEXT,
+    userAgent TEXT,
+    userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS account (
+    id TEXT PRIMARY KEY,
+    accountId TEXT NOT NULL,
+    providerId TEXT NOT NULL,
+    userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    accessToken TEXT,
+    refreshToken TEXT,
+    idToken TEXT,
+    accessTokenExpiresAt TEXT,
+    refreshTokenExpiresAt TEXT,
+    scope TEXT,
+    password TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS verification (
+    id TEXT PRIMARY KEY,
+    identifier TEXT NOT NULL,
+    value TEXT NOT NULL,
+    expiresAt TEXT NOT NULL,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_email ON user(email);
+CREATE INDEX IF NOT EXISTS idx_session_token ON session(token);
+CREATE INDEX IF NOT EXISTS idx_session_userId ON session(userId);
+CREATE INDEX IF NOT EXISTS idx_account_userId ON account(userId);
+CREATE INDEX IF NOT EXISTS idx_verification_identifier ON verification(identifier);
+
+-- Projects Table with Multi-User Ownership
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
+    user_id TEXT,
     name TEXT NOT NULL,
     description TEXT,
     latitude REAL NOT NULL,
@@ -26,7 +81,8 @@ CREATE TABLE IF NOT EXISTS projects (
     floor_plan_json TEXT,
     site_vision_json TEXT,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES user(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_projects_created_at ON projects(created_at DESC);
@@ -50,32 +106,33 @@ def get_connection(db_path: Optional[str] = None) -> Generator[sqlite3.Connectio
         conn.close()
 
 
+def get_db() -> Generator[sqlite3.Connection, None, None]:
+    """FastAPI dependency yielding a configured SQLite connection."""
+    with get_connection() as conn:
+        yield conn
+
+
 def init_db(db_path: Optional[str] = None) -> None:
-    """Initialize database tables, disambiguate historical duplicate names, and enforce uniqueness idempotently."""
+    """Initialize database tables, run safe idempotent migrations for multi-user ownership and Better Auth."""
     with get_connection(db_path) as conn:
         conn.executescript(SCHEMA_SQL)
-
-        # Migration: Disambiguate legacy duplicates from pre-uniqueness versions without data loss
         cursor = conn.cursor()
-        duplicates = cursor.execute("""
-            SELECT LOWER(TRIM(name)) as norm_name, COUNT(*) as cnt
-            FROM projects
-            GROUP BY LOWER(TRIM(name))
-            HAVING cnt > 1
-        """).fetchall()
 
-        for dup in duplicates:
-            norm_name = dup[0]
-            rows = cursor.execute("""
-                SELECT id, name FROM projects
-                WHERE LOWER(TRIM(name)) = ?
-                ORDER BY updated_at ASC, created_at ASC
-            """, (norm_name,)).fetchall()
+        # Check if user_id column exists on projects table
+        cursor.execute("PRAGMA table_info(projects)")
+        columns = [row["name"] for row in cursor.fetchall()]
+        if "user_id" not in columns:
+            cursor.execute("ALTER TABLE projects ADD COLUMN user_id TEXT;")
+            # Assign any pre-existing unowned records to legacy_unassigned so they are isolated from new users
+            cursor.execute("UPDATE projects SET user_id = 'legacy_unassigned' WHERE user_id IS NULL;")
+            conn.commit()
 
-            # Keep the newest record with original name; archive older duplicates safely
-            for i, r in enumerate(rows[:-1], 1):
-                new_name = f"{r['name']} (Archive {i})"
-                cursor.execute("UPDATE projects SET name = ? WHERE id = ?", (new_name, r["id"]))
+        # Ensure index on user_id exists
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);")
 
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_name_unique ON projects(LOWER(TRIM(name)));")
+        # Drop old global name uniqueness index if present, transitioning to per-user name uniqueness
+        cursor.execute("DROP INDEX IF EXISTS idx_projects_name_unique;")
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_user_name_unique ON projects(user_id, LOWER(TRIM(name)));"
+        )
         conn.commit()
