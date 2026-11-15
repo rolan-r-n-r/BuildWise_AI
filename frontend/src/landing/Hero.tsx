@@ -155,6 +155,11 @@ export const Hero: React.FC = () => {
           style={{ y: copyY }}
         >
           <div className="lg:col-span-8">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-bw-line bg-bw-surface text-[12px] font-semibold text-bw-ink-2 shadow-xs mb-6">
+              <span aria-hidden="true" className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>NBC 2016 &amp; IS 1893:2016 Spatial Engine</span>
+            </div>
+
             <h1
               className="font-bold text-bw-ink"
               style={{ fontSize: LANDING.type.hero, letterSpacing: LANDING.type.trackingHero, lineHeight: 1.04 }}
@@ -195,7 +200,7 @@ export const Hero: React.FC = () => {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={reduced ? timed(0.3, 0.6) : { type: 'spring', stiffness: 320, damping: 26, delay: 0.62 }}
-                className="group inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border border-bw-line bg-bw-surface px-5 text-[15px] font-semibold text-bw-ink transition-[background-color,border-color,transform] duration-200 hover:bg-bw-line-soft active:scale-[0.98] sm:w-auto"
+                className="group inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border border-bw-line bg-bw-surface px-5 text-[15px] font-semibold text-bw-ink transition-[background-color,border-color,transform] duration-200 hover:bg-bw-line-soft active:scale-[0.98] sm:w-auto cursor-pointer"
               >
                 <span aria-hidden className="transition-transform duration-200 group-hover:translate-y-0.5 motion-reduce:transform-none">
                   <Icon name="chevron-down" size={15} />
@@ -204,7 +209,16 @@ export const Hero: React.FC = () => {
               </motion.button>
             </div>
 
-  
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-bw-ink-2">
+              <span className="flex items-center gap-1.5 font-medium">
+                <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-bw-accent" />
+                Zero paid GIS keys
+              </span>
+              <span aria-hidden="true" className="text-bw-ink-3">·</span>
+              <span className="font-medium">Deterministic IS 1893 zoning</span>
+              <span aria-hidden="true" className="text-bw-ink-3">·</span>
+              <span className="font-medium">Dimensioned vector plans</span>
+            </div>
           </div>
 
         {/* THE RIGHT-HAND COLUMN — dial over spec bar, at every width from `lg`.

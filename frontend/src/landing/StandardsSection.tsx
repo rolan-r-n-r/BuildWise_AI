@@ -146,7 +146,7 @@ export const StandardsSection: React.FC = () => {
         <ScrollRule className="mt-10" />
         <p
           data-testid="landing-certified-definition"
-          className="mt-4 max-w-3xl text-[13px] leading-relaxed text-[var(--text-2)]"
+          className="mt-4 max-w-3xl text-[13px] leading-relaxed text-bw-ink-2"
         >
           {CERTIFIED_DEFINITION}
         </p>

@@ -28,14 +28,14 @@ import React, { useRef } from 'react';
 import { motion, useReducedMotion, useTransform } from 'framer-motion';
 import { EASE_APPLE, fadeRise, staggerParent, timed, SETTLE_VIEWPORT } from './motion';
 import { useEntryProgress } from './scrollLink';
-import { APP_PATH, navigate } from './router';
+import { APP_PATH, SIGN_IN_PATH, SIGN_UP_PATH, FORGOT_PASSWORD_PATH, navigate } from './router';
 import { scrollToId } from './scroll';
 import { Icon } from '../components/Icon';
 import { SectionHeading } from './SectionHeading';
 import { GROUP_LABELS, GROUP_ORDER, sourcesIn } from './standards';
 import { WindowBar } from './WindowBar';
 import { LANDING } from './theme';
-import { LOGO_SRC, LOGO_SRCSET } from './logo';
+import { LOGO_SRC, LOGO_SRCSET, LOGO_WHITE_SRC, LOGO_WHITE_SRCSET } from './logo';
 
 const DOSSIER_ROWS: ReadonlyArray<{ label: string; meta: string }> = [
   { label: 'Executive scorecard', meta: 'MCDA' },
@@ -135,6 +135,22 @@ export const CtaBand: React.FC = () => {
             />
 
             <div className="rounded-b-[14px] bg-bw-porcelain p-3.5">
+              {/* Executive quick indicators */}
+              <div className="grid grid-cols-3 gap-1.5 mb-2.5 text-center text-[10.5px]">
+                <div className="p-1.5 rounded-[7px] bg-bw-surface border border-bw-line-soft">
+                  <span className="text-bw-ink-2 block">NBC 2016</span>
+                  <span className="font-bold text-bw-green-ink">Compliant</span>
+                </div>
+                <div className="p-1.5 rounded-[7px] bg-bw-surface border border-bw-line-soft">
+                  <span className="text-bw-ink-2 block">IS 1893</span>
+                  <span className="font-bold text-bw-ink">Zone III</span>
+                </div>
+                <div className="p-1.5 rounded-[7px] bg-bw-surface border border-bw-line-soft">
+                  <span className="text-bw-ink-2 block">Vastu</span>
+                  <span className="font-bold text-bw-accent">88 / 100</span>
+                </div>
+              </div>
+
               <ul className="flex flex-col gap-1.5">
                 {DOSSIER_ROWS.map((row, i) => (
                   <motion.li
@@ -151,13 +167,13 @@ export const CtaBand: React.FC = () => {
                       </span>
                       <span className="text-[13px] font-semibold text-bw-ink">{row.label}</span>
                     </span>
-                    <span className="text-[11px] font-semibold uppercase text-bw-ink-3" style={{ letterSpacing: '0.08em' }}>
+                    <span className="text-[11px] font-semibold uppercase text-bw-ink-2" style={{ letterSpacing: '0.08em' }}>
                       {row.meta}
                     </span>
                   </motion.li>
                 ))}
               </ul>
-              <p className="mt-3 flex items-center justify-between rounded-[9px] px-1 text-[12px] text-bw-ink-3">
+              <p className="mt-3 flex items-center justify-between rounded-[9px] px-1 text-[12px] text-bw-ink-2">
                 <span>PDF · Vector drawings · Room schedule</span>
                 <span className="font-semibold text-bw-green-ink">Ready to print</span>
               </p>
@@ -185,7 +201,16 @@ export const Footer: React.FC = () => (
               alt=""
               width={30}
               height={30}
-              className="rounded-[8px]"
+              className="rounded-[8px] dark:hidden"
+              decoding="async"
+            />
+            <img
+              src={LOGO_WHITE_SRC}
+              srcSet={LOGO_WHITE_SRCSET}
+              alt=""
+              width={30}
+              height={30}
+              className="rounded-[8px] hidden dark:block"
               decoding="async"
             />
             <p className="text-[15px] font-bold text-bw-ink">BuildWise AI</p>
@@ -197,13 +222,40 @@ export const Footer: React.FC = () => (
           <button
             type="button"
             onClick={() => navigate(APP_PATH)}
-            className="group mt-5 inline-flex h-11 items-center gap-1.5 rounded-full border border-bw-line bg-bw-surface px-4 text-[13px] font-semibold text-bw-ink transition-[background-color,border-color] duration-200 hover:bg-bw-line-soft"
+            className="group mt-5 inline-flex h-11 items-center gap-1.5 rounded-full border border-bw-line bg-bw-surface px-4 text-[13px] font-semibold text-bw-ink transition-[background-color,border-color] duration-200 hover:bg-bw-line-soft cursor-pointer"
           >
             Open the app
             <span aria-hidden className="transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transform-none">
               <Icon name="chevron-right" size={13} />
             </span>
           </button>
+
+          {/* Quick Authentication Access Links */}
+          <div className="mt-3 flex flex-wrap items-center gap-1 text-[12px] text-bw-ink-2">
+            <button
+              type="button"
+              onClick={() => navigate(SIGN_IN_PATH)}
+              className="min-h-[44px] min-w-[44px] px-2.5 inline-flex items-center justify-center hover:text-bw-ink hover:underline cursor-pointer"
+            >
+              Sign In
+            </button>
+            <span aria-hidden="true" className="text-bw-line">·</span>
+            <button
+              type="button"
+              onClick={() => navigate(SIGN_UP_PATH)}
+              className="min-h-[44px] min-w-[44px] px-2.5 inline-flex items-center justify-center hover:text-bw-ink hover:underline cursor-pointer"
+            >
+              Create Account
+            </button>
+            <span aria-hidden="true" className="text-bw-line">·</span>
+            <button
+              type="button"
+              onClick={() => navigate(FORGOT_PASSWORD_PATH)}
+              className="min-h-[44px] min-w-[44px] px-2.5 inline-flex items-center justify-center hover:text-bw-ink hover:underline cursor-pointer"
+            >
+              Password Recovery
+            </button>
+          </div>
         </div>
 
         {/* The index of the #standards sheet: one column per group, in the
