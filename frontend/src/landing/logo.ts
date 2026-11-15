@@ -20,9 +20,17 @@
  */
 import logo1x from '../assets/BuildWise_logo_square_32.png';
 import logo3x from '../assets/BuildWise_logo_square_96.png';
+import logoWhite1x from '../assets/BuildWise_logo_square_white_32.png';
+import logoWhite3x from '../assets/BuildWise_logo_square_white_96.png';
 
 /** The 3x file: the `src` fallback for a browser that ignores `srcset`. */
 export const LOGO_SRC = logo3x;
 
 /** 1x / 3x descriptors for a mark drawn at 26–30 CSS px; DPR 2 resolves to 3x. */
 export const LOGO_SRCSET = `${logo1x} 1x, ${logo3x} 3x`;
+
+/** The white brandmark for dark theme surfaces. */
+export const LOGO_WHITE_SRC = logoWhite3x;
+
+/** 1x / 3x descriptors for the white brandmark. */
+export const LOGO_WHITE_SRCSET = `${logoWhite1x} 1x, ${logoWhite3x} 3x`;

@@ -139,6 +139,13 @@
 }
 
 @layer base {
+  /* Suppress browser-native password reveal and clear buttons (e.g. Microsoft Edge)
+     to avoid duplicate eye icons alongside our custom accessible toggle */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
+
   body {
     background-color: var(--bg-page);
     color: var(--text-1);
@@ -155,6 +162,7 @@
 }
 
 @layer utilities {
+
   /* Standard Apple-style deceleration curve (design/tokens.ts MOTION.ease.out) */
   .ease-apple {
     transition-timing-function: var(--motion-ease-out);
@@ -237,10 +245,12 @@
   scroll-snap-type: x proximity;
   scrollbar-width: none;
 }
+
 .bw-tab-strip::-webkit-scrollbar {
   display: none;
 }
-.bw-tab-strip > * {
+
+.bw-tab-strip>* {
   scroll-snap-align: start;
 }
 
@@ -248,40 +258,32 @@
    SectionNav writes --bw-nav-fade-l/-r from its scroll metrics, so a tray that
    fits at desktop width shows no fade at all (audit F29). */
 .bw-section-nav-scroll {
-  mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    black var(--bw-nav-fade-l, 0px),
-    black calc(100% - var(--bw-nav-fade-r, 0px)),
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    black var(--bw-nav-fade-l, 0px),
-    black calc(100% - var(--bw-nav-fade-r, 0px)),
-    transparent 100%
-  );
+  mask-image: linear-gradient(to right,
+      transparent 0,
+      black var(--bw-nav-fade-l, 0px),
+      black calc(100% - var(--bw-nav-fade-r, 0px)),
+      transparent 100%);
+  -webkit-mask-image: linear-gradient(to right,
+      transparent 0,
+      black var(--bw-nav-fade-l, 0px),
+      black calc(100% - var(--bw-nav-fade-r, 0px)),
+      transparent 100%);
 }
 
 /* Edge fade for horizontal strips (mask, not gradient overlays, so the
    fade works over any surface incl. vibrancy). Pair with .bw-tab-strip. */
 .bw-fade-x {
   --bw-fade-x-w: 24px;
-  mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    black var(--bw-fade-x-w),
-    black calc(100% - var(--bw-fade-x-w)),
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    black var(--bw-fade-x-w),
-    black calc(100% - var(--bw-fade-x-w)),
-    transparent 100%
-  );
+  mask-image: linear-gradient(to right,
+      transparent 0,
+      black var(--bw-fade-x-w),
+      black calc(100% - var(--bw-fade-x-w)),
+      transparent 100%);
+  -webkit-mask-image: linear-gradient(to right,
+      transparent 0,
+      black var(--bw-fade-x-w),
+      black calc(100% - var(--bw-fade-x-w)),
+      transparent 100%);
 }
 
 /* Touch-target slop: keeps the rendered control compact (32px) while the
@@ -290,10 +292,12 @@
 .bw-touch-target {
   position: relative;
 }
+
 .bw-touch-target.absolute,
 .bw-touch-target.\!absolute {
   position: absolute;
 }
+
 .bw-touch-target::after {
   content: '';
   position: absolute;
@@ -311,9 +315,11 @@
   transition: transform var(--motion-duration-slow) var(--motion-ease-out);
   will-change: transform;
 }
+
 .bw-drawer-bottom {
   padding-bottom: var(--safe-area-bottom);
 }
+
 .bw-drawer-grabber {
   width: 36px;
   height: 4px;
@@ -328,45 +334,97 @@
    motion path does not mount at all (usePresence), so these keyframes never
    play for a reader who asked for less motion. */
 @keyframes bwDrawerInRight {
-  from { opacity: 0; transform: translate3d(28px, 0, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+  from {
+    opacity: 0;
+    transform: translate3d(28px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
 }
+
 @keyframes bwDrawerOutRight {
-  from { opacity: 1; transform: translate3d(0, 0, 0); }
-  to { opacity: 0; transform: translate3d(28px, 0, 0); }
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(28px, 0, 0);
+  }
 }
+
 @keyframes bwDrawerInLeft {
-  from { opacity: 0; transform: translate3d(-28px, 0, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+  from {
+    opacity: 0;
+    transform: translate3d(-28px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
 }
+
 @keyframes bwDrawerOutLeft {
-  from { opacity: 1; transform: translate3d(0, 0, 0); }
-  to { opacity: 0; transform: translate3d(-28px, 0, 0); }
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(-28px, 0, 0);
+  }
 }
+
 @keyframes bwDrawerInBottom {
-  from { opacity: 0.4; transform: translate3d(0, 40px, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+  from {
+    opacity: 0.4;
+    transform: translate3d(0, 40px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
 }
+
 @keyframes bwDrawerOutBottom {
-  from { opacity: 1; transform: translate3d(0, 0, 0); }
-  to { opacity: 0; transform: translate3d(0, 40px, 0); }
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(0, 40px, 0);
+  }
 }
 
 .bw-drawer[data-side='right'] {
   animation: bwDrawerInRight var(--motion-duration-panel) var(--motion-ease-spatial) both;
 }
+
 .bw-drawer[data-side='left'] {
   animation: bwDrawerInLeft var(--motion-duration-panel) var(--motion-ease-spatial) both;
 }
+
 .bw-drawer[data-side='bottom'] {
   animation: bwDrawerInBottom var(--motion-duration-panel) var(--motion-ease-spatial) both;
 }
+
 .bw-drawer[data-side='right'][data-exiting='true'] {
   animation: bwDrawerOutRight 180ms var(--motion-ease-out) both;
 }
+
 .bw-drawer[data-side='left'][data-exiting='true'] {
   animation: bwDrawerOutLeft 180ms var(--motion-ease-out) both;
 }
+
 .bw-drawer[data-side='bottom'][data-exiting='true'] {
   animation: bwDrawerOutBottom 180ms var(--motion-ease-out) both;
 }
@@ -390,6 +448,7 @@
     opacity: 0;
     transform: translateY(-4px) scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -397,6 +456,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .animate-pulse,
   [style*='bwMenuIn'] {
     animation: none !important;
@@ -408,6 +468,7 @@
     opacity: 0;
     transform: scale(0.96) translateY(-4px);
   }
+
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -421,31 +482,54 @@
 
 /* Exit keyframes for surfaces kept mounted by usePresence. */
 @keyframes scrimFadeOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
 }
+
 .animate-scrim-out {
   animation: scrimFadeOut 200ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
 }
 
 @keyframes sheetScaleFadeOut {
-  from { opacity: 1; transform: scale(1); }
-  to { opacity: 0; transform: scale(0.985); }
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.985);
+  }
 }
+
 .animate-sheet-out {
   animation: sheetScaleFadeOut 200ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
   transform-origin: center center;
 }
 
 @keyframes toastOut {
-  from { opacity: 1; transform: translateY(0) scale(1); }
-  to { opacity: 0; transform: translateY(4px) scale(0.985); }
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
 }
+
 .animate-toast-out {
   animation: toastOut 160ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .animate-scrim-out,
   .animate-sheet-out,
   .animate-toast-out {
@@ -498,8 +582,8 @@
     border: var(--panel-border);
     box-shadow: var(--shadow);
     transition: background-color 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
-                border-color 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
-                box-shadow 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+      border-color 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
+      box-shadow 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
   }
 
   .vibrancy-pill {
@@ -533,6 +617,7 @@
 /* (3) Opt-out. Every glass surface already paints a translucent background
    colour, so dropping the filter leaves a legible solid panel. */
 @media (prefers-reduced-transparency: reduce) {
+
   .vibrancy-panel,
   .vibrancy-pill,
   .vibrancy-hud,
@@ -548,6 +633,7 @@
     opacity: 0;
     transform: scale(0.96);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -559,6 +645,7 @@
     opacity: 1;
     transform: scale(1);
   }
+
   to {
     opacity: 0;
     transform: scale(1.02);
@@ -578,6 +665,7 @@
   0% {
     transform: rotate(0deg);
   }
+
   100% {
     transform: rotate(360deg);
   }
@@ -602,11 +690,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .ios-hud-spinner,
   .ios-spinner-16 {
     animation: none;
     border-color: var(--accent);
   }
+
   .animate-hud-enter,
   .animate-hud-exit {
     animation: none;
@@ -702,10 +792,12 @@
     transform: translateY(-26px) scale(0.6);
     opacity: 0;
   }
+
   60% {
     transform: translateY(3px) scale(1.05);
     opacity: 1;
   }
+
   100% {
     transform: translateY(0) scale(1);
     opacity: 1;
@@ -717,6 +809,7 @@
     transform: translate(-50%, -50%) scale(0.2);
     opacity: 0.9;
   }
+
   100% {
     transform: translate(-50%, -50%) scale(2.4);
     opacity: 0;
@@ -781,6 +874,7 @@
     opacity: 0;
     transform: translateY(4px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -797,6 +891,7 @@
     opacity: 0;
     transform: scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -852,11 +947,9 @@
 }
 
 .bw-placeholder-vignette {
-  background: radial-gradient(
-    132% 96% at 50% 44%,
-    rgba(255, 255, 255, 0) 42%,
-    var(--hairline) 100%
-  );
+  background: radial-gradient(132% 96% at 50% 44%,
+      rgba(255, 255, 255, 0) 42%,
+      var(--hairline) 100%);
 }
 
 /*
@@ -866,11 +959,9 @@
  * would be a per-frame paint over a full-viewport surface).
  */
 .bw-placeholder-wash {
-  background: radial-gradient(
-    62% 44% at 50% 42%,
-    var(--accent-tint) 0%,
-    rgba(255, 255, 255, 0) 72%
-  );
+  background: radial-gradient(62% 44% at 50% 42%,
+      var(--accent-tint) 0%,
+      rgba(255, 255, 255, 0) 72%);
 }
 
 /*
@@ -923,12 +1014,10 @@
 }
 
 .report-skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--fill) 25%,
-    var(--fill-hover) 50%,
-    var(--fill) 75%
-  );
+  background: linear-gradient(90deg,
+      var(--fill) 25%,
+      var(--fill-hover) 50%,
+      var(--fill) 75%);
   background-size: 200% 100%;
   animation: reportSkeletonShimmer 1.4s ease-in-out infinite;
 }
@@ -937,6 +1026,7 @@
   0% {
     background-position: 200% 0;
   }
+
   100% {
     background-position: -200% 0;
   }
@@ -987,6 +1077,7 @@
      to <body>, so nothing that legitimately escapes a card is clipped). */
   contain: layout paint;
 }
+
 .bw-card::after {
   content: '';
   position: absolute;
@@ -998,14 +1089,17 @@
   pointer-events: none;
   transition: opacity var(--motion-duration-slow) var(--motion-ease-out);
 }
+
 @media (hover: hover) {
   .bw-card:hover {
     transform: translateY(-2px);
   }
+
   .bw-card:hover::after {
     opacity: 1;
   }
 }
+
 .bw-card:active {
   transform: scale(0.98);
   transition-duration: var(--motion-duration-fast);
@@ -1020,28 +1114,58 @@
     opacity: 0;
     transform: translateY(6px);
   }
+
   to {
     opacity: 1;
     transform: none;
   }
 }
-.bw-stagger > * {
+
+.bw-stagger>* {
   animation: bwCardIn var(--motion-duration-slow) var(--motion-ease-out) both;
 }
-.bw-stagger > *:nth-child(1) { animation-delay: 0ms; }
-.bw-stagger > *:nth-child(2) { animation-delay: 40ms; }
-.bw-stagger > *:nth-child(3) { animation-delay: 80ms; }
-.bw-stagger > *:nth-child(4) { animation-delay: 120ms; }
-.bw-stagger > *:nth-child(5) { animation-delay: 160ms; }
-.bw-stagger > *:nth-child(6) { animation-delay: 200ms; }
-.bw-stagger > *:nth-child(7) { animation-delay: 240ms; }
-.bw-stagger > *:nth-child(8) { animation-delay: 280ms; }
-.bw-stagger > *:nth-child(n + 9) { animation-delay: 0ms; }
+
+.bw-stagger>*:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.bw-stagger>*:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.bw-stagger>*:nth-child(3) {
+  animation-delay: 80ms;
+}
+
+.bw-stagger>*:nth-child(4) {
+  animation-delay: 120ms;
+}
+
+.bw-stagger>*:nth-child(5) {
+  animation-delay: 160ms;
+}
+
+.bw-stagger>*:nth-child(6) {
+  animation-delay: 200ms;
+}
+
+.bw-stagger>*:nth-child(7) {
+  animation-delay: 240ms;
+}
+
+.bw-stagger>*:nth-child(8) {
+  animation-delay: 280ms;
+}
+
+.bw-stagger>*:nth-child(n + 9) {
+  animation-delay: 0ms;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .bw-stagger > * {
+  .bw-stagger>* {
     animation: none !important;
   }
+
   .bw-card,
   .bw-card:hover,
   .bw-card:active {
@@ -1054,6 +1178,7 @@
 /* PRINT / PDF MEDIA STYLES                                                  */
 /* ========================================================================= */
 @media print {
+
   /* Hide all app chrome, map, drawer, scrim and interactive controls */
   #center-map-section,
   header,
@@ -1067,7 +1192,8 @@
     display: none !important;
   }
 
-  html, body {
+  html,
+  body {
     overflow: visible !important;
     height: auto !important;
     background: #ffffff !important;
@@ -1144,6 +1270,7 @@
     page-break-before: always;
     break-before: page;
   }
+
   .report-print-section:first-of-type {
     page-break-before: auto;
     break-before: auto;
@@ -1158,21 +1285,25 @@
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+
   [data-provenance-status='VERIFIED'] {
     background: #ffffff !important;
     color: #000000 !important;
     border: 1.5px solid #000000 !important;
   }
+
   [data-provenance-status='CALCULATED'] {
     background: #ececec !important;
     color: #000000 !important;
     border: 1px solid #000000 !important;
   }
+
   [data-provenance-status='ASSUMED'] {
     background: #d9d9d9 !important;
     color: #000000 !important;
     border: 1px dashed #4d4d4d !important;
   }
+
   [data-provenance-status='UNKNOWN'] {
     background: #ffffff !important;
     color: #4d4d4d !important;
@@ -1211,6 +1342,7 @@
 /* primitives.useReducedMotion so JS-driven motion matches CSS)              */
 /* ========================================================================= */
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
@@ -1243,12 +1375,15 @@ html.bw-landing-open,
 html.bw-landing-open body {
   background-color: var(--bw-porcelain-1) !important;
 }
+
 .bw-landing {
   background-color: var(--bw-porcelain-1);
 }
+
 html.bw-landing-open {
   overflow-y: auto;
-  scroll-behavior: auto; /* Lenis owns smoothing */
+  scroll-behavior: auto;
+  /* Lenis owns smoothing */
 }
 
 /* Lenis smooth-scroll contract (recommended styles) */
@@ -1256,12 +1391,15 @@ html.bw-landing-open.lenis,
 html.bw-landing-open.lenis body {
   height: auto;
 }
+
 .lenis.lenis-smooth {
   scroll-behavior: auto !important;
 }
+
 .lenis.lenis-smooth [data-lenis-prevent] {
   overscroll-behavior: contain;
 }
+
 .lenis.lenis-stopped {
   overflow: hidden;
 }
@@ -1309,16 +1447,92 @@ html.bw-landing-open.lenis body {
   --bw-radius-panel: 11px;
 }
 
-/* The landing is a fixed white/porcelain surface. It deliberately does NOT
-   follow prefers-color-scheme: the marketing page is a printed-sheet metaphor
-   (drawings, plot samples, dossiers) and inverting it turned the floating nav
-   into a near-white pill over a dark page. Only the product app offers a dark
-   theme, through its own explicit toggle. */
+/* Landing (marketing) dark palette — high-contrast blueprint dark mode */
+html[data-theme='dark'],
+html.dark {
+  --bw-porcelain-1: #090d16;
+  --bw-porcelain-2: #0e1526;
+  --bw-white: #111a2e;
+  --bw-ink: #f8fafc;
+  --bw-ink-hover: #ffffff;
+  --bw-ink-2: #94a3b8;
+  --bw-ink-3: #64748b;
+  --bw-slate: #94a3b8;
+  --bw-accent: #3b82f6;
+  --bw-accent-a: #38bdf8;
+  --bw-accent-b: #60a5fa;
+  --bw-accent-deep: #60a5fa;
+  --bw-accent-tint: rgba(59, 130, 246, 0.16);
+  --bw-green: #22c55e;
+  --bw-green-ink: #4ade80;
+  --bw-amber: #f59e0b;
+  --bw-amber-ink: #fbbf24;
+  --bw-hairline: rgba(255, 255, 255, 0.12);
+  --bw-line: rgba(255, 255, 255, 0.12);
+  --bw-line-soft: rgba(255, 255, 255, 0.08);
+  --bw-glass: rgba(17, 26, 46, 0.70);
+  --bw-glass-strong: rgba(17, 26, 46, 0.88);
+  --bw-cta-bg: #f8fafc;
+  --bw-cta-ink: #090d16;
+  --bw-cta-bg-hover: #e2e8f0;
+  --bw-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --bw-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --bw-shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
+  --bw-shadow-window: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.7), 0 32px 72px rgba(0, 0, 0, 0.8);
+}
 
-/* Landing focus ring (visible on porcelain) */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme='light']) {
+    --bw-porcelain-1: #090d16;
+    --bw-porcelain-2: #0e1526;
+    --bw-white: #111a2e;
+    --bw-ink: #f8fafc;
+    --bw-ink-hover: #ffffff;
+    --bw-ink-2: #94a3b8;
+    --bw-ink-3: #64748b;
+    --bw-slate: #94a3b8;
+    --bw-accent: #3b82f6;
+    --bw-accent-a: #38bdf8;
+    --bw-accent-b: #60a5fa;
+    --bw-accent-deep: #60a5fa;
+    --bw-accent-tint: rgba(59, 130, 246, 0.16);
+    --bw-green: #22c55e;
+    --bw-green-ink: #4ade80;
+    --bw-amber: #f59e0b;
+    --bw-amber-ink: #fbbf24;
+    --bw-hairline: rgba(255, 255, 255, 0.12);
+    --bw-line: rgba(255, 255, 255, 0.12);
+    --bw-line-soft: rgba(255, 255, 255, 0.08);
+    --bw-glass: rgba(17, 26, 46, 0.70);
+    --bw-glass-strong: rgba(17, 26, 46, 0.88);
+    --bw-cta-bg: #f8fafc;
+    --bw-cta-ink: #090d16;
+    --bw-cta-bg-hover: #e2e8f0;
+    --bw-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+    --bw-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+    --bw-shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
+    --bw-shadow-window: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.7), 0 32px 72px rgba(0, 0, 0, 0.8);
+  }
+}
+
+/* Landing dark mode overrides */
+[data-theme='dark'] .bw-nav,
+html.dark .bw-nav {
+  background: linear-gradient(180deg, rgba(17, 26, 46, 0.85), rgba(9, 13, 22, 0.75));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme='dark'] .bw-window-bar,
+html.dark .bw-window-bar {
+  background: linear-gradient(180deg, rgba(26, 38, 64, 0.95), rgba(17, 26, 46, 0.95));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Landing focus ring (adaptive on light and dark) */
 .bw-landing :focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #eef2f7, 0 0 0 4px var(--bw-accent-a);
+  box-shadow: 0 0 0 2px var(--bw-porcelain-1), 0 0 0 4px var(--bw-accent-a);
   border-radius: 10px;
 }
 
@@ -1397,6 +1611,7 @@ html.bw-landing-open.lenis body {
   padding: 8px 6px 8px 11px;
   transition: box-shadow 300ms var(--bw-ease-apple);
 }
+
 .bw-nav[data-condensed='true'] {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 0 0 1px rgba(11, 18, 32, 0.05),
     var(--bw-shadow-3);
@@ -1455,10 +1670,11 @@ html.bw-landing-open.lenis body {
   gap: 8px;
   flex: none;
 }
+
 /* `> *` rather than `> span`, so the close light can be a real <button> (the
    red light closes a dialog on macOS, and it should be reachable by keyboard
    and screen readers rather than being three decorative dots). */
-.bw-traffic > * {
+.bw-traffic>* {
   display: block;
   width: 12px;
   height: 12px;
@@ -1469,17 +1685,35 @@ html.bw-landing-open.lenis body {
   box-shadow: inset 0 0 0 0.5px rgba(11, 18, 32, 0.10);
   transition: background-color 200ms var(--bw-ease-apple);
 }
+
 /* Pointer devices: the lights tint on window hover. Touch devices never hover,
    so they get the colour straight away rather than grey dots forever. */
 @media (hover: hover) {
-  .bw-window:hover .bw-traffic > *:nth-child(1) { background: #ff5f57; }
-  .bw-window:hover .bw-traffic > *:nth-child(2) { background: #febc2e; }
-  .bw-window:hover .bw-traffic > *:nth-child(3) { background: #28c840; }
+  .bw-window:hover .bw-traffic>*:nth-child(1) {
+    background: #ff5f57;
+  }
+
+  .bw-window:hover .bw-traffic>*:nth-child(2) {
+    background: #febc2e;
+  }
+
+  .bw-window:hover .bw-traffic>*:nth-child(3) {
+    background: #28c840;
+  }
 }
+
 @media (hover: none) {
-  .bw-traffic > *:nth-child(1) { background: #ff5f57; }
-  .bw-traffic > *:nth-child(2) { background: #febc2e; }
-  .bw-traffic > *:nth-child(3) { background: #28c840; }
+  .bw-traffic>*:nth-child(1) {
+    background: #ff5f57;
+  }
+
+  .bw-traffic>*:nth-child(2) {
+    background: #febc2e;
+  }
+
+  .bw-traffic>*:nth-child(3) {
+    background: #28c840;
+  }
 }
 
 /* Unified toolbar chip inside a window bar (segmented, non-interactive in the
@@ -1506,6 +1740,7 @@ html.bw-landing-open.lenis body {
   box-shadow: var(--bw-shadow-1);
   transition: transform 200ms var(--bw-ease-out);
 }
+
 .bw-surface::after {
   content: '';
   position: absolute;
@@ -1517,17 +1752,26 @@ html.bw-landing-open.lenis body {
   pointer-events: none;
   transition: opacity 200ms var(--bw-ease-out);
 }
+
 @media (hover: hover) {
-  .bw-surface:hover { transform: translateY(-2px); }
-  .bw-surface:hover::after { opacity: 1; }
+  .bw-surface:hover {
+    transform: translateY(-2px);
+  }
+
+  .bw-surface:hover::after {
+    opacity: 1;
+  }
 }
+
 @media (prefers-reduced-motion: reduce) {
+
   .bw-surface,
-  .bw-surface:hover { transform: none; }
+  .bw-surface:hover {
+    transform: none;
+  }
 }
 
 /* REMOVED: `.bw-switch-knob` (the knob shadow of a landing toggle that no longer
    exists — the app's own switches are styled where they live) and `.bw-mockup-svg`
    ("crisp rendering of landing SVG mockups": the hand-built mock-up of the app was
    deleted, and it was the only thing that ever wore this class). */
-

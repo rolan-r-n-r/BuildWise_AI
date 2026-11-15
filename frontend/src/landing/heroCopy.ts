@@ -113,6 +113,11 @@ ${p} .bh-sub{margin:1.5rem 0 0;max-width:38rem;font-size:17px;line-height:1.6;co
 ${p}[data-boot-done],
 html.bw-boot-landing:has(#root > *) [data-boot-hero]{visibility:hidden}
 html.bw-boot-landing,html.bw-boot-landing body{background-color:${LANDING.color.porcelain1}}
+@media (prefers-color-scheme: dark){html.bw-boot-landing:not([data-theme='light']),html.bw-boot-landing:not([data-theme='light']) body{background-color:rgb(9,13,22)}html.bw-boot-landing:not([data-theme='light']) [data-boot-hero]{color:rgb(248,250,252)}html.bw-boot-landing:not([data-theme='light']) .bh-h1{color:rgb(248,250,252)}html.bw-boot-landing:not([data-theme='light']) .bh-sub{color:rgb(148,163,184)}}
+html.bw-boot-landing[data-theme='dark'],html.bw-boot-landing[data-theme='dark'] body,html.bw-boot-landing.dark,html.bw-boot-landing.dark body{background-color:rgb(9,13,22)}
+html.bw-boot-landing[data-theme='dark'] [data-boot-hero],html.bw-boot-landing.dark [data-boot-hero]{color:rgb(248,250,252)}
+html.bw-boot-landing[data-theme='dark'] .bh-h1,html.bw-boot-landing.dark .bh-h1{color:rgb(248,250,252)}
+html.bw-boot-landing[data-theme='dark'] .bh-sub,html.bw-boot-landing.dark .bh-sub{color:rgb(148,163,184)}
 /* RESERVE THE SCROLLBAR GUTTER FROM THE FIRST LAYOUT. The landing paints one
    screen tall (this shell) and then React fills in ~3 300px of content, so on a
    platform with CLASSIC scrollbars the scrollbar does not exist at first paint
