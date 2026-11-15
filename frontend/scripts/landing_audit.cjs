@@ -68,6 +68,28 @@ function getChromePath() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+async function runAxe(page) {
+  await page.addScriptTag({ path: AXE_PATH });
+  return await page.evaluate(async (tags) => {
+    const res = await window.axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] });
+    return {
+      violations: res.violations.map((v) => ({
+        id: v.id,
+        impact: v.impact,
+        help: v.help,
+        helpUrl: v.helpUrl,
+        nodes: v.nodes.slice(0, 6).map((n) => ({
+          target: n.target.join(' '),
+          summary: (n.failureSummary || '').replace(/\s+/g, ' ').slice(0, 200),
+        })),
+        nodeCount: v.nodes.length,
+      })),
+      violationCount: res.violations.length,
+      nodeCount: res.violations.reduce((a, v) => a + v.nodes.length, 0),
+    };
+  }, AXE_TAGS);
+}
+
 /** Injected into the page: collect every shape of layout defect. */
 function scanLayout() {
   const winW = window.innerWidth;
@@ -423,26 +445,7 @@ const VITALS_BOOTSTRAP = () => {
     const vitals = await page.evaluate(() => window.__bwVitals);
 
     // ---- axe ---------------------------------------------------------------
-    await page.addScriptTag({ path: AXE_PATH });
-    const axe = await page.evaluate(async (tags) => {
-      const res = await window.axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] });
-      return {
-        violations: res.violations.map((v) => ({
-          id: v.id,
-          impact: v.impact,
-          help: v.help,
-          helpUrl: v.helpUrl,
-          nodes: v.nodes.slice(0, 6).map((n) => ({
-            target: n.target.join(' '),
-            summary: (n.failureSummary || '').replace(/\s+/g, ' ').slice(0, 200),
-          })),
-          nodeCount: v.nodes.length,
-        })),
-        violationCount: res.violations.length,
-        nodeCount: res.violations.reduce((a, v) => a + v.nodes.length, 0),
-      };
-    }, AXE_TAGS);
-
+    const axe = await runAxe(page);
     // ---- screenshots -------------------------------------------------------
     await shoot(page, `v${vp.name}-fold`, false);
     await shoot(page, `v${vp.name}-full`, true);
@@ -462,20 +465,17 @@ const VITALS_BOOTSTRAP = () => {
     });
     console.log(
       `[${vp.name}] errors=${collectors.consoleErrors.length} pageErrors=${collectors.pageErrors.length} ` +
-        `docOverflow=${layout.docOverflow.diff}px elOverflow=${layout.elementOverflowCount} offCanvas=${layout.offCanvasCount} ` +
-        `tap<44=${layout.tapTargets.under44Count}/${layout.tapTargets.total} cls=${vitals.cls?.value ?? 'n/a'} lcp=${vitals.lcp?.value ?? 'n/a'}ms ` +
-        `axe=${axe.violationCount}v/${axe.nodeCount}n`
+      `docOverflow=${layout.docOverflow.diff}px elOverflow=${layout.elementOverflowCount} offCanvas=${layout.offCanvasCount} ` +
+      `tap<44=${layout.tapTargets.under44Count}/${layout.tapTargets.total} cls=${vitals.cls?.value ?? 'n/a'} lcp=${vitals.lcp?.value ?? 'n/a'}ms ` +
+      `axe=${axe.violationCount}v/${axe.nodeCount}n`
     );
     await page.close();
   }
 
-  // ---- OS-dark-preference pass ---------------------------------------------
-  // The landing is a deliberately fixed porcelain sheet (see the note in
-  // index.css): a reader whose OS prefers dark STILL gets the white page. The
-  // marketing page is a printed-document metaphor and the floating nav is
-  // white glass; re-pointing the palette turned that nav into a near-white pill
-  // over a dark page. This pass proves the fixed-light contract rather than an
-  // inversion.
+  // ---- OS-dark-preference & dark theme pass --------------------------------
+  // The landing supports full light & dark mode. When the OS prefers dark or
+  // the theme toggle is clicked, the landing seamlessly adopts the architectural
+  // blueprint obsidian palette (--bw-porcelain-1: #090d16, --bw-ink: #f8fafc).
   {
     const page = await browser.newPage();
     const collectors = await attachCollectors(page);
@@ -501,9 +501,10 @@ const VITALS_BOOTSTRAP = () => {
         hasThemeAttr: document.documentElement.getAttribute('data-theme'),
       };
     });
+    const axe = await runAxe(page);
     await shoot(page, 'v1440-dark-theme', false);
-    out.darkThemePass = { collectors, paints };
-    console.log(`[dark-preference] bodyBg=${paints.body.bg} bw-ink=${paints.ink} (landing stays porcelain)`);
+    out.darkThemePass = { collectors, paints, axe };
+    console.log(`[dark-preference] bodyBg=${paints.body.bg} bw-ink=${paints.ink} (landing dark mode active, axe violations=${axe.violationCount})`);
     await page.close();
   }
 
@@ -572,8 +573,11 @@ const VITALS_BOOTSTRAP = () => {
   const groundLum = (0.2126 * dr + 0.7152 * dg + 0.0722 * db) / 255;
   const [ir, ig, ib] = rgb(out.darkThemePass.paints.landing.color);
   const inkLum = (0.2126 * ir + 0.7152 * ig + 0.0722 * ib) / 255;
-  if (!(groundLum > 0.8 && inkLum < 0.2)) {
-    failures.push(`dark-preference pass: landing left porcelain (ground ${out.darkThemePass.paints.body.bg}, ink ${out.darkThemePass.paints.landing.color})`);
+  if (!(groundLum < 0.25 && inkLum > 0.7)) {
+    failures.push(`dark-preference pass: landing dark contrast unexpected (ground ${out.darkThemePass.paints.body.bg}, ink ${out.darkThemePass.paints.landing.color})`);
+  }
+  if (out.darkThemePass.axe && out.darkThemePass.axe.violationCount) {
+    failures.push(`dark-preference pass: ${out.darkThemePass.axe.violationCount} axe violation(s) in dark mode`);
   }
 
   fs.writeFileSync(path.join(OUT_DIR, 'landing-audit.json'), JSON.stringify(out, null, 2));
@@ -583,7 +587,7 @@ const VITALS_BOOTSTRAP = () => {
     for (const f of failures) console.log(`  - ${f}`);
     process.exitCode = 1;
   } else {
-    console.log('GATE PASS — no console/page errors, no axe violations, no tap target under 44px, no document overflow, landing stays porcelain under a dark preference.');
+    console.log('GATE PASS — no console/page errors, no axe violations, no tap target under 44px, no document overflow, landing supports full light & dark themes.');
   }
   await browser.close();
 })().catch(async (e) => {
