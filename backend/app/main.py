@@ -6,7 +6,7 @@ import logging
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi import FastAPI, HTTPException, Request, Query, Depends
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -1221,13 +1221,39 @@ from app.schemas.project import (  # noqa: E402
     ProjectUpdate,
 )
 from app.db import ProjectRepository  # noqa: E402
+from app.auth import AuthenticatedUser, get_current_user, get_optional_current_user, auth_router  # noqa: E402
+
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+
+
+@app.get("/api/auth/me")
+async def get_my_profile(current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Return the profile of the verified authenticated user."""
+    return {
+        "id": current_user.id,
+        "name": current_user.name,
+        "email": current_user.email,
+        "email_verified": current_user.email_verified,
+        "image": current_user.image,
+    }
 
 
 @app.post("/api/projects", response_model=ProjectDetail, status_code=201)
-async def create_project(project: ProjectCreate, overwrite: bool = Query(default=False)):
-    """Save an analysis session as a named project study."""
+async def create_project(
+    project: ProjectCreate,
+    overwrite: bool = Query(default=False),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Save an analysis session as a named project study owned by the authenticated user."""
     try:
-        return await asyncio.to_thread(ProjectRepository.create, project, overwrite=overwrite)
+        return await asyncio.to_thread(
+            ProjectRepository.create,
+            project,
+            user_id=current_user.id,
+            overwrite=overwrite,
+        )
+    except HTTPException:
+        raise
     except ValueError as e:
         msg = str(e)
         if msg.startswith("PROJECT_EXISTS:"):
@@ -1238,7 +1264,7 @@ async def create_project(project: ProjectCreate, overwrite: bool = Query(default
                 status_code=409,
                 detail={
                     "code": "PROJECT_NAME_EXISTS",
-                    "message": f"A study named '{existing_name}' already exists.",
+                    "message": f"A study named '{existing_name}' already exists in your account.",
                     "existing_id": existing_id,
                 },
             )
@@ -1249,13 +1275,24 @@ async def create_project(project: ProjectCreate, overwrite: bool = Query(default
 
 
 @app.put("/api/projects/{project_id}", response_model=ProjectDetail)
-async def overwrite_project(project_id: str, project: ProjectCreate):
+async def overwrite_project(
+    project_id: str,
+    project: ProjectCreate,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """Overwrite an existing project study with updated parameters and analysis."""
     try:
-        updated = await asyncio.to_thread(ProjectRepository.overwrite, project_id, project)
+        updated = await asyncio.to_thread(
+            ProjectRepository.overwrite,
+            project_id,
+            project,
+            user_id=current_user.id,
+        )
         if not updated:
             raise HTTPException(status_code=404, detail="Project not found.")
         return updated
+    except HTTPException:
+        raise
     except ValueError as e:
         msg = str(e)
         if msg.startswith("PROJECT_EXISTS:"):
@@ -1266,7 +1303,7 @@ async def overwrite_project(project_id: str, project: ProjectCreate):
                 status_code=409,
                 detail={
                     "code": "PROJECT_NAME_EXISTS",
-                    "message": f"A study named '{existing_name}' already exists.",
+                    "message": f"A study named '{existing_name}' already exists in your account.",
                     "existing_id": existing_id,
                 },
             )
@@ -1282,11 +1319,13 @@ async def list_projects(
     search: Optional[str] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """List saved projects with optional bookmark filtering and keyword search."""
+    """List saved projects owned by the authenticated user with optional bookmark filtering and keyword search."""
     try:
         items, total = await asyncio.to_thread(
             ProjectRepository.list,
+            user_id=current_user.id,
             bookmarked_only=bookmarked,
             search=search,
             limit=limit,
@@ -1299,29 +1338,94 @@ async def list_projects(
 
 
 @app.get("/api/projects/{project_id}", response_model=ProjectDetail)
-async def get_project(project_id: str):
-    """Retrieve full details of a saved project study."""
-    project = await asyncio.to_thread(ProjectRepository.get_by_id, project_id)
+async def get_project(
+    project_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Retrieve full details of a saved project study owned by the authenticated user (IDOR protected)."""
+    project = await asyncio.to_thread(ProjectRepository.get_by_id, project_id, user_id=current_user.id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
     return project
 
 
 @app.patch("/api/projects/{project_id}", response_model=ProjectDetail)
-async def update_project(project_id: str, patch: ProjectUpdate):
-    """Update project metadata or toggle bookmark."""
-    project = await asyncio.to_thread(ProjectRepository.update, project_id, patch)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
-    return project
+async def update_project(
+    project_id: str,
+    patch: ProjectUpdate,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Update project metadata or toggle bookmark on an owned project (IDOR protected)."""
+    try:
+        project = await asyncio.to_thread(
+            ProjectRepository.update,
+            project_id,
+            patch,
+            user_id=current_user.id,
+        )
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found.")
+        return project
+    except HTTPException:
+        raise
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith("PROJECT_EXISTS:"):
+            parts = msg.split(":", 2)
+            existing_id = parts[1]
+            existing_name = parts[2] if len(parts) > 2 else patch.name
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "PROJECT_NAME_EXISTS",
+                    "message": f"A study named '{existing_name}' already exists in your account.",
+                    "existing_id": existing_id,
+                },
+            )
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.delete("/api/projects/{project_id}")
-async def delete_project(project_id: str):
-    """Delete a saved project study."""
-    deleted = await asyncio.to_thread(ProjectRepository.delete, project_id)
+async def delete_project(
+    project_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Delete a saved project study owned by the authenticated user (IDOR protected)."""
+    deleted = await asyncio.to_thread(ProjectRepository.delete, project_id, user_id=current_user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Project not found.")
     return {"status": "deleted", "id": project_id}
+
+
+@app.get("/api/projects/{project_id}/report")
+async def export_project_report(
+    project_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Export a high-resolution PDF feasibility report for an owned project (IDOR protected)."""
+    project = await asyncio.to_thread(ProjectRepository.get_by_id, project_id, user_id=current_user.id)
+    if not project or not project.analysis_data:
+        raise HTTPException(status_code=404, detail="Project not found or lacks analysis data.")
+
+    try:
+        pdf_stream, cache_hit = await asyncio.to_thread(
+            generate_pdf_report_with_cache,
+            project.analysis_data,
+            site_vision=project.site_vision_data,
+            floor_plan=project.floor_plan_data,
+        )
+        safe_name = "".join(c for c in project.name if c.isalnum() or c in ("-", "_")).strip() or "Report"
+        filename = f"BuildWise_{safe_name}.pdf"
+        return StreamingResponse(
+            pdf_stream,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Buildwise-Report-Cache": "hit" if cache_hit else "miss",
+            },
+        )
+    except Exception:
+        logger.exception("Project PDF generation error")
+        raise HTTPException(status_code=500, detail="Failed to generate project PDF report.")
 
 
