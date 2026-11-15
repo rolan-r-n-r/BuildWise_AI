@@ -15,7 +15,22 @@ def client_with_db():
     settings.DATABASE_PATH = path
     init_db(db_path=path)
 
-    with TestClient(app) as client:
+    from app.db.database import get_connection
+
+    now = "2026-11-15T00:00:00.000Z"
+    expires = "2026-11-25T00:00:00.000Z"
+    with get_connection(path) as conn:
+        conn.execute(
+            "INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)",
+            ("user_test_123", "Test Architect", "architect@buildwise.ai", 1, now, now),
+        )
+        conn.execute(
+            "INSERT INTO session (id, expiresAt, token, createdAt, updatedAt, userId) VALUES (?, ?, ?, ?, ?, ?)",
+            ("sess_test_123", expires, "valid_test_token_abc", now, now, "user_test_123"),
+        )
+        conn.commit()
+
+    with TestClient(app, cookies={"better-auth.session_token": "valid_test_token_abc.signature_xyz"}) as client:
         yield client
 
     settings.DATABASE_PATH = orig_path
