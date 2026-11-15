@@ -25,7 +25,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { EASE_APPLE, SPRING_SOFT } from './motion';
 import { scrollToId } from './scroll';
-import { APP_PATH, navigate } from './router';
+import { APP_PATH, SIGN_IN_PATH, navigate } from './router';
 import { Icon } from '../components/Icon';
 import { LANDING } from './theme';
 /* The brandmark is imported from landing/logo.ts, which owns the two density
@@ -221,6 +221,13 @@ export const Navbar: React.FC = () => {
 
           {/* CTA */}
           <div className="ml-auto flex items-center gap-1.5 md:ml-0">
+            <button
+              type="button"
+              onClick={() => navigate(SIGN_IN_PATH)}
+              className="hidden sm:inline-flex h-11 items-center rounded-full px-3 text-[13px] font-medium text-bw-ink-2 hover:text-bw-ink transition-colors cursor-pointer"
+            >
+              Sign in
+            </button>
             <button
               type="button"
               onClick={() => navigate(APP_PATH)}

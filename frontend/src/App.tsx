@@ -104,6 +104,9 @@ const SaveProjectModal = React.lazy(() =>
 const SavedProjectsDrawer = React.lazy(() =>
   import('./components/SavedProjectsDrawer').then((m) => ({ default: m.SavedProjectsDrawer })),
 );
+const AccountModal = React.lazy(() =>
+  import('./auth/AccountModal').then((m) => ({ default: m.AccountModal })),
+);
 
 const PIPELINE_STAGES = [
   'Geocoding site address...',
@@ -250,6 +253,7 @@ const AppShell: React.FC = () => {
   const [mapViewResetToken, setMapViewResetToken] = useState<number>(0);
   const [isSaveProjectOpen, setIsSaveProjectOpen] = useState<boolean>(false);
   const [isSavedProjectsOpen, setIsSavedProjectsOpen] = useState<boolean>(false);
+  const [isAccountOpen, setIsAccountOpen] = useState<boolean>(false);
 
   /**
    * THE site location — one value pair, one owner, no second copy to drift.
@@ -1242,6 +1246,7 @@ const AppShell: React.FC = () => {
         serverStatus={serverStatus}
         onOpenMethodology={() => setIsMethodologyOpen(true)}
         onOpenSavedProjects={() => setIsSavedProjectsOpen(true)}
+        onOpenAccount={() => setIsAccountOpen(true)}
         onReset={requestReset}
         warnings={warnings}
         isWarningDismissed={isWarningDismissed}
@@ -1619,6 +1624,16 @@ const AppShell: React.FC = () => {
                 dispatchSession({ type: 'clearActiveProject' });
               }
             }}
+          />
+        </React.Suspense>
+      )}
+
+      {/* User Account Settings modal */}
+      {isAccountOpen && (
+        <React.Suspense fallback={null}>
+          <AccountModal
+            isOpen={isAccountOpen}
+            onClose={() => setIsAccountOpen(false)}
           />
         </React.Suspense>
       )}

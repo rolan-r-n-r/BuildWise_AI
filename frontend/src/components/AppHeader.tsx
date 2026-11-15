@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Icon } from './Icon';
+import { useSession } from '../lib/auth-client';
 
 interface AppHeaderProps {
   backendConnected: boolean;
@@ -18,6 +19,7 @@ interface AppHeaderProps {
   onToggleMobileResults?: () => void;
   hasResults?: boolean;
   onOpenSavedProjects?: () => void;
+  onOpenAccount?: () => void;
   /** Focus-return targets for the compact-tier drawers. */
   headerControlToggleRef?: React.Ref<HTMLButtonElement>;
   headerResultsToggleRef?: React.Ref<HTMLButtonElement>;
@@ -110,9 +112,12 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onToggleMobileResults,
   hasResults = false,
   onOpenSavedProjects,
+  onOpenAccount,
   headerControlToggleRef,
   headerResultsToggleRef,
 }) => {
+  const { data: sessionData } = useSession();
+  const user = sessionData?.user;
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const triggerBtnRef = useRef<HTMLButtonElement>(null);
@@ -361,6 +366,24 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             </div>
           );
         })()}
+
+        {/* User Account / Profile Button */}
+        {user && onOpenAccount && (
+          <button
+            type="button"
+            onClick={onOpenAccount}
+            className="bw-touch-target relative flex items-center justify-center gap-1.5 px-2 sm:px-2.5 py-1 text-[12px] font-medium text-[var(--text-1)] bg-[var(--fill)] hover:bg-[var(--fill-hover)] rounded-[10px] transition-colors shrink-0 active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] cursor-pointer border border-transparent hover:border-[var(--hairline)]"
+            title={`Account Settings: ${user.name || user.email}`}
+            aria-label={`Open account settings for ${user.name || user.email}`}
+          >
+            <div className="w-5 h-5 rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-bold flex items-center justify-center shrink-0">
+              {(user.name || user.email || 'U').charAt(0).toUpperCase()}
+            </div>
+            <span className="hidden xl:inline max-w-[100px] truncate text-left">
+              {user.name || user.email.split('@')[0]}
+            </span>
+          </button>
+        )}
       </div>
     </header>
   );
