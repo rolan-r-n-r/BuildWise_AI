@@ -80,6 +80,7 @@ export async function downloadFloorplanDossier(
 ): Promise<void> {
   const resp = await fetch(`${API_BASE_URL}/api/generate-floorplan?format=pdf`, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
     },
@@ -237,6 +238,7 @@ export async function downloadPdfReport(
 
   const resp = await fetch(`${API_BASE_URL}/api/report`, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
     },
