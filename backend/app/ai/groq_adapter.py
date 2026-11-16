@@ -4,37 +4,73 @@ import json
 import re
 import logging
 import httpx
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 from pydantic import ValidationError
 
 from app.ai.base_adapter import BaseExplanationAdapter
 from app.ai.mock_adapter import MockExplanationAdapter
-from app.ai.prompts import CIVIL_ENGINEER_SYSTEM_PROMPT, build_user_prompt
+from app.ai.prompts import CIVIL_ENGINEER_SYSTEM_PROMPT, build_user_prompt, build_rich_site_analysis_prompt
 from app.schemas.analysis import AnalysisResponse
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+SUPPORTED_GROQ_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b",
+]
+
+
+async def validate_groq_key(api_key: str) -> Tuple[bool, str, List[str]]:
+    """Validates a Groq API key by querying the /openai/v1/models endpoint."""
+    clean_key = (api_key or "").strip()
+    if not clean_key:
+        return False, "Groq API key cannot be empty.", []
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                "https://api.groq.com/openai/v1/models",
+                headers={"Authorization": f"Bearer {clean_key}"}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+                return True, "Groq credentials successfully verified.", raw_models or SUPPORTED_GROQ_MODELS
+            elif resp.status_code in (401, 403):
+                return False, "Invalid Groq API key. Authentication failed.", []
+            elif resp.status_code == 429:
+                return False, "Groq rate limit exceeded.", []
+            else:
+                return False, f"Groq verification failed with status {resp.status_code}.", []
+    except Exception as exc:
+        return False, f"Connection to Groq API failed: {str(exc)[:120]}", []
+
+
 class GroqExplanationAdapter(BaseExplanationAdapter):
     """
     Adapter for Groq LLM inference with strict JSON enforcement, Pydantic schema validation,
     markdown stripping, and automatic deterministic mock fallback.
+    Supports user BYOK credentials and server-side fallback.
     """
-    def __init__(self):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         self.mock = MockExplanationAdapter()
-        self.api_key = settings.GROQ_API_KEY
-        self.model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.api_key = api_key if api_key is not None else settings.GROQ_API_KEY
+        self.model = model or getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile")
 
     async def generate_explanation(
         self,
         analysis_data: Dict[str, Any]
     ) -> Tuple[str, List[str], Dict[str, str]]:
-        api_key = os.getenv("GROQ_API_KEY") or self.api_key or getattr(settings, "GROQ_API_KEY", "")
+        api_key = self.api_key or os.getenv("GROQ_API_KEY") or getattr(settings, "GROQ_API_KEY", "")
         if not api_key:
             summary, recs, meta = await self.mock.generate_explanation(analysis_data)
             meta["provider_requested"] = "groq"
             meta["provider_used"] = "mock_fallback"
-            meta["fallback_reason"] = "GROQ_API_KEY is not configured in environment"
+            meta["fallback_reason"] = "GROQ_API_KEY is not configured"
             return summary, recs, meta
 
         start_time = time.time()
@@ -51,16 +87,7 @@ class GroqExplanationAdapter(BaseExplanationAdapter):
         cov_val = analysis_data.get("ground_coverage_ratio", 0.60)
         coverage = round(cov_val * 100) if cov_val <= 1.0 else round(cov_val)
 
-        user_prompt = build_user_prompt(
-            lat=lat,
-            lon=lon,
-            area=area,
-            grade=grade,
-            typology=typology,
-            storeys=storeys,
-            coverage=coverage,
-            client_requirements=analysis_data.get("client_requirements"),
-        )
+        user_prompt = build_rich_site_analysis_prompt(analysis_data)
 
         # 2. System prompt with explicit required fields and Pydantic JSON schema representation
         schema_repr = json.dumps(AnalysisResponse.model_json_schema(), indent=2)
@@ -72,7 +99,8 @@ class GroqExplanationAdapter(BaseExplanationAdapter):
             f"- 'cost_breakdown': object (CPWD benchmark costs)\n"
             f"- 'vastu_compliance': object (orientation and entrance analysis)\n"
             f"- 'parameter_reflection': string (2-sentence reflection of user inputs)\n"
-            f"- 'engineering_summary': string (synthesis of structural feasibility)\n\n"
+            f"- 'engineering_summary': string (synthesis of structural feasibility)\n"
+            f"- 'structured_analysis': object (executive_summary, overall_assessment, key_strengths, key_concerns, engineering_considerations, environmental_and_hazards, financial_considerations, required_investigations, recommended_next_steps)\n\n"
             f"You must strictly output a valid JSON object matching this JSON Schema:\n"
             f"{schema_repr}"
         )
@@ -97,7 +125,7 @@ class GroqExplanationAdapter(BaseExplanationAdapter):
         last_error = "Groq API call failed or timed out"
         for target_model in deduped_models:
             try:
-                async with httpx.AsyncClient(timeout=12.0) as client:
+                async with httpx.AsyncClient(timeout=15.0) as client:
                     headers = {
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json"
@@ -110,7 +138,7 @@ class GroqExplanationAdapter(BaseExplanationAdapter):
                             {"role": "user", "content": user_prompt}
                         ],
                         "temperature": 0.2,
-                        "max_tokens": 1500
+                        "max_tokens": 3000
                     }
                     resp = await client.post(
                         "https://api.groq.com/openai/v1/chat/completions",
@@ -141,13 +169,45 @@ class GroqExplanationAdapter(BaseExplanationAdapter):
                         )
                         recs = report.structural_recommendations or report.detailed_recommendations or []
 
+                        structured_narrative = None
+                        if report.structured_analysis:
+                            structured_narrative = report.structured_analysis.model_dump()
+                        else:
+                            structured_narrative = {
+                                "executive_summary": report.executive_summary or summary,
+                                "overall_assessment": report.overall_assessment or summary,
+                                "key_strengths": report.key_strengths or [
+                                    "Topographic suitability verified for planned footprint",
+                                    "Bioclimatic axis aligned with natural ventilation paths",
+                                ],
+                                "key_concerns": report.key_concerns or [
+                                    "Substructure load distribution must adhere to IS 456 code guidelines"
+                                ],
+                                "engineering_considerations": report.engineering_considerations or report.structural_recommendations or [],
+                                "environmental_and_hazards": report.environmental_and_hazards or [
+                                    "Seismic ductile detailing required per IS 1893:2016"
+                                ],
+                                "financial_considerations": report.financial_considerations or [
+                                    "Civil structural framing represents approximately 50% of construction outlay"
+                                ],
+                                "required_investigations": report.required_investigations or [
+                                    "Geotechnical borehole testing for Safe Bearing Capacity (SBC)",
+                                    "Total station topographic contour survey",
+                                    "Soil percolation rate testing"
+                                ],
+                                "recommended_next_steps": report.recommended_next_steps or recs[:4]
+                            }
+
                         duration_ms = round((time.time() - start_time) * 1000.0, 2)
                         return summary, recs, {
                             "provider_requested": "groq",
                             "provider_used": f"groq ({target_model})",
                             "generation_time_ms": str(duration_ms),
                             "parameter_reflection": report.parameter_reflection,
-                            "feasibility_score": str(report.feasibility_score)
+                            "feasibility_score": str(report.feasibility_score),
+                            "cost_breakdown": json.dumps(report.cost_breakdown),
+                            "vastu_compliance": json.dumps(report.vastu_compliance),
+                            "structured_narrative": structured_narrative
                         }
                     else:
                         last_error = f"Groq status {resp.status_code}: {resp.text[:100]}"
