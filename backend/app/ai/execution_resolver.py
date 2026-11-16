@@ -69,7 +69,7 @@ class ExecutionResolver:
                     return ExecutionPlan(
                         execution_mode="byok_ai",
                         provider=req_p,
-                        model=requested_model or (settings.GROQ_MODEL if req_p == "groq" else "gemini-3.5-flash"),
+                        model=requested_model or (settings.GROQ_MODEL if req_p == "groq" else "gemini-2.0-flash"),
                         api_key=dev_key,
                         is_developer_fallback=True
                     )
@@ -111,7 +111,7 @@ class ExecutionResolver:
                     return ExecutionPlan(
                         execution_mode="byok_ai",
                         provider=clean_target,
-                        model=requested_model or (settings.GROQ_MODEL if clean_target == "groq" else "gemini-3.5-flash"),
+                        model=requested_model or (settings.GROQ_MODEL if clean_target == "groq" else "gemini-2.0-flash"),
                         api_key=dev_key,
                         is_developer_fallback=True
                     )

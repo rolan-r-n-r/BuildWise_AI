@@ -12,40 +12,72 @@ from app.ai.mock_adapter import MockExplanationAdapter
 from app.ai.prompts import CIVIL_ENGINEER_SYSTEM_PROMPT, build_user_prompt, build_rich_site_analysis_prompt
 from app.schemas.analysis import AnalysisResponse
 from app.config import settings
+from app.services.ai_crypto import sanitize_api_key
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_GROQ_MODELS = [
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-20b",
-    "qwen/qwen3.8-27b",
+    "llama-3.1-70b-versatile",
+    "mixtral-8x7b-32768",
 ]
 
 
 async def validate_groq_key(api_key: str) -> Tuple[bool, str, List[str]]:
-    """Validates a Groq API key by querying the /openai/v1/models endpoint."""
-    clean_key = (api_key or "").strip()
+    """
+    Validates a Groq API key by querying the official /openai/v1/models endpoint.
+    Sanitizes keys, filters models for chat completions, and classifies HTTP errors.
+    """
+    clean_key = sanitize_api_key(api_key)
     if not clean_key:
         return False, "Groq API key cannot be empty.", []
 
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
                 "https://api.groq.com/openai/v1/models",
-                headers={"Authorization": f"Bearer {clean_key}"}
+                headers={
+                    "Authorization": f"Bearer {clean_key}",
+                    "User-Agent": "BuildWise-AI/1.0"
+                }
             )
             if resp.status_code == 200:
                 data = resp.json()
                 raw_models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
-                return True, "Groq credentials successfully verified.", raw_models or SUPPORTED_GROQ_MODELS
+                # Filter out whisper audio models, tts, embeddings, and content moderation guards
+                chat_models = [
+                    m for m in raw_models
+                    if not any(excluded in m.lower() for excluded in ["whisper", "tts", "embedding", "guard"])
+                ]
+
+                # Prioritize production-tested conversational/reasoning LLMs
+                def _groq_sort_key(m_name: str) -> int:
+                    if m_name == "llama-3.3-70b-versatile":
+                        return 0
+                    if m_name == "llama-3.1-8b-instant":
+                        return 1
+                    if "llama-3.3" in m_name:
+                        return 2
+                    if "llama-3.1" in m_name:
+                        return 3
+                    if "llama" in m_name:
+                        return 4
+                    return 5
+
+                candidates = chat_models or raw_models or SUPPORTED_GROQ_MODELS
+                sorted_models = sorted(candidates, key=_groq_sort_key)
+                return True, "Groq credentials successfully verified.", sorted_models
             elif resp.status_code in (401, 403):
                 return False, "Invalid Groq API key. Authentication failed.", []
             elif resp.status_code == 429:
-                return False, "Groq rate limit exceeded.", []
+                return False, "Groq rate limit exceeded or quota exhausted. Please try again shortly.", []
             else:
                 return False, f"Groq verification failed with status {resp.status_code}.", []
+    except httpx.TimeoutException:
+        return False, "Connection to Groq API timed out after 10 seconds. Please check your network connection.", []
+    except httpx.ConnectError:
+        return False, "Network error: Unable to connect to Groq API servers. Please check your network connection.", []
     except Exception as exc:
         return False, f"Connection to Groq API failed: {str(exc)[:120]}", []
 
@@ -65,7 +97,7 @@ class GroqExplanationAdapter(BaseExplanationAdapter):
         self,
         analysis_data: Dict[str, Any]
     ) -> Tuple[str, List[str], Dict[str, str]]:
-        api_key = self.api_key or os.getenv("GROQ_API_KEY") or getattr(settings, "GROQ_API_KEY", "")
+        api_key = sanitize_api_key(self.api_key or os.getenv("GROQ_API_KEY") or getattr(settings, "GROQ_API_KEY", ""))
         if not api_key:
             summary, recs, meta = await self.mock.generate_explanation(analysis_data)
             meta["provider_requested"] = "groq"
@@ -106,10 +138,7 @@ class GroqExplanationAdapter(BaseExplanationAdapter):
         )
 
         candidate_models = [
-            os.getenv("GROQ_MODEL") or self.model or "openai/gpt-oss-120b",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
-            "qwen/qwen3.8-27b",
+            self.model or os.getenv("GROQ_MODEL") or "llama-3.3-70b-versatile",
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
         ]

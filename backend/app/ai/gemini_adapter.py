@@ -11,6 +11,7 @@ from app.ai.mock_adapter import MockExplanationAdapter
 from app.ai.prompts import CIVIL_ENGINEER_SYSTEM_PROMPT, build_user_prompt, build_rich_site_analysis_prompt
 from app.schemas.analysis import AnalysisResponse
 from app.config import settings
+from app.services.ai_crypto import sanitize_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -139,24 +140,46 @@ def to_gemini_schema(schema: Dict[str, Any], root_schema: Optional[Dict[str, Any
 
 
 SUPPORTED_GEMINI_MODELS = [
-    "gemini-3.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-3.5-flash-lite",
-    "gemini-flash-latest",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
 ]
 
 
 async def validate_gemini_key(api_key: str) -> Tuple[bool, str, List[str]]:
-    """Validates a Google Gemini API key by querying the /v1beta/models endpoint."""
-    clean_key = (api_key or "").strip()
+    """Validates a Google Gemini API key by querying the /v1beta/models endpoint using secure headers."""
+    clean_key = sanitize_api_key(api_key)
     if not clean_key:
         return False, "Gemini API key cannot be empty.", []
 
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(
-                f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}"
-            )
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            headers = {
+                "x-goog-api-key": clean_key,
+                "User-Agent": "BuildWise-AI/1.0",
+            }
+            try:
+                resp = await client.get(
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    headers=headers
+                )
+            except TypeError:
+                # Backwards-compatibility for mock clients or clients with positional-only get(url)
+                resp = await client.get(
+                    f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}"
+                )
+
+            # If server or proxy rejects header auth on /models, attempt fallback with query parameter
+            if resp.status_code in (400, 401, 403):
+                try:
+                    fallback_resp = await client.get(
+                        f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}"
+                    )
+                    if fallback_resp.status_code == 200:
+                        resp = fallback_resp
+                except Exception:
+                    pass
+
             if resp.status_code == 200:
                 data = resp.json()
                 raw_models = []
@@ -166,30 +189,30 @@ async def validate_gemini_key(api_key: str) -> Tuple[bool, str, List[str]]:
                     if "generateContent" in methods and name.startswith("gemini"):
                         raw_models.append(name)
 
-                # Prioritize active, responsive generation models: 3.5-flash, 2.5-flash-lite, etc.
+                # Prioritize active, official generation models: 2.0-flash, 1.5-flash, 1.5-pro
                 def model_sort_key(m_name: str) -> int:
-                    if m_name == "gemini-3.5-flash":
+                    if m_name == "gemini-2.0-flash":
                         return 0
-                    if m_name == "gemini-2.5-flash-lite":
+                    if m_name == "gemini-1.5-flash":
                         return 1
-                    if m_name == "gemini-3.5-flash-lite":
+                    if m_name == "gemini-1.5-pro":
                         return 2
-                    if "flash-lite" in m_name:
-                        return 3
-                    if "3.5" in m_name:
-                        return 4
                     if "flash" in m_name:
-                        return 5
-                    return 6
+                        return 3
+                    return 4
 
                 sorted_models = sorted(raw_models, key=model_sort_key)
                 return True, "Google Gemini credentials successfully verified.", sorted_models or SUPPORTED_GEMINI_MODELS
             elif resp.status_code in (400, 401, 403):
                 return False, "Invalid Google Gemini API key. Authentication failed.", []
             elif resp.status_code == 429:
-                return False, "Google Gemini rate limit exceeded or quota exhausted.", []
+                return False, "Google Gemini rate limit exceeded or quota exhausted. Please try again shortly.", []
             else:
                 return False, f"Gemini verification failed with status {resp.status_code}.", []
+    except httpx.TimeoutException:
+        return False, "Connection to Google Gemini API timed out after 10 seconds. Please check your network connection.", []
+    except httpx.ConnectError:
+        return False, "Network error: Unable to connect to Google Gemini API servers. Please check your network connection.", []
     except Exception as exc:
         return False, f"Connection to Google Gemini API failed: {str(exc)[:120]}", []
 

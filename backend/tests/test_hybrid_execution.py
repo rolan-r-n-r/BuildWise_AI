@@ -75,7 +75,7 @@ async def test_scenario_b_user_with_configured_provider_executes_ai(monkeypatch)
         token="tok_h1"
     )
 
-    encrypted_key = encrypt_api_key("sk-proj-byok-secret-user-key-9999", user_id, "openai")
+    encrypted_key = encrypt_api_key("sk-mock-byok-secret-user-key-9999", user_id, "openai")
     repo.upsert_credential(
         user_id=user_id,
         provider="openai",
@@ -89,7 +89,7 @@ async def test_scenario_b_user_with_configured_provider_executes_ai(monkeypatch)
     plan = resolver.resolve_plan(user=user)
     assert plan.execution_mode == "byok_ai"
     assert plan.provider == "openai"
-    assert plan.api_key == "sk-proj-byok-secret-user-key-9999"
+    assert plan.api_key == "sk-mock-byok-secret-user-key-9999"
     assert plan.model == "gpt-4o-mini"
 
 

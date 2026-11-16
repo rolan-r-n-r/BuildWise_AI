@@ -40,6 +40,53 @@ def _derive_encryption_key() -> bytes:
     return hashlib.sha256(salt + raw_secret.encode("utf-8")).digest()
 
 
+def sanitize_api_key(api_key: Optional[str]) -> str:
+    """
+    Sanitizes an API key entered by a user or loaded from the environment:
+    - Strips leading and trailing ASCII whitespace, newlines, and tabs.
+    - Strips invisible Unicode zero-width/formatting characters (\u200b, \ufeff, etc.).
+    - Strips surrounding single or double quotes (e.g. from .env file copies).
+    - Strips redundant 'Bearer ' prefixes if pasted from documentation or curl commands.
+    """
+    if not api_key:
+        return ""
+    # Strip whitespace including Unicode zero-width & non-breaking spaces
+    key = str(api_key).strip(" \t\r\n\v\f\u200b\ufeff\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u00a0")
+
+    # Strip surrounding single or double quotes
+    if (key.startswith('"') and key.endswith('"')) or (key.startswith("'") and key.endswith("'")):
+        key = key[1:-1].strip(" \t\r\n\v\f\u200b\ufeff\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u00a0")
+
+    # Strip redundant Bearer prefix (case-insensitive)
+    if key.lower().startswith("bearer "):
+        key = key[7:].strip(" \t\r\n\v\f\u200b\ufeff\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u00a0")
+        if (key.startswith('"') and key.endswith('"')) or (key.startswith("'") and key.endswith("'")):
+            key = key[1:-1].strip(" \t\r\n\v\f\u200b\ufeff\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u00a0")
+
+    return key
+
+
+def is_masked_key_hint(api_key: Optional[str]) -> bool:
+    """
+    Detects whether an input string is a masked hint representation rather than a real API key.
+    Examples of masked hints:
+      - 'gsk_...tBe', 'sk-p...cdef'
+      - '••••••••••••'
+      - '***'
+      - '...'
+    """
+    if not api_key:
+        return True
+    clean = str(api_key).strip(" \t\r\n\v\f\u200b\ufeff\u200e\u200f\u00a0")
+    if not clean:
+        return True
+    if all(ch in "•●*.\t " for ch in clean):
+        return True
+    if "..." in clean or "•••" in clean or "●●●" in clean or "***" in clean:
+        return True
+    return False
+
+
 def encrypt_api_key(api_key: str, user_id: str, provider: str) -> str:
     """
     Encrypts an API key using AES-256-GCM.
@@ -48,7 +95,7 @@ def encrypt_api_key(api_key: str, user_id: str, provider: str) -> str:
     
     Format: v1:{nonce_hex}:{ciphertext_with_tag_hex}
     """
-    clean_key = (api_key or "").strip()
+    clean_key = sanitize_api_key(api_key)
     if not clean_key:
         raise ValueError("Cannot encrypt an empty API key")
     

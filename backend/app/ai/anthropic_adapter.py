@@ -14,6 +14,7 @@ from app.ai.base_adapter import BaseExplanationAdapter
 from app.ai.mock_adapter import MockExplanationAdapter
 from app.ai.prompts import CIVIL_ENGINEER_SYSTEM_PROMPT, build_user_prompt, build_rich_site_analysis_prompt
 from app.schemas.analysis import AnalysisResponse
+from app.services.ai_crypto import sanitize_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -26,17 +27,18 @@ SUPPORTED_ANTHROPIC_MODELS = [
 
 async def validate_anthropic_key(api_key: str) -> Tuple[bool, str, List[str]]:
     """Validates an Anthropic API key by querying the /v1/models endpoint."""
-    clean_key = (api_key or "").strip()
+    clean_key = sanitize_api_key(api_key)
     if not clean_key:
         return False, "Anthropic API key cannot be empty.", []
 
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
                 "https://api.anthropic.com/v1/models",
                 headers={
                     "x-api-key": clean_key,
-                    "anthropic-version": "2023-06-01"
+                    "anthropic-version": "2023-06-01",
+                    "User-Agent": "BuildWise-AI/1.0"
                 }
             )
             if resp.status_code == 200:
@@ -46,9 +48,13 @@ async def validate_anthropic_key(api_key: str) -> Tuple[bool, str, List[str]]:
             elif resp.status_code in (401, 403):
                 return False, "Invalid Anthropic API key. Authentication failed.", []
             elif resp.status_code == 429:
-                return False, "Anthropic rate limit exceeded or credit balance exhausted.", []
+                return False, "Anthropic rate limit exceeded or credit balance exhausted. Please try again shortly.", []
             else:
                 return False, f"Anthropic verification failed with status {resp.status_code}.", []
+    except httpx.TimeoutException:
+        return False, "Connection to Anthropic API timed out after 10 seconds. Please check your network connection.", []
+    except httpx.ConnectError:
+        return False, "Network error: Unable to connect to Anthropic API servers. Please check your network connection.", []
     except Exception as exc:
         return False, f"Connection to Anthropic API failed: {str(exc)[:120]}", []
 

@@ -14,6 +14,7 @@ from app.ai.base_adapter import BaseExplanationAdapter
 from app.ai.mock_adapter import MockExplanationAdapter
 from app.ai.prompts import CIVIL_ENGINEER_SYSTEM_PROMPT, build_user_prompt, build_rich_site_analysis_prompt
 from app.schemas.analysis import AnalysisResponse
+from app.services.ai_crypto import sanitize_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +28,18 @@ SUPPORTED_OPENAI_MODELS = [
 
 async def validate_openai_key(api_key: str) -> Tuple[bool, str, List[str]]:
     """Validates an OpenAI API key by querying the /v1/models endpoint."""
-    clean_key = (api_key or "").strip()
+    clean_key = sanitize_api_key(api_key)
     if not clean_key:
         return False, "OpenAI API key cannot be empty.", []
 
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
                 "https://api.openai.com/v1/models",
-                headers={"Authorization": f"Bearer {clean_key}"}
+                headers={
+                    "Authorization": f"Bearer {clean_key}",
+                    "User-Agent": "BuildWise-AI/1.0"
+                }
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -46,9 +50,13 @@ async def validate_openai_key(api_key: str) -> Tuple[bool, str, List[str]]:
             elif resp.status_code in (401, 403):
                 return False, "Invalid OpenAI API key. Authentication failed.", []
             elif resp.status_code == 429:
-                return False, "OpenAI rate limit exceeded or quota exhausted.", []
+                return False, "OpenAI rate limit exceeded or quota exhausted. Please try again shortly.", []
             else:
                 return False, f"OpenAI verification failed with status {resp.status_code}.", []
+    except httpx.TimeoutException:
+        return False, "Connection to OpenAI API timed out after 10 seconds. Please check your network connection.", []
+    except httpx.ConnectError:
+        return False, "Network error: Unable to connect to OpenAI API servers. Please check your network connection.", []
     except Exception as exc:
         return False, f"Connection to OpenAI API failed: {str(exc)[:120]}", []
 

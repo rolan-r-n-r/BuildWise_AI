@@ -15,7 +15,13 @@ from app.db.ai_credential_repository import (
     UserAICredentialSummary,
     UserAIPreferenceRecord,
 )
-from app.services.ai_crypto import encrypt_api_key, mask_api_key, decrypt_api_key
+from app.services.ai_crypto import (
+    encrypt_api_key,
+    mask_api_key,
+    decrypt_api_key,
+    sanitize_api_key,
+    is_masked_key_hint,
+)
 from app.ai.groq_adapter import validate_groq_key, SUPPORTED_GROQ_MODELS
 from app.ai.gemini_adapter import validate_gemini_key, SUPPORTED_GEMINI_MODELS
 from app.ai.openai_adapter import validate_openai_key, SUPPORTED_OPENAI_MODELS
@@ -58,7 +64,7 @@ SUPPORTED_PROVIDERS = {
     "groq": {
         "id": "groq",
         "name": "Groq Cloud",
-        "description": "Ultra-low latency inference engine running open-weights engineering models (Llama 3.3 70B, GPT-OSS 120B, Qwen 2.5).",
+        "description": "Ultra-low latency inference engine running open-weights engineering models (Llama 3.3 70B, Llama 3.1 8B, Mixtral 8x7B).",
         "models": SUPPORTED_GROQ_MODELS,
         "requires_api_key": True,
         "supports_custom_url": False,
@@ -67,7 +73,7 @@ SUPPORTED_PROVIDERS = {
     "gemini": {
         "id": "gemini",
         "name": "Google Gemini",
-        "description": "Google Gemini Multimodal AI models (Gemini 2.5 Flash, Gemini 2.5 Pro) with structured schema constraint outputs.",
+        "description": "Google Gemini Multimodal AI models (Gemini 2.0 Flash, Gemini 1.5 Flash, Gemini 1.5 Pro) with structured schema constraint outputs.",
         "models": SUPPORTED_GEMINI_MODELS,
         "requires_api_key": True,
         "supports_custom_url": False,
@@ -157,24 +163,25 @@ async def _dispatch_validation(
     base_url: Optional[str]
 ) -> Tuple[bool, str, List[str]]:
     p = provider.strip().lower()
+    clean_k = sanitize_api_key(api_key) if api_key else ""
     if p == "deterministic":
         return True, "Built-in deterministic engine is always available.", ["built-in-rules"]
     elif p == "groq":
-        if not api_key:
+        if not clean_k:
             return False, "Groq API key is required.", []
-        return await validate_groq_key(api_key)
+        return await validate_groq_key(clean_k)
     elif p == "gemini":
-        if not api_key:
+        if not clean_k:
             return False, "Google Gemini API key is required.", []
-        return await validate_gemini_key(api_key)
+        return await validate_gemini_key(clean_k)
     elif p == "openai":
-        if not api_key:
+        if not clean_k:
             return False, "OpenAI API key is required.", []
-        return await validate_openai_key(api_key)
+        return await validate_openai_key(clean_k)
     elif p == "anthropic":
-        if not api_key:
+        if not clean_k:
             return False, "Anthropic API key is required.", []
-        return await validate_anthropic_key(api_key)
+        return await validate_anthropic_key(clean_k)
     elif p == "ollama":
         return await validate_ollama_endpoint(base_url)
     return False, f"Unsupported provider '{provider}'.", []
@@ -221,10 +228,12 @@ async def validate_provider_credentials(
             detail=f"Unknown AI provider '{req.provider}'."
         )
 
-    # If no key submitted (or only mask dots sent), attempt to test existing saved key for this user
-    key_to_test = (req.api_key or "").strip()
-    if key_to_test and all(ch in "•●*.\t " for ch in key_to_test):
+    # If no key submitted (or masked placeholder sent), attempt to test existing saved key for this user
+    raw_key = req.api_key
+    key_to_test = sanitize_api_key(raw_key)
+    if is_masked_key_hint(raw_key):
         key_to_test = ""
+    is_testing_saved = not bool(key_to_test)
     base_url_to_test = req.base_url
 
     if not key_to_test and clean_p != "ollama" and clean_p != "deterministic":
@@ -247,7 +256,7 @@ async def validate_provider_credentials(
     is_valid, message, models = await _dispatch_validation(clean_p, key_to_test, base_url_to_test)
 
     # If testing existing saved credential, update its status in DB
-    if not req.api_key:
+    if is_testing_saved and clean_p not in ("deterministic",):
         new_status = "connected" if is_valid else "invalid_key"
         repo.update_credential_status(user.id, clean_p, new_status)
 
@@ -282,8 +291,9 @@ async def connect_or_update_provider(
             detail="The deterministic engine is built-in and does not require credentials."
         )
 
-    clean_key = (req.api_key or "").strip()
-    if clean_key and all(ch in "•●*.\t " for ch in clean_key):
+    raw_key = req.api_key
+    clean_key = sanitize_api_key(raw_key)
+    if is_masked_key_hint(raw_key):
         clean_key = ""
     clean_url = (req.base_url or "").strip() if req.base_url else None
     clean_model = (req.selected_model or "").strip() if req.selected_model else None

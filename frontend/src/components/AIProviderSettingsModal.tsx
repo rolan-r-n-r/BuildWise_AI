@@ -23,6 +23,33 @@ interface AIProviderSettingsModalProps {
   onConfigChanged?: (preferredProvider: string, preferredModel?: string) => void;
 }
 
+function sanitizeApiKeyInput(val: string): string {
+  if (!val) return '';
+  // Strip whitespace, including zero-width spaces, BOM, and non-breaking spaces
+  let cleaned = val.replace(/^[\s\u200B\uFEFF\u200E\u200F\u00A0]+|[\s\u200B\uFEFF\u200E\u200F\u00A0]+$/g, '');
+  // Strip surrounding single or double quotes
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+  // Strip redundant 'Bearer ' prefix
+  if (cleaned.toLowerCase().startsWith('bearer ')) {
+    cleaned = cleaned.slice(7).trim();
+    if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+      cleaned = cleaned.slice(1, -1).trim();
+    }
+  }
+  return cleaned;
+}
+
+function isMaskedKey(val: string): boolean {
+  if (!val) return true;
+  const trimmed = val.trim();
+  if (!trimmed) return true;
+  if (/^[\u2022\u25cf\*\.\s]+$/.test(trimmed)) return true;
+  if (trimmed.includes('...') || trimmed.includes('•••') || trimmed.includes('●●●') || trimmed.includes('***')) return true;
+  return false;
+}
+
 export const AIProviderSettingsModal: React.FC<AIProviderSettingsModalProps> = ({
   isOpen,
   onClose,
@@ -121,10 +148,14 @@ export const AIProviderSettingsModal: React.FC<AIProviderSettingsModalProps> = (
 
   const handleValidate = async (overrideKey?: string) => {
     if (!editingProvider) return;
-    const rawKey = (typeof overrideKey === 'string' ? overrideKey : apiKeyInput).trim();
-    const isMaskedOrEmpty = !rawKey || /^[\u2022\u25cf\*\.\s]+$/.test(rawKey);
-    const keyToTest = isMaskedOrEmpty ? undefined : rawKey;
-    if (!keyToTest && !getProviderCred(editingProvider.id)) return;
+    const rawKey = typeof overrideKey === 'string' ? overrideKey : apiKeyInput;
+    const cleaned = sanitizeApiKeyInput(rawKey);
+    const isMaskedOrEmpty = isMaskedKey(cleaned);
+    const keyToTest = isMaskedOrEmpty ? undefined : cleaned;
+    if (!keyToTest && editingProvider.requires_api_key && !getProviderCred(editingProvider.id)) {
+      setValidationResult({ valid: false, message: 'Please enter an API key to test connection.' });
+      return;
+    }
 
     setIsValidating(true);
     setValidationResult(null);
@@ -154,9 +185,9 @@ export const AIProviderSettingsModal: React.FC<AIProviderSettingsModalProps> = (
     e.preventDefault();
     if (!editingProvider) return;
 
-    const rawKey = apiKeyInput.trim();
-    const isMaskedOrEmpty = !rawKey || /^[\u2022\u25cf\*\.\s]+$/.test(rawKey);
-    const keyToSave = isMaskedOrEmpty ? undefined : rawKey;
+    const cleaned = sanitizeApiKeyInput(apiKeyInput);
+    const isMaskedOrEmpty = isMaskedKey(cleaned);
+    const keyToSave = isMaskedOrEmpty ? undefined : cleaned;
 
     const cred = config?.configured_providers.find((c) => c.provider === editingProvider.id);
     if (!cred && editingProvider.requires_api_key && !keyToSave) {
@@ -356,10 +387,11 @@ export const AIProviderSettingsModal: React.FC<AIProviderSettingsModalProps> = (
                       value={apiKeyInput}
                       onChange={(e) => setApiKeyInput(e.target.value)}
                       onPaste={(e) => {
-                        const pasted = e.clipboardData.getData('text').trim();
-                        if (pasted && !/^[\u2022\u25cf\*\.\s]+$/.test(pasted)) {
-                          setApiKeyInput(pasted);
-                          void handleValidate(pasted);
+                        e.preventDefault();
+                        const rawPasted = e.clipboardData.getData('text');
+                        const cleaned = sanitizeApiKeyInput(rawPasted);
+                        if (cleaned) {
+                          setApiKeyInput(cleaned);
                         }
                       }}
                       placeholder={
@@ -453,7 +485,10 @@ export const AIProviderSettingsModal: React.FC<AIProviderSettingsModalProps> = (
                 <button
                   type="button"
                   onClick={() => handleValidate()}
-                  disabled={isValidating || (!apiKeyInput.trim() && !getProviderCred(editingProvider.id))}
+                  disabled={
+                    isValidating ||
+                    (editingProvider.requires_api_key && !apiKeyInput.trim() && !getProviderCred(editingProvider.id))
+                  }
                   className="px-3.5 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[12px] font-semibold text-[var(--text-1)] flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40"
                 >
                   {isValidating ? (
