@@ -32,7 +32,8 @@
     "probe:interaction": "node scripts/interaction_probe.cjs",
     "audit:landing": "node scripts/landing_audit.cjs",
     "test:reset-reducer": "node --experimental-strip-types scripts/test_reset_reducer.cjs",
-    "test:reset": "node scripts/e2e_reset_contract.cjs"
+    "test:reset": "node scripts/e2e_reset_contract.cjs",
+    "test:verify-email": "node scripts/test_verify_email_flow.cjs"
   },
   "dependencies": {
     "better-auth": "^1.7.25",

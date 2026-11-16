@@ -14,6 +14,7 @@ import {
   APP_PATH,
   SIGN_IN_PATH,
   SIGN_UP_PATH,
+  VERIFY_EMAIL_PATH,
   FORGOT_PASSWORD_PATH,
   RESET_PASSWORD_PATH,
   PREVIEW_PREFIX,
@@ -32,6 +33,9 @@ const SignInPage = lazy(() =>
 );
 const SignUpPage = lazy(() =>
   import('./auth/SignUpPage').then((m) => ({ default: m.SignUpPage })),
+);
+const VerifyEmailPage = lazy(() =>
+  import('./auth/VerifyEmailPage').then((m) => ({ default: m.VerifyEmailPage })),
 );
 const ForgotPasswordPage = lazy(() =>
   import('./auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })),
@@ -69,38 +73,44 @@ const ProtectedApp: React.FC = () => {
   const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
-    if (!isPending && !session) {
-      // Before bouncing to sign-in, double check directly with getSession()
-      // to resolve any race conditions with un-hydrated in-memory session atoms
-      let isMounted = true;
-      setIsVerifying(true);
-      getSession()
-        .then((res) => {
-          if (!isMounted) return;
-          if (!res?.data?.session) {
-            const destination = currentPath();
-            const redirectQuery =
-              destination && destination !== APP_PATH
-                ? `?redirect=${encodeURIComponent(destination)}`
-                : `?redirect=${encodeURIComponent(APP_PATH)}`;
-            navigate(`${SIGN_IN_PATH}${redirectQuery}`);
-          }
-        })
-        .catch(() => {
-          if (!isMounted) return;
-          navigate(SIGN_IN_PATH);
-        })
-        .finally(() => {
-          if (isMounted) setIsVerifying(false);
-        });
+    if (!isPending) {
+      if (!session) {
+        // Before bouncing to sign-in, double check directly with getSession()
+        // to resolve any race conditions with un-hydrated in-memory session atoms
+        let isMounted = true;
+        setIsVerifying(true);
+        getSession()
+          .then((res) => {
+            if (!isMounted) return;
+            if (!res?.data?.session) {
+              const destination = currentPath();
+              const redirectQuery =
+                destination && destination !== APP_PATH
+                  ? `?redirect=${encodeURIComponent(destination)}`
+                  : `?redirect=${encodeURIComponent(APP_PATH)}`;
+              navigate(`${SIGN_IN_PATH}${redirectQuery}`);
+            } else if (res?.data?.user && !res.data.user.emailVerified) {
+              navigate(`${VERIFY_EMAIL_PATH}?email=${encodeURIComponent(res.data.user.email)}`);
+            }
+          })
+          .catch(() => {
+            if (!isMounted) return;
+            navigate(SIGN_IN_PATH);
+          })
+          .finally(() => {
+            if (isMounted) setIsVerifying(false);
+          });
 
-      return () => {
-        isMounted = false;
-      };
+        return () => {
+          isMounted = false;
+        };
+      } else if (session?.user && !session.user.emailVerified) {
+        navigate(`${VERIFY_EMAIL_PATH}?email=${encodeURIComponent(session.user.email)}`);
+      }
     }
   }, [session, isPending]);
 
-  if (isPending || isVerifying || !session) {
+  if (isPending || isVerifying || !session || !session.user?.emailVerified) {
     return <RouteFallback />;
   }
 
@@ -113,6 +123,8 @@ export function RouterRoot() {
   const isPreview = path === PREVIEW_PREFIX || path.startsWith(`${PREVIEW_PREFIX}/`);
   const isSignIn = path === SIGN_IN_PATH || path.startsWith(`${SIGN_IN_PATH}/`);
   const isSignUp = path === SIGN_UP_PATH || path.startsWith(`${SIGN_UP_PATH}/`);
+  const isVerifyEmail =
+    path === VERIFY_EMAIL_PATH || path.startsWith(`${VERIFY_EMAIL_PATH}/`);
   const isForgotPassword =
     path === FORGOT_PASSWORD_PATH || path.startsWith(`${FORGOT_PASSWORD_PATH}/`);
   const isResetPassword =
@@ -126,12 +138,14 @@ export function RouterRoot() {
       document.title = 'Sign In — BuildWise AI';
     } else if (isSignUp) {
       document.title = 'Create Account — BuildWise AI';
+    } else if (isVerifyEmail) {
+      document.title = 'Verify Email — BuildWise AI';
     } else if (isForgotPassword || isResetPassword) {
       document.title = 'Password Recovery — BuildWise AI';
     } else {
       document.title = 'BuildWise AI — Intelligent Construction Planning';
     }
-  }, [isApp, isSignIn, isSignUp, isForgotPassword, isResetPassword]);
+  }, [isApp, isSignIn, isSignUp, isVerifyEmail, isForgotPassword, isResetPassword]);
 
   return (
     <Suspense fallback={<RouteFallback />}>
@@ -141,6 +155,8 @@ export function RouterRoot() {
         <SignInPage />
       ) : isSignUp ? (
         <SignUpPage />
+      ) : isVerifyEmail ? (
+        <VerifyEmailPage />
       ) : isForgotPassword ? (
         <ForgotPasswordPage />
       ) : isResetPassword ? (

@@ -95,6 +95,9 @@ sign_in_limiter = SimpleRateLimiter(limit=5, window_seconds=60)
 sign_up_limiter = SimpleRateLimiter(limit=5, window_seconds=60)
 send_otp_limiter = SimpleRateLimiter(limit=3, window_seconds=60)
 reset_pw_limiter = SimpleRateLimiter(limit=5, window_seconds=60)
+verify_otp_limiter = SimpleRateLimiter(limit=10, window_seconds=60)
+
+EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
 def reset_rate_limiters():
@@ -102,6 +105,7 @@ def reset_rate_limiters():
     sign_up_limiter.reset()
     send_otp_limiter.reset()
     reset_pw_limiter.reset()
+    verify_otp_limiter.reset()
 
 
 def _get_client_ip(request: Request) -> str:
@@ -136,7 +140,11 @@ def _mask_email(email: str) -> str:
 
         if "." in domain_part:
             d_name, d_tld = domain_part.rsplit(".", 1)
-            masked_domain = (d_name[0] + "***" if len(d_name) > 1 else "***") + "." + d_tld
+            if len(d_name) <= 2:
+                masked_d_name = d_name[0] + "***" if len(d_name) > 1 else "***"
+            else:
+                masked_d_name = d_name[0] + "***" + d_name[-1]
+            masked_domain = f"{masked_d_name}.{d_tld}"
         else:
             masked_domain = "***"
         return f"{masked_user}@{masked_domain}"
@@ -230,6 +238,11 @@ class ResetPasswordRequest(BaseModel):
     password: str
 
 
+class VerifyEmailOtpRequest(BaseModel):
+    email: str
+    otp: str
+
+
 # =============================================================================
 # Routes
 # =============================================================================
@@ -242,10 +255,12 @@ def auth_ok():
 @router.post("/sign-up/email")
 def sign_up_email(
     req: SignUpRequest,
+    background_tasks: BackgroundTasks,
     request: Request,
     response: Response,
     db: sqlite3.Connection = Depends(get_db),
 ):
+    global _test_last_otp
     ip = _get_client_ip(request)
     if not sign_up_limiter.check(ip):
         raise HTTPException(
@@ -260,6 +275,11 @@ def sign_up_email(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"message": "Name cannot be empty", "code": "INVALID_NAME"},
         )
+    if not EMAIL_REGEX.match(email_clean):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "Please enter a valid work email address format.", "code": "INVALID_EMAIL"},
+        )
     if len(req.password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -267,53 +287,77 @@ def sign_up_email(
         )
 
     cursor = db.cursor()
-    cursor.execute("SELECT id FROM user WHERE LOWER(email) = ?", (email_clean,))
-    if cursor.fetchone():
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"message": "An account with this email already exists", "code": "USER_ALREADY_EXISTS"},
-        )
+    cursor.execute("SELECT id, emailVerified FROM user WHERE LOWER(email) = ?", (email_clean,))
+    existing_user = cursor.fetchone()
 
     now = _now_iso()
-    user_id = generate_id()
-    account_id = generate_id()
-    session_id = generate_id()
-    session_token = generate_session_token()
-    session_expiry = _expires_iso(SESSION_TTL_DAYS)
-
     pw_hash = hash_password(req.password)
 
-    cursor.execute(
-        """
-        INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
-        VALUES (?, ?, ?, 0, ?, ?)
-        """,
-        (user_id, name_clean, email_clean, now, now),
-    )
+    if existing_user:
+        user_id, is_verified = existing_user[0], bool(existing_user[1])
+        if is_verified:
+            # Verified account already exists
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"message": "An account with this email already exists", "code": "USER_ALREADY_EXISTS"},
+            )
+        else:
+            # Unverified account retrying registration: update profile credentials and issue fresh OTP
+            cursor.execute(
+                "UPDATE user SET name = ?, updatedAt = ? WHERE id = ?",
+                (name_clean, now, user_id),
+            )
+            cursor.execute(
+                "UPDATE account SET password = ?, updatedAt = ? WHERE userId = ? AND providerId = 'credential'",
+                (pw_hash, now, user_id),
+            )
+            cursor.execute("DELETE FROM session WHERE userId = ?", (user_id,))
+    else:
+        user_id = generate_id()
+        account_id = generate_id()
+        cursor.execute(
+            """
+            INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
+            VALUES (?, ?, ?, 0, ?, ?)
+            """,
+            (user_id, name_clean, email_clean, now, now),
+        )
+        cursor.execute(
+            """
+            INSERT INTO account (id, accountId, providerId, userId, password, createdAt, updatedAt)
+            VALUES (?, ?, 'credential', ?, ?, ?, ?)
+            """,
+            (account_id, email_clean, user_id, pw_hash, now, now),
+        )
 
-    cursor.execute(
-        """
-        INSERT INTO account (id, accountId, providerId, userId, password, createdAt, updatedAt)
-        VALUES (?, ?, 'credential', ?, ?, ?, ?)
-        """,
-        (account_id, email_clean, user_id, pw_hash, now, now),
-    )
+    # Generate 6-digit cryptographically secure OTP for registration verification
+    otp = generate_otp()
+    if settings.ENVIRONMENT.lower() in ("test", "testing", "development") or os.getenv("PYTEST_CURRENT_TEST"):
+        _test_last_otp = otp
 
+    identifier = f"email-verification-otp-{email_clean}"
+    expires_at = _otp_expires_iso(300)  # 5 minutes
+    otp_hash = hash_otp(otp)
+
+    cursor.execute("DELETE FROM verification WHERE identifier = ?", (identifier,))
     cursor.execute(
         """
-        INSERT INTO session (id, expiresAt, token, createdAt, updatedAt, userId)
+        INSERT INTO verification (id, identifier, value, expiresAt, createdAt, updatedAt)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (session_id, session_expiry, session_token, now, now, user_id),
+        (generate_id(), identifier, f"{otp_hash}:0", expires_at, now, now),
     )
     db.commit()
 
-    _set_session_cookie(response, session_token, remember_me=True)
-    logger.info("[Auth] New user registered: %s (id: %s)", _mask_email(email_clean), user_id)
+    # Dispatch email in background so registration response is swift and constant-time
+    # SECURITY: Never log the OTP code
+    background_tasks.add_task(send_brevo_otp_email, email_clean, otp, "email-verification")
+    logger.info("[Auth] User registration pending email verification: %s (id: %s)", _mask_email(email_clean), user_id)
 
+    # Unverified registration does NOT establish an active session cookie
     return {
         "redirect": False,
-        "token": session_token,
+        "token": None,
         "user": {
             "id": user_id,
             "name": name_clean,
@@ -322,16 +366,19 @@ def sign_up_email(
             "createdAt": now,
             "updatedAt": now,
         },
+        "requiresVerification": True,
     }
 
 
 @router.post("/sign-in/email")
 def sign_in_email(
     req: SignInRequest,
+    background_tasks: BackgroundTasks,
     request: Request,
     response: Response,
     db: sqlite3.Connection = Depends(get_db),
 ):
+    global _test_last_otp
     ip = _get_client_ip(request)
     email_clean = req.email.strip().lower()
 
@@ -372,6 +419,39 @@ def sign_in_email(
         )
 
     user_id, name, email, email_verified, created_at, updated_at, _ = row
+
+    # Enforcement: unverified accounts cannot sign in or establish sessions
+    if not bool(email_verified):
+        # Generate fresh OTP and send verification email in background
+        otp = generate_otp()
+        if settings.ENVIRONMENT.lower() in ("test", "testing", "development") or os.getenv("PYTEST_CURRENT_TEST"):
+            _test_last_otp = otp
+        identifier = f"email-verification-otp-{email_clean}"
+        now = _now_iso()
+        expires_at = _otp_expires_iso(300)
+        otp_hash = hash_otp(otp)
+
+        cursor.execute("DELETE FROM verification WHERE identifier = ?", (identifier,))
+        cursor.execute(
+            """
+            INSERT INTO verification (id, identifier, value, expiresAt, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (generate_id(), identifier, f"{otp_hash}:0", expires_at, now, now),
+        )
+        db.commit()
+
+        background_tasks.add_task(send_brevo_otp_email, email_clean, otp, "email-verification")
+        logger.warning("[Auth] Sign in rejected: account is unverified for %s. Dispatched fresh OTP.", _mask_email(email_clean))
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "message": "Email verification is required before signing in. A fresh 6-digit verification code has been sent to your email.",
+                "code": "EMAIL_NOT_VERIFIED",
+                "email": email_clean,
+            },
+        )
+
     now = _now_iso()
     session_id = generate_id()
     session_token = generate_session_token()
@@ -508,36 +588,182 @@ async def send_verification_otp(
         )
 
     cursor = db.cursor()
-    cursor.execute("SELECT id FROM user WHERE LOWER(email) = ?", (email_clean,))
+    cursor.execute("SELECT id, emailVerified FROM user WHERE LOWER(email) = ?", (email_clean,))
     user_row = cursor.fetchone()
 
     # Generate 6-digit cryptographically secure OTP
     otp = generate_otp()
     if settings.ENVIRONMENT.lower() in ("test", "testing", "development") or os.getenv("PYTEST_CURRENT_TEST"):
         _test_last_otp = otp
-    identifier = f"forget-password-otp-{email_clean}"
+
+    event_type = req.type if req.type in ("email-verification", "forget-password") else "forget-password"
+    identifier = f"{event_type}-otp-{email_clean}"
     now = _now_iso()
     expires_at = _otp_expires_iso(300)  # 5 minutes
     otp_hash = hash_otp(otp)
 
     # If user exists, record the verification OTP with hash and 0 attempts
     if user_row:
-        cursor.execute("DELETE FROM verification WHERE identifier = ?", (identifier,))
-        cursor.execute(
-            """
-            INSERT INTO verification (id, identifier, value, expiresAt, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (generate_id(), identifier, f"{otp_hash}:0", expires_at, now, now),
-        )
-        db.commit()
+        is_verified = bool(user_row[1])
+        if event_type == "email-verification" and is_verified:
+            # Already verified; log notice without failing to protect privacy
+            logger.info("[Auth] Verification OTP requested for already-verified email: %s", _mask_email(email_clean))
+        else:
+            cursor.execute("DELETE FROM verification WHERE identifier = ?", (identifier,))
+            cursor.execute(
+                """
+                INSERT INTO verification (id, identifier, value, expiresAt, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (generate_id(), identifier, f"{otp_hash}:0", expires_at, now, now),
+            )
+            db.commit()
 
-        # Dispatch email in background so the response time is constant
-        # SECURITY POLICY: The OTP code is NEVER printed in logs
-        background_tasks.add_task(send_brevo_otp_email, email_clean, otp, req.type)
+            # Dispatch email in background so the response time is constant
+            # SECURITY POLICY: The OTP code is NEVER printed in logs
+            background_tasks.add_task(send_brevo_otp_email, email_clean, otp, event_type)
 
     # Always return 200 OK to prevent user enumeration
     return {"success": True}
+
+
+@router.post("/email-otp/verify-email")
+def verify_email_otp(
+    req: VerifyEmailOtpRequest,
+    request: Request,
+    response: Response,
+    db: sqlite3.Connection = Depends(get_db),
+):
+    ip = _get_client_ip(request)
+    email_clean = req.email.strip().lower()
+    submitted_otp = req.otp.strip()
+
+    if not verify_otp_limiter.check(ip) or not verify_otp_limiter.check(f"verify:{email_clean}"):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"message": "Too many verification attempts. Please try again later.", "code": "TOO_MANY_REQUESTS"},
+        )
+
+    if len(submitted_otp) != 6 or not submitted_otp.isdigit():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "Verification code must be exactly 6 digits.", "code": "INVALID_OTP"},
+        )
+
+    identifier = f"email-verification-otp-{email_clean}"
+    cursor = db.cursor()
+    cursor.execute(
+        """
+        SELECT id, value, expiresAt FROM verification WHERE identifier = ?
+        """,
+        (identifier,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        logger.warning("[Auth] Email verification attempted with no active OTP for: %s", _mask_email(email_clean))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "The verification code is invalid or has expired.", "code": "INVALID_OTP"},
+        )
+
+    verif_id, stored_val, expires_at = row
+    if _is_expired(expires_at):
+        cursor.execute("DELETE FROM verification WHERE id = ?", (verif_id,))
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "The verification code has expired. Please request a new one.", "code": "OTP_EXPIRED"},
+        )
+
+    parts = stored_val.split(":")
+    stored_otp_or_hash = parts[0]
+    attempts = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+
+    if attempts >= MAX_OTP_ATTEMPTS:
+        cursor.execute("DELETE FROM verification WHERE id = ?", (verif_id,))
+        db.commit()
+        logger.warning("[Auth] Email verification attempt limit reached for: %s. OTP locked.", _mask_email(email_clean))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "Too many failed attempts. This code has been invalidated. Please request a new one.", "code": "OTP_LOCKED"},
+        )
+
+    if not verify_otp(submitted_otp, stored_otp_or_hash):
+        new_attempts = attempts + 1
+        new_now = _now_iso()
+        if new_attempts >= MAX_OTP_ATTEMPTS:
+            cursor.execute("DELETE FROM verification WHERE id = ?", (verif_id,))
+            db.commit()
+            logger.warning("[Auth] Max email OTP attempts exceeded for: %s. Code deleted.", _mask_email(email_clean))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": "Too many failed attempts. This code has been invalidated. Please request a new one.", "code": "OTP_LOCKED"},
+            )
+        else:
+            new_val = f"{stored_otp_or_hash}:{new_attempts}"
+            cursor.execute("UPDATE verification SET value = ?, updatedAt = ? WHERE id = ?", (new_val, new_now, verif_id))
+            db.commit()
+            remaining = MAX_OTP_ATTEMPTS - new_attempts
+            logger.warning("[Auth] Incorrect email OTP for: %s (%d/%d attempts)", _mask_email(email_clean), new_attempts, MAX_OTP_ATTEMPTS)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": f"Invalid verification code. {remaining} attempt{'s' if remaining != 1 else ''} remaining.", "code": "INVALID_OTP"},
+            )
+
+    # Valid OTP! Retrieve user
+    cursor.execute(
+        """
+        SELECT id, name, email, createdAt FROM user WHERE LOWER(email) = ?
+        """,
+        (email_clean,),
+    )
+    user_row = cursor.fetchone()
+    if not user_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user_id, name, email, created_at = user_row
+    now = _now_iso()
+
+    # Mark user email as verified
+    cursor.execute(
+        """
+        UPDATE user SET emailVerified = 1, updatedAt = ? WHERE id = ?
+        """,
+        (now, user_id),
+    )
+
+    # Invalidate the used OTP (single-use)
+    cursor.execute("DELETE FROM verification WHERE id = ?", (verif_id,))
+
+    # Create active session according to existing auth architecture
+    session_id = generate_id()
+    session_token = generate_session_token()
+    session_expiry = _expires_iso(SESSION_TTL_DAYS)
+
+    cursor.execute(
+        """
+        INSERT INTO session (id, expiresAt, token, createdAt, updatedAt, userId)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (session_id, session_expiry, session_token, now, now, user_id),
+    )
+    db.commit()
+
+    _set_session_cookie(response, session_token, remember_me=True)
+    logger.info("[Auth] User email verified successfully: %s (id: %s)", _mask_email(email_clean), user_id)
+
+    return {
+        "status": True,
+        "token": session_token,
+        "user": {
+            "id": user_id,
+            "name": name,
+            "email": email,
+            "emailVerified": True,
+            "createdAt": created_at,
+            "updatedAt": now,
+        },
+    }
 
 
 @router.post("/email-otp/reset-password")

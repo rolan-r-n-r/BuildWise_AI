@@ -221,8 +221,9 @@ def test_multi_user_project_and_report_isolation(multi_user_env):
 
 def test_auth_endpoints_full_cycle(multi_user_env):
     client = multi_user_env["client"]
+    from app.auth import routes
 
-    # 1. Sign up new user
+    # 1. Sign up new user (requires email verification)
     signup_resp = client.post(
         "/api/auth/sign-up/email",
         json={
@@ -233,12 +234,70 @@ def test_auth_endpoints_full_cycle(multi_user_env):
     )
     assert signup_resp.status_code == 200, signup_resp.text
     signup_data = signup_resp.json()
-    assert "token" in signup_data
+    assert signup_data["requiresVerification"] is True
+    assert signup_data["token"] is None
     assert signup_data["user"]["email"] == "diana@themyscira.gov"
-    token = signup_data["token"]
-    assert "better-auth.session_token" in signup_resp.cookies
+    assert signup_data["user"]["emailVerified"] is False
+    assert "better-auth.session_token" not in signup_resp.cookies
 
-    # 2. Duplicate registration rejected
+    # 2. Unverified sign in rejected with 403 EMAIL_NOT_VERIFIED
+    unverified_login = client.post(
+        "/api/auth/sign-in/email",
+        json={"email": "diana@themyscira.gov", "password": "AmazonianWarrior999!"},
+    )
+    assert unverified_login.status_code == 403
+    assert unverified_login.json()["detail"]["code"] == "EMAIL_NOT_VERIFIED"
+
+    # 3. Inspect DB to verify verification OTP was securely generated and hashed
+    with get_connection(multi_user_env["db_path"]) as conn:
+        verif_row = conn.execute(
+            "SELECT value FROM verification WHERE identifier = 'email-verification-otp-diana@themyscira.gov'"
+        ).fetchone()
+        assert verif_row is not None
+        stored_hash = verif_row[0].split(":")[0]
+        assert len(stored_hash) == 64
+        otp = routes._test_last_otp
+        assert otp is not None
+        assert len(otp) == 6
+
+    # 4. Reject bad OTP for email verification
+    bad_otp_resp = client.post(
+        "/api/auth/email-otp/verify-email",
+        json={
+            "email": "diana@themyscira.gov",
+            "otp": "000000",
+        },
+    )
+    assert bad_otp_resp.status_code == 400
+    assert bad_otp_resp.json()["detail"]["code"] == "INVALID_OTP"
+
+    # 5. Verify email with valid OTP -> establishes session and returns session cookie
+    verify_resp = client.post(
+        "/api/auth/email-otp/verify-email",
+        json={
+            "email": "diana@themyscira.gov",
+            "otp": otp,
+        },
+    )
+    assert verify_resp.status_code == 200
+    verify_data = verify_resp.json()
+    assert verify_data["status"] is True
+    assert verify_data["user"]["emailVerified"] is True
+    token = verify_data["token"]
+    assert "better-auth.session_token" in verify_resp.cookies
+
+    # 6. Replay attempt with same OTP is rejected (single-use OTP)
+    replay_resp = client.post(
+        "/api/auth/email-otp/verify-email",
+        json={
+            "email": "diana@themyscira.gov",
+            "otp": otp,
+        },
+    )
+    assert replay_resp.status_code == 400
+    assert replay_resp.json()["detail"]["code"] == "INVALID_OTP"
+
+    # 7. Duplicate registration rejected now that account is verified
     dup_resp = client.post(
         "/api/auth/sign-up/email",
         json={
@@ -249,20 +308,21 @@ def test_auth_endpoints_full_cycle(multi_user_env):
     )
     assert dup_resp.status_code == 422
 
-    # 3. Get session
+    # 8. Get session now works and shows verified user
     sess_resp = client.get("/api/auth/get-session", cookies={"better-auth.session_token": token})
     assert sess_resp.status_code == 200
     sess_data = sess_resp.json()
     assert sess_data["user"]["name"] == "Diana Prince"
+    assert sess_data["user"]["emailVerified"] is True
 
-    # 4. Sign in with bad password
+    # 9. Sign in with bad password
     bad_login = client.post(
         "/api/auth/sign-in/email",
         json={"email": "diana@themyscira.gov", "password": "WrongPassword!"},
     )
     assert bad_login.status_code == 401
 
-    # 5. Sign in with correct password
+    # 10. Sign in with correct password succeeds now that account is verified
     good_login = client.post(
         "/api/auth/sign-in/email",
         json={"email": "diana@themyscira.gov", "password": "AmazonianWarrior999!"},
@@ -270,7 +330,7 @@ def test_auth_endpoints_full_cycle(multi_user_env):
     assert good_login.status_code == 200
     new_token = good_login.json()["token"]
 
-    # 6. Request password reset OTP
+    # 11. Request password reset OTP
     otp_req = client.post(
         "/api/auth/email-otp/send-verification-otp",
         json={"email": "diana@themyscira.gov", "type": "forget-password"},
@@ -278,8 +338,6 @@ def test_auth_endpoints_full_cycle(multi_user_env):
     assert otp_req.status_code == 200
     assert otp_req.json() == {"success": True}
 
-    # Inspect DB to verify OTP is securely hashed at rest (64-char hex)
-    from app.auth import routes
     with get_connection(multi_user_env["db_path"]) as conn:
         verif_row = conn.execute(
             "SELECT value FROM verification WHERE identifier = 'forget-password-otp-diana@themyscira.gov'"
@@ -287,12 +345,12 @@ def test_auth_endpoints_full_cycle(multi_user_env):
         assert verif_row is not None
         stored_hash = verif_row[0].split(":")[0]
         assert len(stored_hash) == 64
-        otp = routes._test_last_otp
-        assert otp is not None
-        assert len(otp) == 6
+        pw_reset_otp = routes._test_last_otp
+        assert pw_reset_otp is not None
+        assert len(pw_reset_otp) == 6
 
-    # 7. Reject bad OTP
-    bad_otp_resp = client.post(
+    # 12. Reject bad reset OTP
+    bad_reset_otp = client.post(
         "/api/auth/email-otp/reset-password",
         json={
             "email": "diana@themyscira.gov",
@@ -300,26 +358,26 @@ def test_auth_endpoints_full_cycle(multi_user_env):
             "password": "BrandNewSecretPassword123!",
         },
     )
-    assert bad_otp_resp.status_code == 400
+    assert bad_reset_otp.status_code == 400
 
-    # 8. Accept valid OTP and update password
+    # 13. Accept valid reset OTP and update password
     reset_resp = client.post(
         "/api/auth/email-otp/reset-password",
         json={
             "email": "diana@themyscira.gov",
-            "otp": otp,
+            "otp": pw_reset_otp,
             "password": "BrandNewSecretPassword123!",
         },
     )
     assert reset_resp.status_code == 200
     assert reset_resp.json() == {"success": True}
 
-    # 9. Verify pre-reset session was revoked
+    # 14. Verify pre-reset session was revoked
     old_sess_resp = client.get("/api/auth/get-session", cookies={"better-auth.session_token": new_token})
     assert old_sess_resp.status_code == 200
     assert old_sess_resp.json() is None
 
-    # 10. Login with new password succeeds, old password fails
+    # 15. Login with new password succeeds, old password fails
     assert client.post(
         "/api/auth/sign-in/email",
         json={"email": "diana@themyscira.gov", "password": "AmazonianWarrior999!"},
@@ -481,6 +539,7 @@ def test_email_masking_production():
         settings.ENVIRONMENT = "production"
         masked = _mask_email("architect.alice@buildwise.ai")
         assert "architect.alice" not in masked
+        assert masked == "a***e@b***e.ai"
         assert masked.startswith("a***e@")
         assert masked.endswith(".ai")
 
@@ -489,5 +548,250 @@ def test_email_masking_production():
         assert "@" in masked_short
     finally:
         settings.ENVIRONMENT = orig_env
+
+
+def test_registration_email_otp_attempt_lockout(multi_user_env):
+    """Verifies that 5 incorrect attempts on email verification lock and delete the OTP code."""
+    client = multi_user_env["client"]
+    from app.auth import routes
+
+    # Register new user
+    client.post(
+        "/api/auth/sign-up/email",
+        json={
+            "name": "Lockout User",
+            "email": "lockout@example.com",
+            "password": "SecurePassword123!",
+        },
+    )
+
+    # 4 incorrect attempts
+    for attempt in range(1, 5):
+        resp = client.post(
+            "/api/auth/email-otp/verify-email",
+            json={"email": "lockout@example.com", "otp": f"11111{attempt}"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["code"] == "INVALID_OTP"
+        assert f"{5 - attempt} attempt" in resp.json()["detail"]["message"].lower()
+
+    # 5th incorrect attempt -> locks and invalidates OTP
+    fifth_resp = client.post(
+        "/api/auth/email-otp/verify-email",
+        json={"email": "lockout@example.com", "otp": "999999"},
+    )
+    assert fifth_resp.status_code == 400
+    assert fifth_resp.json()["detail"]["code"] == "OTP_LOCKED"
+
+    # Verify verification row was wiped
+    with get_connection(multi_user_env["db_path"]) as conn:
+        verif = conn.execute(
+            "SELECT id FROM verification WHERE identifier = 'email-verification-otp-lockout@example.com'"
+        ).fetchone()
+        assert verif is None
+
+    # Even previously valid OTP fails because code is locked and deleted
+    valid_otp = routes._test_last_otp
+    stale_resp = client.post(
+        "/api/auth/email-otp/verify-email",
+        json={"email": "lockout@example.com", "otp": valid_otp},
+    )
+    assert stale_resp.status_code == 400
+    assert stale_resp.json()["detail"]["code"] == "INVALID_OTP"
+
+
+def test_registration_email_otp_expiration(multi_user_env):
+    """Verifies that expired registration OTPs are rejected with OTP_EXPIRED."""
+    client = multi_user_env["client"]
+    past_iso = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+    # Seed an expired verification OTP
+    with get_connection(multi_user_env["db_path"]) as conn:
+        conn.execute(
+            """
+            INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
+            VALUES ('exp_user', 'Expired Guy', 'expired@example.com', 0, ?, ?)
+            """,
+            (past_iso, past_iso),
+        )
+        conn.execute(
+            """
+            INSERT INTO verification (id, identifier, value, expiresAt, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ("exp_verif_id", "email-verification-otp-expired@example.com", "dummyhash:0", past_iso, past_iso, past_iso),
+        )
+        conn.commit()
+
+    resp = client.post(
+        "/api/auth/email-otp/verify-email",
+        json={"email": "expired@example.com", "otp": "123456"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "OTP_EXPIRED"
+
+    # Verification record should be pruned
+    with get_connection(multi_user_env["db_path"]) as conn:
+        row = conn.execute("SELECT id FROM verification WHERE id = 'exp_verif_id'").fetchone()
+        assert row is None
+
+
+def test_registration_email_otp_resend(multi_user_env):
+    """Verifies that resending verification OTP generates a fresh code and invalidates the previous code."""
+    client = multi_user_env["client"]
+    from app.auth import routes
+
+    # Register user
+    client.post(
+        "/api/auth/sign-up/email",
+        json={
+            "name": "Resend Tester",
+            "email": "resend@example.com",
+            "password": "Password12345!",
+        },
+    )
+    first_otp = routes._test_last_otp
+    assert first_otp is not None
+
+    # Resend OTP
+    resend_resp = client.post(
+        "/api/auth/email-otp/send-verification-otp",
+        json={"email": "resend@example.com", "type": "email-verification"},
+    )
+    assert resend_resp.status_code == 200
+    assert resend_resp.json() == {"success": True}
+
+    second_otp = routes._test_last_otp
+    assert second_otp is not None
+
+    # First OTP must fail if different from second
+    if first_otp != second_otp:
+        bad_first = client.post(
+            "/api/auth/email-otp/verify-email",
+            json={"email": "resend@example.com", "otp": first_otp},
+        )
+        assert bad_first.status_code == 400
+
+    # Second OTP succeeds
+    good_second = client.post(
+        "/api/auth/email-otp/verify-email",
+        json={"email": "resend@example.com", "otp": second_otp},
+    )
+    assert good_second.status_code == 200
+    assert good_second.json()["status"] is True
+
+
+def test_unverified_account_direct_api_access_blocked(multi_user_env):
+    """Verifies that unverified sessions cannot access protected endpoints (e.g. /api/projects or /api/auth/me)."""
+    client = multi_user_env["client"]
+    now = datetime.now(timezone.utc)
+    future_str = (now + timedelta(days=7)).isoformat()
+    now_str = now.isoformat()
+
+    # Seed an unverified user with an active session token directly in the database
+    with get_connection(multi_user_env["db_path"]) as conn:
+        conn.execute(
+            """
+            INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
+            VALUES ('unverified_user', 'Unverified Sam', 'sam@unverified.org', 0, ?, ?)
+            """,
+            (now_str, now_str),
+        )
+        conn.execute(
+            """
+            INSERT INTO session (id, expiresAt, token, createdAt, updatedAt, userId)
+            VALUES ('unverified_sess', ?, 'unverified_session_token', ?, ?, 'unverified_user')
+            """,
+            (future_str, now_str, now_str),
+        )
+        conn.commit()
+
+    # Calling /api/projects with unverified session token must return 403 Forbidden
+    resp = client.get(
+        "/api/projects",
+        headers={"Authorization": "Bearer unverified_session_token"},
+    )
+    assert resp.status_code == 403
+    assert "verification required" in resp.json()["detail"].lower()
+
+    # Calling /api/auth/me with unverified session token must return 403 Forbidden
+    me_resp = client.get(
+        "/api/auth/me",
+        headers={"Authorization": "Bearer unverified_session_token"},
+    )
+    assert me_resp.status_code == 403
+    assert "verification required" in me_resp.json()["detail"].lower()
+
+
+def test_unverified_user_reregistration_updates_credentials(multi_user_env):
+    """Verifies that abandoned unverified accounts can re-register with updated credentials."""
+    client = multi_user_env["client"]
+    from app.auth import routes
+
+    # 1. First registration attempt
+    r1 = client.post(
+        "/api/auth/sign-up/email",
+        json={"name": "Initial Name", "email": "abandoned@example.com", "password": "OldPassword123!"},
+    )
+    assert r1.status_code == 200
+
+    # 2. Second registration attempt with new name and new password
+    r2 = client.post(
+        "/api/auth/sign-up/email",
+        json={"name": "Corrected Name", "email": "abandoned@example.com", "password": "NewBetterPassword123!"},
+    )
+    assert r2.status_code == 200
+    otp = routes._test_last_otp
+
+    # 3. Verify with fresh OTP
+    v_resp = client.post(
+        "/api/auth/email-otp/verify-email",
+        json={"email": "abandoned@example.com", "otp": otp},
+    )
+    assert v_resp.status_code == 200
+    assert v_resp.json()["user"]["name"] == "Corrected Name"
+
+    # 4. Old password fails, new password succeeds
+    assert client.post(
+        "/api/auth/sign-in/email",
+        json={"email": "abandoned@example.com", "password": "OldPassword123!"},
+    ).status_code == 401
+
+    assert client.post(
+        "/api/auth/sign-in/email",
+        json={"email": "abandoned@example.com", "password": "NewBetterPassword123!"},
+    ).status_code == 200
+
+
+def test_existing_account_grandfathering():
+    """Verifies that init_db() grandfathers existing accounts with emailVerified = 1 so existing users never lose access."""
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+
+    # Initialize a fresh DB without user_version=2 yet, containing a pre-existing user with emailVerified = 0
+    now_str = datetime.now(timezone.utc).isoformat()
+    with get_connection(path) as conn:
+        from app.db.database import SCHEMA_SQL
+        conn.executescript(SCHEMA_SQL)
+        conn.execute(
+            "INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt) VALUES (?, ?, ?, 0, ?, ?)",
+            ("legacy_user_1", "Legacy User", "legacy@buildwise.ai", now_str, now_str),
+        )
+        conn.commit()
+
+    # Run init_db() which executes migration to bump user_version and grandfather existing users
+    init_db(db_path=path)
+
+    with get_connection(path) as conn:
+        row = conn.execute("SELECT emailVerified FROM user WHERE id = 'legacy_user_1'").fetchone()
+        assert row["emailVerified"] == 1
+
+        v_row = conn.execute("PRAGMA user_version;").fetchone()
+        assert v_row[0] == 2
+
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 

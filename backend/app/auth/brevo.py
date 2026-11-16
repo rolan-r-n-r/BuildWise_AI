@@ -15,12 +15,18 @@ logger = logging.getLogger(__name__)
 
 
 def render_otp_html(otp: str, event_type: str = "forget-password") -> str:
-    heading = "Password Reset Verification" if event_type == "forget-password" else "Verification Code"
-    intro = (
-        "We received a request to reset your password for your BuildWise account."
-        if event_type == "forget-password"
-        else "Please use the verification code below to verify your account."
-    )
+    if event_type == "email-verification":
+        heading = "Verify Your Email Address"
+        intro = "Welcome to BuildWise AI! Please use the 6-digit verification code below to verify your email address and activate your account."
+        security_sub = "Never share this code with anyone. BuildWise engineers will never ask for your verification code."
+    elif event_type == "forget-password":
+        heading = "Password Reset Verification"
+        intro = "We received a request to reset your password for your BuildWise account."
+        security_sub = "If you did not request a password reset, you can safely disregard this email. Your account remains secure."
+    else:
+        heading = "Verification Code"
+        intro = "Please use the verification code below to complete account verification."
+        security_sub = "If you did not request this verification code, no action is needed."
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -64,15 +70,18 @@ def render_otp_html(otp: str, event_type: str = "forget-password") -> str:
                   Valid for 5 minutes (single-use)
                 </p>
               </div>
-              <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #64748b;">
-                If you did not request this code, no action is needed. Your account remains secure.
+              <p style="margin: 0 0 8px 0; font-size: 12px; line-height: 1.5; color: #64748b;">
+                {security_sub}
+              </p>
+              <p style="margin: 0; font-size: 11px; line-height: 1.5; color: #94a3b8;">
+                Security Notice: For your protection, never share this code with anyone.
               </p>
             </td>
           </tr>
           <tr>
             <td style="padding: 20px 32px; background-color: #f8fafc; border-top: 1px solid #f1f5f9; text-align: center;">
               <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-                &copy; BuildWise AI. Automated system security communication.
+                &copy; BuildWise AI &middot; Automated security communication.
               </p>
             </td>
           </tr>
@@ -85,12 +94,27 @@ def render_otp_html(otp: str, event_type: str = "forget-password") -> str:
 
 
 def render_otp_text(otp: str, event_type: str = "forget-password") -> str:
-    return f"""BuildWise AI — Verification Code
+    if event_type == "email-verification":
+        subject_title = "BuildWise AI — Email Verification"
+        msg = "Welcome to BuildWise AI! Your 6-digit email verification code is:"
+        notice = "Please enter this code on the verification screen to activate your account."
+    elif event_type == "forget-password":
+        subject_title = "BuildWise AI — Password Reset Verification"
+        msg = "Your 6-digit password reset verification code is:"
+        notice = "If you did not request a password reset, you can safely ignore this message."
+    else:
+        subject_title = "BuildWise AI — Verification Code"
+        msg = "Your 6-digit verification code is:"
+        notice = "If you did not initiate this request, you can safely disregard this message."
 
-Your 6-digit one-time verification code is: {otp}
+    return f"""{subject_title}
 
-This code will expire in 5 minutes.
-If you did not initiate this request, you can safely disregard this message.
+{msg} {otp}
+
+This code will expire in 5 minutes (single-use).
+{notice}
+
+Security notice: Never share this code with anyone. BuildWise employees will never ask for your verification code.
 
 — BuildWise AI Security Team
 """
@@ -118,11 +142,12 @@ async def send_brevo_otp_email(
         )
         return True
 
-    subject = (
-        "BuildWise Password Reset Verification Code"
-        if event_type == "forget-password"
-        else "Your BuildWise Verification Code"
-    )
+    if event_type == "email-verification":
+        subject = "BuildWise Account Verification Code"
+    elif event_type == "forget-password":
+        subject = "BuildWise Password Reset Verification Code"
+    else:
+        subject = "Your BuildWise Verification Code"
 
     payload = {
         "sender": {"name": sender_name, "email": sender_email},

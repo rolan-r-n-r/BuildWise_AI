@@ -5,7 +5,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { AuthLayout } from './AuthLayout';
-import { APP_PATH, FORGOT_PASSWORD_PATH, SIGN_UP_PATH, navigate } from '../landing/router';
+import { APP_PATH, FORGOT_PASSWORD_PATH, SIGN_UP_PATH, VERIFY_EMAIL_PATH, navigate } from '../landing/router';
 import { signIn, useSession, getSession } from '../lib/auth-client';
 import { Icon } from '../components/Icon';
 
@@ -18,6 +18,7 @@ export const SignInPage: React.FC = () => {
   const [isCapsOn, setIsCapsOn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isUnverified, setIsUnverified] = useState(false);
 
   // Preserve intended internal destination safely
   const getRedirectDestination = (): string => {
@@ -33,10 +34,14 @@ export const SignInPage: React.FC = () => {
     return APP_PATH;
   };
 
-  // If already authenticated, redirect immediately
+  // If already authenticated and verified, redirect immediately; if unverified, redirect to /verify-email
   useEffect(() => {
     if (!sessionPending && sessionData?.session) {
-      window.location.replace(getRedirectDestination());
+      if (sessionData.user?.emailVerified) {
+        window.location.replace(getRedirectDestination());
+      } else if (sessionData.user?.email) {
+        navigate(`${VERIFY_EMAIL_PATH}?email=${encodeURIComponent(sessionData.user.email)}`);
+      }
     }
   }, [sessionData, sessionPending]);
 
@@ -57,6 +62,7 @@ export const SignInPage: React.FC = () => {
 
     setIsLoading(true);
     setErrorMessage(null);
+    setIsUnverified(false);
 
     try {
       const res = await signIn.email({
@@ -66,6 +72,12 @@ export const SignInPage: React.FC = () => {
       });
 
       if (res.error) {
+        const isNotVerified =
+          res.error.code === 'EMAIL_NOT_VERIFIED' ||
+          res.error.status === 403 ||
+          (res.error.message && res.error.message.toLowerCase().includes('verification'));
+
+        setIsUnverified(Boolean(isNotVerified));
         setErrorMessage(
           res.error.message || 'Invalid email or password. Please verify your credentials and try again.'
         );
@@ -98,10 +110,24 @@ export const SignInPage: React.FC = () => {
         {errorMessage && (
           <div
             role="alert"
-            className="p-3.5 rounded-[12px] bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-red-700 dark:text-red-300 text-[12px] flex items-start gap-2.5 animate-in fade-in duration-150"
+            className="p-3.5 rounded-[12px] bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-red-700 dark:text-red-300 text-[12px] flex flex-col gap-2.5 animate-in fade-in duration-150"
           >
-            <Icon name="alert-triangle" size={15} className="shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
-            <span className="flex-1 leading-relaxed font-medium">{errorMessage}</span>
+            <div className="flex items-start gap-2.5">
+              <Icon name="alert-triangle" size={15} className="shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+              <span className="flex-1 leading-relaxed font-medium">{errorMessage}</span>
+            </div>
+            {isUnverified && (
+              <button
+                type="button"
+                onClick={() =>
+                  navigate(`${VERIFY_EMAIL_PATH}?email=${encodeURIComponent(email.trim())}`)
+                }
+                className="self-start text-[11.5px] font-semibold text-[var(--accent)] hover:underline inline-flex items-center gap-1 cursor-pointer ml-6"
+              >
+                <span>Verify email address now</span>
+                <Icon name="chevron-right" size={12} />
+              </button>
+            )}
           </div>
         )}
 

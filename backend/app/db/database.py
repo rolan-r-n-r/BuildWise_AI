@@ -135,4 +135,14 @@ def init_db(db_path: Optional[str] = None) -> None:
         cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_user_name_unique ON projects(user_id, LOWER(TRIM(name)));"
         )
+
+        # Idempotent grandfathering migration: existing accounts created prior to mandatory
+        # registration verification are grandfathered with emailVerified = 1 so they never lose access
+        cursor.execute("PRAGMA user_version;")
+        ver_row = cursor.fetchone()
+        user_version = ver_row[0] if ver_row else 0
+        if user_version < 2:
+            cursor.execute("UPDATE user SET emailVerified = 1 WHERE emailVerified = 0;")
+            cursor.execute("PRAGMA user_version = 2;")
+
         conn.commit()

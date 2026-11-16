@@ -100,10 +100,39 @@ def test_auth_flows():
 
         page.screenshot(path=os.path.join(SHOTS_DIR, "05_reset_password_otp.png"), full_page=True)
 
-        # 5. Test Mobile Viewport (390x844) on /sign-in and /sign-up
-        print("[5] Verifying Mobile Viewport (390x844)...")
+        # 5. Test /verify-email page
+        print("[5] Verifying /verify-email with Segmented 6-Box OTP and Masked Email...")
+        page.goto(f"{BASE_URL}/verify-email?email=architect%40buildwise.ai")
+        page.wait_for_load_state("networkidle")
+        time.sleep(0.5)
+
+        assert "Verify Email" in page.title()
+        assert page.locator("h1:has-text('Verify your email')").is_visible()
+        # Check masked email presentation
+        assert page.locator("text=a***t@b***e.ai").is_visible()
+
+        # Check 6 segmented input boxes exist
+        otp_inputs = page.locator("input[inputmode='numeric']")
+        assert otp_inputs.count() == 6
+
+        # Type OTP digits
+        for i in range(6):
+            otp_inputs.nth(i).type(str(i + 1))
+        time.sleep(0.2)
+
+        page.screenshot(path=os.path.join(SHOTS_DIR, "06_verify_email_otp.png"), full_page=True)
+
+        # 6. Test Mobile Viewport (390x844) on /sign-in, /sign-up, and /verify-email
+        print("[6] Verifying Mobile Viewport (390x844)...")
         mobile_context = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True)
         mobile_page = mobile_context.new_page()
+
+        mobile_page.goto(f"{BASE_URL}/verify-email?email=architect%40buildwise.ai")
+        mobile_page.wait_for_load_state("networkidle")
+        time.sleep(0.5)
+        can_scroll_x = mobile_page.evaluate("document.documentElement.scrollWidth > window.innerWidth")
+        assert not can_scroll_x, "Mobile verify-email has horizontal overflow!"
+        mobile_page.screenshot(path=os.path.join(SHOTS_DIR, "07_verify_email_mobile_390.png"), full_page=True)
 
         mobile_page.goto(f"{BASE_URL}/sign-in")
         mobile_page.wait_for_load_state("networkidle")
@@ -111,10 +140,10 @@ def test_auth_flows():
         # Check no horizontal scroll
         can_scroll_x = mobile_page.evaluate("document.documentElement.scrollWidth > window.innerWidth")
         assert not can_scroll_x, "Mobile sign-in has horizontal overflow!"
-        mobile_page.screenshot(path=os.path.join(SHOTS_DIR, "06_sign_in_mobile_390.png"), full_page=True)
+        mobile_page.screenshot(path=os.path.join(SHOTS_DIR, "08_sign_in_mobile_390.png"), full_page=True)
 
-        # 6. Test Unauthenticated bounce from /app
-        print("[6] Verifying Unauthenticated bounce from /app...")
+        # 7. Test Unauthenticated bounce from /app
+        print("[7] Verifying Unauthenticated bounce from /app...")
         mobile_page.goto(f"{BASE_URL}/app")
         mobile_page.wait_for_load_state("networkidle")
         time.sleep(1.0)

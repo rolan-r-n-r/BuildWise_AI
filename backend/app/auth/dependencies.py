@@ -134,6 +134,12 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email verification required. Please verify your email address to access this resource.",
+        )
+
     return user
 
 
@@ -143,7 +149,7 @@ async def get_optional_current_user(
     secure_cookie: Optional[str] = Cookie(None, alias="__Secure-better-auth.session_token"),
     authorization: Optional[str] = Header(None),
 ) -> Optional[AuthenticatedUser]:
-    """FastAPI dependency: returns current user if authenticated, or None if anonymous."""
+    """FastAPI dependency: returns current user if authenticated and email-verified, or None if anonymous."""
     token = extract_token_from_request(
         request=request,
         better_auth_cookie=better_auth_cookie,
@@ -152,4 +158,7 @@ async def get_optional_current_user(
     )
     if not token:
         return None
-    return verify_session_token(token)
+    user = verify_session_token(token)
+    if not user or not user.email_verified:
+        return None
+    return user

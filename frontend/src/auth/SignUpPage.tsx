@@ -5,8 +5,8 @@
  */
 import React, { useState, useEffect, useMemo } from 'react';
 import { AuthLayout } from './AuthLayout';
-import { APP_PATH, SIGN_IN_PATH, navigate } from '../landing/router';
-import { signUp, useSession, getSession } from '../lib/auth-client';
+import { APP_PATH, SIGN_IN_PATH, VERIFY_EMAIL_PATH, navigate } from '../landing/router';
+import { signUp, useSession } from '../lib/auth-client';
 import { Icon } from '../components/Icon';
 
 export const SignUpPage: React.FC = () => {
@@ -20,10 +20,14 @@ export const SignUpPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // If already authenticated, redirect to /app immediately
+  // If already authenticated and verified, redirect to /app; if unverified, redirect to /verify-email
   useEffect(() => {
     if (!sessionPending && sessionData?.session) {
-      window.location.replace(APP_PATH);
+      if (sessionData.user?.emailVerified) {
+        window.location.replace(APP_PATH);
+      } else if (sessionData.user?.email) {
+        navigate(`${VERIFY_EMAIL_PATH}?email=${encodeURIComponent(sessionData.user.email)}`);
+      }
     }
   }, [sessionData, sessionPending]);
 
@@ -106,11 +110,8 @@ export const SignUpPage: React.FC = () => {
         return;
       }
 
-      // Refresh in-memory session atom so ProtectedApp immediately recognises authenticated state
-      await getSession().catch(() => {});
-
-      // Registration created account and established session -> redirect to /app
-      window.location.replace(APP_PATH);
+      // Registration successful and OTP dispatched -> navigate to dedicated verification screen
+      navigate(`${VERIFY_EMAIL_PATH}?email=${encodeURIComponent(email.trim())}`);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'A network error occurred. Please try again.';
