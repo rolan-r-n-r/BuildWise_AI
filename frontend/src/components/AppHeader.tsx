@@ -5,7 +5,7 @@ import { useSession } from '../lib/auth-client';
 interface AppHeaderProps {
   backendConnected: boolean;
   activeAiProvider: string;
-  serverStatus?: { groq: boolean; gemini: boolean } | null;
+  serverStatus?: { groq: boolean; gemini: boolean; openai?: boolean; anthropic?: boolean; ollama?: boolean } | null;
   onOpenMethodology: () => void;
   onReset: () => void;
   warnings?: string[];
@@ -20,6 +20,7 @@ interface AppHeaderProps {
   hasResults?: boolean;
   onOpenSavedProjects?: () => void;
   onOpenAccount?: () => void;
+  onOpenAIProviders?: () => void;
   /** Focus-return targets for the compact-tier drawers. */
   headerControlToggleRef?: React.Ref<HTMLButtonElement>;
   headerResultsToggleRef?: React.Ref<HTMLButtonElement>;
@@ -40,7 +41,7 @@ export type EngineBadgeState = 'live' | 'deterministic' | 'offline' | 'unverifie
 export function engineBadge(
   backendConnected: boolean,
   activeAiProvider: string,
-  serverStatus?: { groq: boolean; gemini: boolean } | null,
+  serverStatus?: { groq: boolean; gemini: boolean; openai?: boolean; anthropic?: boolean; ollama?: boolean } | null,
 ): { state: EngineBadgeState; label: string; dotClass: string; title: string } {
   if (!backendConnected) {
     return {
@@ -56,7 +57,11 @@ export function engineBadge(
       ? { name: 'Groq', available: Boolean(serverStatus?.groq) }
       : activeAiProvider === 'gemini'
         ? { name: 'Gemini', available: Boolean(serverStatus?.gemini) }
-        : null;
+        : activeAiProvider === 'openai'
+          ? { name: 'OpenAI', available: Boolean(serverStatus?.openai) }
+          : activeAiProvider === 'anthropic'
+            ? { name: 'Anthropic', available: Boolean(serverStatus?.anthropic) }
+            : null;
 
   if (hosted?.available) {
     return {
@@ -113,6 +118,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   hasResults = false,
   onOpenSavedProjects,
   onOpenAccount,
+  onOpenAIProviders,
   headerControlToggleRef,
   headerResultsToggleRef,
 }) => {
@@ -349,10 +355,35 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         </button>
 
         {/* Engine state pill: ONE derivation from the health/key probes at
-            render time. Old copy called the deterministic engine
-            "Offline (Local Mock)", which mislabelled a working engine. */}
+            render time. If onOpenAIProviders is available, clickable to open BYOK settings. */}
         {(() => {
           const badge = engineBadge(backendConnected, activeAiProvider, serverStatus);
+          const content = (
+            <>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${badge.dotClass}`} />
+              <span data-testid="engine-state-label" className="whitespace-nowrap">{badge.label}</span>
+              {onOpenAIProviders && (
+                <Icon name="key" size={11} className="text-[var(--text-3)] ml-0.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+              )}
+            </>
+          );
+
+          if (onOpenAIProviders) {
+            return (
+              <button
+                type="button"
+                onClick={onOpenAIProviders}
+                data-testid="engine-state"
+                data-engine-state={badge.state}
+                aria-label={`AI engine state: ${badge.state}. Click to configure AI provider settings.`}
+                className="group hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-[10px] bg-[var(--fill)] hover:bg-[var(--fill-hover)] text-[12px] font-medium text-[var(--text-2)] hover:text-[var(--text-1)] shrink-0 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                title={`${badge.title} Click to configure API keys (BYOK).`}
+              >
+                {content}
+              </button>
+            );
+          }
+
           return (
             <div
               data-testid="engine-state"
@@ -361,8 +392,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-[10px] bg-[var(--fill)] text-[12px] font-medium text-[var(--text-2)] shrink-0"
               title={badge.title}
             >
-              <span className={`w-2 h-2 rounded-full shrink-0 ${badge.dotClass}`} />
-              <span data-testid="engine-state-label" className="whitespace-nowrap">{badge.label}</span>
+              {content}
             </div>
           );
         })()}

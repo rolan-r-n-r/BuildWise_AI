@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { FloorPlanRequest, FloorPlanResponse, AnalysisParams, FloorPlanParamsSnapshot, PlotPolygon } from '../services/types';
 import { planVerdictBadge } from '../services/planWarnings';
 import { WarningReportView } from './report/WarningReportView';
+import { BlueprintAIInsightsPanel } from './report/BlueprintAIInsightsPanel';
 import { PlanAdvisorPanel } from './report/PlanAdvisorPanel';
 import {
   buildWarningReport,
@@ -1601,15 +1602,23 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
               </div>
             )}
 
-            {/* ONE warning surface: verdict → failures → relaxations →
-                advisories → engine log. T4 operations never inflate the warning
-                counts; the full verbatim list stays one click away. */}
-            <WarningReportView
+            {/* AI Blueprint Diagnostics & Architectural Warning Advisory */}
+            <BlueprintAIInsightsPanel
+              floorPlan={floorPlan}
               warnings={floorPlan.warnings ?? []}
-              relaxations={relaxations}
               planVerdict={planVerdict}
-              certificateFailures={floorPlan.mathematical_certificate?.failures ?? []}
-              prebuiltReport={warningReport}
+              buildingTypology={activeTypology}
+              builtUpAreaSqft={activeAreaSqft}
+              floors={activeFloors}
+              rawWarningsView={
+                <WarningReportView
+                  warnings={floorPlan.warnings ?? []}
+                  relaxations={relaxations}
+                  planVerdict={planVerdict}
+                  certificateFailures={floorPlan.mathematical_certificate?.failures ?? []}
+                  prebuiltReport={warningReport}
+                />
+              }
             />
 
             {/* Advisor + remediation: the deterministic summary is instant; the

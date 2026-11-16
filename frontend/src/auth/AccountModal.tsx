@@ -12,9 +12,10 @@ import { Icon } from '../components/Icon';
 interface AccountModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenAIProviders?: () => void;
 }
 
-export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) => {
+export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, onOpenAIProviders }) => {
   const { data: session, isPending } = useSession();
   const modalRef = useRef<HTMLDivElement>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -191,6 +192,20 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
 
         {/* Action Buttons */}
         <div className="space-y-2.5">
+          {onOpenAIProviders && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenAIProviders();
+              }}
+              className="w-full h-11 rounded-[12px] bg-blue-50 hover:bg-blue-100 active:bg-blue-150 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-900/50 text-[13px] font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <Icon name="key" size={14} />
+              <span>AI Providers &amp; BYOK Settings</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleSignOut}

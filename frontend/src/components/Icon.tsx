@@ -55,7 +55,11 @@ export type IconName =
   | 'trash-2'
   | 'eye'
   | 'eye-off'
-  | 'log-out';
+  | 'log-out'
+  | 'key'
+  | 'zap'
+  | 'cpu'
+  | 'server';
 
 export interface IconProps {
   name: IconName;
@@ -511,6 +515,43 @@ export const Icon = React.memo<IconProps>(function Icon({
           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
           <polyline points="16 17 21 12 16 7" />
           <line x1="21" x2="9" y1="12" y2="12" />
+        </svg>
+      );
+    case 'key':
+      return (
+        <svg {...commonProps}>
+          <path d="m21 2-2 2m-1.5 1.5L16 7l-1.5-1.5L13 7l-1.5-1.5L9 8l-2 2a5 5 0 1 0 7 7l2-2" />
+          <circle cx="7.5" cy="16.5" r="1.5" />
+        </svg>
+      );
+    case 'zap':
+      return (
+        <svg {...commonProps}>
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        </svg>
+      );
+    case 'cpu':
+      return (
+        <svg {...commonProps}>
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+          <rect x="9" y="9" width="6" height="6" />
+          <line x1="9" y1="1" x2="9" y2="4" />
+          <line x1="15" y1="1" x2="15" y2="4" />
+          <line x1="9" y1="20" x2="9" y2="23" />
+          <line x1="15" y1="20" x2="15" y2="23" />
+          <line x1="20" y1="9" x2="23" y2="9" />
+          <line x1="20" y1="15" x2="23" y2="15" />
+          <line x1="1" y1="9" x2="4" y2="9" />
+          <line x1="1" y1="15" x2="4" y2="15" />
+        </svg>
+      );
+    case 'server':
+      return (
+        <svg {...commonProps}>
+          <rect width="20" height="8" x="2" y="2" rx="2" ry="2" />
+          <rect width="20" height="8" x="2" y="14" rx="2" ry="2" />
+          <line x1="6" x2="6.01" y1="6" y2="6" />
+          <line x1="6" x2="6.01" y1="18" y2="18" />
         </svg>
       );
     default:

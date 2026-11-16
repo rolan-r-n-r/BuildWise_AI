@@ -22,6 +22,11 @@ import {
 export interface ProviderAvailability {
   groq: boolean;
   gemini: boolean;
+  openai?: boolean;
+  anthropic?: boolean;
+  ollama?: boolean;
+  configured_models?: Record<string, string>;
+  user_preferred_model?: string;
 }
 
 interface AnalysisFormProps {
@@ -39,6 +44,8 @@ interface AnalysisFormProps {
   engineOnline?: boolean;
   /** Captured plot area (m²); lets the coverage control print the resulting cap. */
   boundaryAreaSqm?: number | null;
+  /** Opens the BYOK AI provider settings modal. */
+  onOpenAIProviders?: () => void;
 }
 
 const AREA_MIN = 500;
@@ -225,6 +232,7 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
   providerAvailability = null,
   engineOnline = true,
   boundaryAreaSqm = null,
+  onOpenAIProviders,
 }) => {
   const [isParsingConstraints, setIsParsingConstraints] = useState(false);
   const [dragSlider, setDragSlider] = useState<'area' | 'coverage' | null>(null);
@@ -341,6 +349,12 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
       : keyConfigured
       ? 'Key configured - live inference'
       : 'No API key - falls back to the built-in engine';
+  const groqModel = providerAvailability?.configured_models?.groq;
+  const geminiModel = providerAvailability?.configured_models?.gemini;
+  const openaiModel = providerAvailability?.configured_models?.openai;
+  const anthropicModel = providerAvailability?.configured_models?.anthropic;
+  const ollamaModel = providerAvailability?.configured_models?.ollama;
+
   const providerOptions: {
     id: string;
     label: string;
@@ -349,15 +363,27 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
   }[] = [
     {
       id: 'groq',
-      label: 'Groq Cloud (gpt-oss-120b)',
+      label: groqModel ? `Groq Cloud (${groqModel})` : 'Groq Cloud (gpt-oss-120b)',
       description: hostedDescription(Boolean(providerAvailability?.groq)),
       state: !statusKnown ? 'unknown' : providerAvailability?.groq ? 'live' : 'fallback',
     },
     {
       id: 'gemini',
-      label: 'Google Gemini (1.5 Flash)',
+      label: geminiModel ? `Google Gemini (${geminiModel})` : 'Google Gemini (gemini-3.5-flash)',
       description: hostedDescription(Boolean(providerAvailability?.gemini)),
       state: !statusKnown ? 'unknown' : providerAvailability?.gemini ? 'live' : 'fallback',
+    },
+    {
+      id: 'openai',
+      label: openaiModel ? `OpenAI (${openaiModel})` : 'OpenAI (GPT-4o)',
+      description: hostedDescription(Boolean(providerAvailability?.openai)),
+      state: !statusKnown ? 'unknown' : providerAvailability?.openai ? 'live' : 'fallback',
+    },
+    {
+      id: 'anthropic',
+      label: anthropicModel ? `Anthropic (${anthropicModel})` : 'Anthropic (Claude 3.5 Sonnet)',
+      description: hostedDescription(Boolean(providerAvailability?.anthropic)),
+      state: !statusKnown ? 'unknown' : providerAvailability?.anthropic ? 'live' : 'fallback',
     },
     {
       id: 'mock',
@@ -367,9 +393,9 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
     },
     {
       id: 'ollama',
-      label: 'Ollama (local server)',
+      label: ollamaModel ? `Ollama (${ollamaModel})` : 'Ollama (local server)',
       description: 'Requires an Ollama server on localhost:11434',
-      state: 'unknown',
+      state: !statusKnown ? 'unknown' : providerAvailability?.ollama ? 'live' : 'fallback',
     },
   ];
   const aiProviders = providerOptions.map((p) => ({
@@ -377,7 +403,9 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
     label: p.label,
     description: p.description,
   }));
-  const activeProvider = providerOptions.find((p) => p.id === request.ai_provider) ?? providerOptions[2];
+  const activeProvider =
+    providerOptions.find((p) => p.id === request.ai_provider || (p.id === 'mock' && request.ai_provider === 'deterministic')) ??
+    providerOptions[4];
   // One badge state from reachability + the selected author. Never show
   // "Live" for the deterministic engine, and never show a provider claim when
   // the backend itself is unreachable.
@@ -848,7 +876,7 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
                   <Icon name="check" size={12} className="shrink-0 text-[var(--accent-ink)]" />
                   <span className="truncate tabular-nums">
                     Parsed: {parseSummary}
-                    {constraints?.extraction_source === 'groq_llm' || constraints?.extraction_source === 'gemini_llm'
+                    {constraints?.extraction_source?.includes('llm')
                       ? ' · AI extracted'
                       : ' · rule parsed'}
                   </span>
@@ -903,22 +931,42 @@ export const AnalysisForm: React.FC<AnalysisFormProps> = ({
         }
       >
         <div className="min-w-0 pt-1">
-          <span className="flex items-center gap-1.5">
-            <label
-              htmlFor="ai-provider-select"
-              className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)]"
-            >
-              Commentary author
-            </label>
-            {narrativeInfo}
-          </span>
+          <div className="flex items-center justify-between mb-1">
+            <span className="flex items-center gap-1.5">
+              <label
+                htmlFor="ai-provider-select"
+                className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-3)]"
+              >
+                Commentary author
+              </label>
+              {narrativeInfo}
+            </span>
+            {onOpenAIProviders && (
+              <button
+                type="button"
+                onClick={onOpenAIProviders}
+                className="text-[11px] font-medium text-[var(--accent)] hover:text-[var(--accent-hover)] hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                title="Configure custom AI keys (BYOK)"
+              >
+                <Icon name="key" size={11} />
+                <span>Configure Keys</span>
+              </button>
+            )}
+          </div>
           <Select
             id="ai-provider-select"
-            value={request.ai_provider}
-            onChange={(val) => onChange({ ai_provider: val })}
+            value={request.ai_provider === 'deterministic' ? 'mock' : request.ai_provider}
+            onChange={(val) => {
+              const actualProvider = val === 'mock' ? 'deterministic' : val;
+              const actualModel = providerAvailability?.configured_models?.[actualProvider];
+              onChange({
+                ai_provider: actualProvider,
+                ...(actualModel ? { ai_model: actualModel } : {}),
+              });
+            }}
             options={aiProviders}
             ariaLabel="Report narrative engine"
-            className="mt-1"
+            className="mt-0.5"
           />
           <p
             data-testid="provider-caption"

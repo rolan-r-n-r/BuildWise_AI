@@ -8,6 +8,8 @@ interface WarningsBannerProps {
   /** The SERVER's plan verdict.  Warning text alone cannot tell a listed,
    * within-cap deviation from a certification-blocking breach. */
   planVerdict?: string | null;
+  /** When true, hides floor plan warnings since they are displayed on the Cost & Plan tab. */
+  hidePlanWarnings?: boolean;
 }
 
 /**
@@ -21,15 +23,27 @@ interface WarningsBannerProps {
  * programme non-compliance" headline overstated the plan's defects and hid the
  * provenance caveats.
  */
-export const WarningsBanner: React.FC<WarningsBannerProps> = ({ data, planVerdict }) => {
+export const WarningsBanner: React.FC<WarningsBannerProps> = ({
+  data,
+  planVerdict,
+  hidePlanWarnings = false,
+}) => {
   const warnings = data.warnings ?? [];
   if (warnings.length === 0) return null;
 
-  const planWarnings = page1PlanWarnings(warnings);
-  const planSet = new Set(planWarnings);
+  const rawPlanWarnings = page1PlanWarnings(warnings);
+  const planSet = new Set(rawPlanWarnings);
   const degradationWarnings = warnings
     .map((w) => String(w))
     .filter((w) => !planSet.has(w.trim()));
+
+  const planWarnings = hidePlanWarnings ? [] : rawPlanWarnings;
+
+  // When floor plan warnings are hidden and there are no data degradation notices,
+  // do not render an empty or redundant banner on site overview/hazards tabs.
+  if (hidePlanWarnings && degradationWarnings.length === 0) {
+    return null;
+  }
 
   // The verdict decides the treatment when the server published one.  A
   // certified plan can carry ROOM-MIN rows that the certificate lists as
@@ -37,9 +51,10 @@ export const WarningsBanner: React.FC<WarningsBannerProps> = ({ data, planVerdic
   // report contradict its own page-1 verdict.  The warning heuristic remains
   // only as a legacy fallback for payloads with no verdict field.
   const critical =
-    planVerdict != null
+    !hidePlanWarnings &&
+    (planVerdict != null
       ? planVerdict === 'NOT-CERTIFIED-FAIL-STAMP'
-      : planWarnings.some((w) => isCriticalPlanWarning(String(w)));
+      : planWarnings.some((w) => isCriticalPlanWarning(String(w))));
   const tone = critical
     ? {
         section: 'bg-[var(--semantic-red)]/10 border-[var(--semantic-red)]',

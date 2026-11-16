@@ -1026,8 +1026,8 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                     Site Overview
                   </h2>
 
-                  {/* Degradation warnings: persistent banner, report top */}
-                  <WarningsBanner data={bannerData} planVerdict={floorPlanData?.plan_verdict ?? null} />
+                  {/* Degradation warnings: persistent banner, report top (plan warnings displayed on Cost & Plan tab) */}
+                  <WarningsBanner data={bannerData} planVerdict={floorPlanData?.plan_verdict ?? null} hidePlanWarnings />
 
                   {/* Hero summary: score, identity chips, headline tiles, data health */}
                   <section data-report-section="summary" id="sec-summary" aria-label="Summary">
@@ -1067,6 +1067,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                       recommendationItems={analysisData.recommendation_items}
                       aiMetadata={analysisData.ai_metadata}
                       parameterReflection={analysisData.parameter_reflection}
+                      structuredNarrative={analysisData.structured_narrative}
                       summaryOnly={false}
                     />
                   </section>
@@ -1113,8 +1114,8 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                     Hazards &amp; Resilience
                   </h2>
 
-                  {/* Degradation warnings: same banner the Overview tab renders */}
-                  <WarningsBanner data={bannerData} planVerdict={floorPlanData?.plan_verdict ?? null} />
+                  {/* Degradation warnings: same banner the Overview tab renders (plan warnings displayed on Cost & Plan tab) */}
+                  <WarningsBanner data={bannerData} planVerdict={floorPlanData?.plan_verdict ?? null} hidePlanWarnings />
 
                   {/* Hazard Profiles (Seismic, Hydrological, Storm in balanced 3-col grid) */}
                   <section data-report-section="profiles" aria-label="Hazard profiles">
@@ -1536,6 +1537,7 @@ export const ReportSheet: React.FC<ReportSheetProps> = ({
                     recommendationItems={analysisData.recommendation_items}
                     aiMetadata={analysisData.ai_metadata}
                     parameterReflection={analysisData.parameter_reflection}
+                    structuredNarrative={analysisData.structured_narrative}
                     summaryOnly={false}
                   />
                 </div>

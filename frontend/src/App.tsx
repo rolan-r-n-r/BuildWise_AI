@@ -27,6 +27,7 @@ import type { SharedBoundaryState } from './services/siteBoundary';
 import { boundaryToSummaryPayload } from './services/siteIntelligence';
 import type { Map as MaplibreMap } from 'maplibre-gl';
 import { Icon } from './components/Icon';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import {
   clearSessionDataStorage,
   restoreSessionData,
@@ -106,6 +107,9 @@ const SavedProjectsDrawer = React.lazy(() =>
 );
 const AccountModal = React.lazy(() =>
   import('./auth/AccountModal').then((m) => ({ default: m.AccountModal })),
+);
+const AIProviderSettingsModal = React.lazy(() =>
+  import('./components/AIProviderSettingsModal').then((m) => ({ default: m.AIProviderSettingsModal })),
 );
 
 const PIPELINE_STAGES = [
@@ -264,6 +268,7 @@ const AppShell: React.FC = () => {
   const [isSaveProjectOpen, setIsSaveProjectOpen] = useState<boolean>(false);
   const [isSavedProjectsOpen, setIsSavedProjectsOpen] = useState<boolean>(false);
   const [isAccountOpen, setIsAccountOpen] = useState<boolean>(false);
+  const [isAISettingsOpen, setIsAISettingsOpen] = useState<boolean>(false);
 
   /**
    * THE site location — one value pair, one owner, no second copy to drift.
@@ -420,7 +425,15 @@ const AppShell: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fallbackToast, setFallbackToast] = useState<string | null>(null);
   const [backendConnected, setBackendConnected] = useState<boolean>(false);
-  const [serverStatus, setServerStatus] = useState<{ groq: boolean; gemini: boolean } | null>(null);
+  const [serverStatus, setServerStatus] = useState<{
+    groq: boolean;
+    gemini: boolean;
+    openai?: boolean;
+    anthropic?: boolean;
+    ollama?: boolean;
+    configured_models?: Record<string, string>;
+    user_preferred_model?: string;
+  } | null>(null);
   const [isMethodologyOpen, setIsMethodologyOpen] = useState<boolean>(false);
 
   // Responsive drawer geometry: the open/closed state itself is declared with
@@ -628,8 +641,24 @@ const AppShell: React.FC = () => {
     fetchBackendStatus()
       .then((res) => {
         setBackendConnected(res.status === 'online');
-        setServerStatus({ groq: res.groq, gemini: res.gemini });
-        if (res.groq) {
+        setServerStatus({
+          groq: res.groq,
+          gemini: res.gemini,
+          openai: res.openai,
+          anthropic: res.anthropic,
+          ollama: res.ollama,
+          configured_models: res.configured_models,
+          user_preferred_model: res.user_preferred_model,
+        });
+        if (res.user_preferred_provider && res.user_preferred_provider !== 'deterministic') {
+          dispatchSession({
+            type: 'request',
+            patch: {
+              ai_provider: res.user_preferred_provider,
+              ...(res.user_preferred_model ? { ai_model: res.user_preferred_model } : {}),
+            },
+          });
+        } else if (res.groq) {
           dispatchSession({ type: 'request', patch: { ai_provider: 'groq' } });
         } else if (res.gemini) {
           dispatchSession({ type: 'request', patch: { ai_provider: 'gemini' } });
@@ -1047,6 +1076,7 @@ const AppShell: React.FC = () => {
         providerAvailability={serverStatus}
         engineOnline={backendConnected}
         boundaryAreaSqm={boundaryAreaSqm}
+        onOpenAIProviders={() => setIsAISettingsOpen(true)}
       />
     </>
   );
@@ -1265,6 +1295,7 @@ const AppShell: React.FC = () => {
         onOpenMethodology={() => setIsMethodologyOpen(true)}
         onOpenSavedProjects={() => setIsSavedProjectsOpen(true)}
         onOpenAccount={() => setIsAccountOpen(true)}
+        onOpenAIProviders={() => setIsAISettingsOpen(true)}
         onReset={requestReset}
         warnings={warnings}
         isWarningDismissed={isWarningDismissed}
@@ -1652,8 +1683,45 @@ const AppShell: React.FC = () => {
           <AccountModal
             isOpen={isAccountOpen}
             onClose={() => setIsAccountOpen(false)}
+            onOpenAIProviders={() => setIsAISettingsOpen(true)}
           />
         </React.Suspense>
+      )}
+
+      {/* User AI Provider Settings (BYOK) modal */}
+      {isAISettingsOpen && (
+        <ErrorBoundary onReset={() => setIsAISettingsOpen(false)}>
+          <React.Suspense fallback={null}>
+            <AIProviderSettingsModal
+              isOpen={isAISettingsOpen}
+              onClose={() => setIsAISettingsOpen(false)}
+              onConfigChanged={(preferred, model) => {
+                if (preferred) {
+                  dispatchSession({
+                    type: 'request',
+                    patch: {
+                      ai_provider: preferred,
+                      ...(model ? { ai_model: model } : {}),
+                    },
+                  });
+                }
+                fetchBackendStatus()
+                  .then((res) => {
+                    setServerStatus({
+                      groq: res.groq,
+                      gemini: res.gemini,
+                      openai: res.openai,
+                      anthropic: res.anthropic,
+                      ollama: res.ollama,
+                      configured_models: res.configured_models,
+                      user_preferred_model: res.user_preferred_model,
+                    });
+                  })
+                  .catch(() => {});
+              }}
+            />
+          </React.Suspense>
+        </ErrorBoundary>
       )}
 
       {/* Design system: keyboard shortcuts sheet + toast viewport */}
