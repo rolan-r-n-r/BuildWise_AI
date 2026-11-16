@@ -5,14 +5,25 @@ export interface BackendStatus {
   status: string;
   groq: boolean;
   gemini: boolean;
+  openai?: boolean;
+  anthropic?: boolean;
+  ollama?: boolean;
   default_provider: string;
+  deterministic_engine?: boolean;
+  byok_supported?: boolean;
+  user_configured_providers?: string[];
+  user_preferred_provider?: string;
+  user_preferred_model?: string;
+  configured_models?: Record<string, string>;
 }
 
 /**
  * Checks server health and which LLM providers have API keys configured
  */
 export async function fetchBackendStatus(): Promise<BackendStatus> {
-  const resp = await fetch(`${env.VITE_API_URL}/api/status`);
+  const resp = await fetch(`${env.VITE_API_URL}/api/status`, {
+    credentials: 'include',
+  });
   if (!resp.ok) {
     throw new Error(`Failed to fetch backend status: ${resp.status}`);
   }
@@ -37,6 +48,7 @@ export async function generateFeasibilityReport(
     headers: {
       'Content-Type': 'application/json',
     },
+    credentials: 'include',
     body: JSON.stringify(request),
     signal,
   });

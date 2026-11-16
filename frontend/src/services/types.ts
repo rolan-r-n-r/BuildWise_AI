@@ -14,6 +14,7 @@ export interface AnalysisRequest {
   building_typology: string;
   floors: number;
   ai_provider: string;
+  ai_model?: string;
   override_land_rate_per_sqft?: number;
   plot_area_sqft?: number;
   ground_coverage_ratio?: number;
@@ -288,6 +289,80 @@ export interface AnalysisResponse {
   methodology?: Record<string, string>;
   /** Server-validated echo of the captured boundary. */
   boundary_summary?: BoundarySummary | null;
+  /** Structured multi-factor AI civil engineering narrative and advisory. */
+  structured_narrative?: SiteFeasibilityAIAnalysis | null;
+}
+
+export interface SiteFeasibilityAIAnalysis {
+  executive_summary: string;
+  overall_assessment: string;
+  key_strengths: string[];
+  key_concerns: string[];
+  engineering_considerations: string[];
+  environmental_and_hazards: string[];
+  financial_considerations: string[];
+  required_investigations: string[];
+  recommended_next_steps: string[];
+}
+
+export interface AIWarningDetail {
+  original_warning: string;
+  warning_id?: string | null;
+  category: string;
+  severity: string;
+  ai_priority: string;
+  explanation: string;
+  why_it_matters: string;
+  potential_risk: string;
+  suggested_correction: string;
+  affected_element?: string | null;
+  requires_professional_review: boolean;
+  related_warning_ids?: string[];
+}
+
+export interface BlueprintGroupedIssue {
+  group_name: string;
+  underlying_cause: string;
+  related_warnings: string[];
+  combined_solution: string;
+}
+
+export interface BlueprintPrioritizedAction {
+  priority: string;
+  action_title: string;
+  description: string;
+  target_elements: string[];
+  original_severity: string;
+}
+
+export interface BlueprintAssessment {
+  ready_for_review: boolean;
+  overall_status_summary: string;
+  key_concerns: string[];
+  recurring_themes: string[];
+  professional_review_required: boolean;
+  next_steps: string[];
+}
+
+export interface BlueprintAIAnalysisResponse {
+  blueprint_assessment: BlueprintAssessment;
+  categorized_warnings: Record<string, AIWarningDetail[]>;
+  grouped_issues: BlueprintGroupedIssue[];
+  prioritized_actions: BlueprintPrioritizedAction[];
+  meta: Record<string, any>;
+}
+
+export interface BlueprintAIAnalysisRequest {
+  warnings: string[];
+  plan_verdict?: string | null;
+  mathematical_certificate?: Record<string, any> | null;
+  metrics?: Record<string, any> | null;
+  unmet_requirements?: Record<string, any>[] | null;
+  building_typology?: string | null;
+  built_up_area_sqft?: number | null;
+  floors?: number | null;
+  ai_provider?: string | null;
+  ai_model?: string | null;
 }
 
 /** Server-validated boundary echo: every value recomputed server-side. */

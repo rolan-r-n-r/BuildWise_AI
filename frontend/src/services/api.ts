@@ -8,6 +8,8 @@ import type {
   AdvisoryResponse,
   ReportRequestPayload,
   ExtractedClientConstraints,
+  BlueprintAIAnalysisRequest,
+  BlueprintAIAnalysisResponse,
 } from './types';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -138,6 +140,7 @@ export async function generateFloorPlan(
 ): Promise<FloorPlanResponse> {
   const resp = await fetch(`${API_BASE_URL}/api/generate-floorplan`, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
     },
@@ -205,6 +208,7 @@ export async function fetchPlanAdvisory(
 ): Promise<AdvisoryResponse> {
   const resp = await fetch(`${API_BASE_URL}/api/floorplan/advisory`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
     signal,
@@ -277,6 +281,7 @@ export async function parseRequirements(
   try {
     const resp = await fetch(`${API_BASE_URL}/api/parse-requirements`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       },
@@ -351,4 +356,30 @@ export function parseRequirementsClientFallback(text: string): ExtractedClientCo
     raw_notes: text,
     extraction_source: 'regex_fallback',
   };
+}
+
+/**
+ * Requests AI-powered architectural review and plan warning analysis for a generated floor plan.
+ * Categorizes warnings into 7 standard categories, explains root causes, groups related issues,
+ * and provides prioritized action recommendations.
+ */
+export async function fetchBlueprintAIAnalysis(
+  payload: BlueprintAIAnalysisRequest
+): Promise<BlueprintAIAnalysisResponse> {
+  const url = `${API_BASE_URL}/api/floorplan/ai-analysis`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw await apiErrorFromResponse(
+      response,
+      `Blueprint AI analysis failed with HTTP ${response.status}`
+    );
+  }
+
+  return response.json();
 }
