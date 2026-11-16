@@ -442,3 +442,52 @@ def test_rate_limiter_enforcement():
     # Different key is still allowed
     assert limiter.check_forced("192.168.1.101") is True
 
+
+def test_security_headers_present(multi_user_env):
+    """Verifies that security headers are emitted on API responses."""
+    client = multi_user_env["client"]
+    resp = client.get("/api/health")
+    assert resp.status_code == 200
+    assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+    assert resp.headers.get("X-Frame-Options") == "DENY"
+    assert resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+    assert "geolocation=(self)" in resp.headers.get("Permissions-Policy", "")
+
+
+def test_rate_limiter_pruning():
+    """Verifies that SimpleRateLimiter evicts expired entries."""
+    from app.auth.routes import SimpleRateLimiter
+    import time
+
+    limiter = SimpleRateLimiter(limit=5, window_seconds=1)
+    limiter.check_forced("stale_ip_1")
+    limiter.check_forced("stale_ip_2")
+    assert "stale_ip_1" in limiter.requests
+    assert "stale_ip_2" in limiter.requests
+
+    # Advance time beyond window + prune interval
+    future_time = time.time() + 35.0
+    limiter._prune(future_time)
+    assert "stale_ip_1" not in limiter.requests
+    assert "stale_ip_2" not in limiter.requests
+
+
+def test_email_masking_production():
+    """Verifies that PII email masking works as expected."""
+    from app.auth.routes import _mask_email
+
+    orig_env = settings.ENVIRONMENT
+    try:
+        settings.ENVIRONMENT = "production"
+        masked = _mask_email("architect.alice@buildwise.ai")
+        assert "architect.alice" not in masked
+        assert masked.startswith("a***e@")
+        assert masked.endswith(".ai")
+
+        masked_short = _mask_email("bo@ex.com")
+        assert "bo" not in masked_short
+        assert "@" in masked_short
+    finally:
+        settings.ENVIRONMENT = orig_env
+
+

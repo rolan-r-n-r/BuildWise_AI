@@ -63,5 +63,18 @@ class Settings:
     BREVO_SENDER_EMAIL: str = os.getenv("BREVO_SENDER_EMAIL", "security@buildwise.ai")
     BREVO_SENDER_NAME: str = os.getenv("BREVO_SENDER_NAME", "BuildWise AI")
 
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.lower() == "production"
+
+    def validate_security(self) -> List[str]:
+        warnings = []
+        if self.is_production:
+            if self.BETTER_AUTH_SECRET == "buildwise-production-master-secret-key-change-in-prod-min-32-chars":
+                warnings.append("SECURITY CRITICAL: BETTER_AUTH_SECRET is set to the default placeholder in production.")
+            elif len(self.BETTER_AUTH_SECRET) < 32:
+                warnings.append("SECURITY WARNING: BETTER_AUTH_SECRET is shorter than 32 characters in production.")
+        return warnings
+
 settings = Settings()
 

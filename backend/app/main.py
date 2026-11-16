@@ -80,6 +80,8 @@ async def lifespan(app: FastAPI):
         f"default_ai={settings.DEFAULT_AI_PROVIDER}, "
         f"trusted_proxies={len(settings.TRUSTED_PROXIES)}"
     )
+    for warning in settings.validate_security():
+        logger.warning(warning)
     try:
         from app.db import init_db
         init_db()
@@ -121,14 +123,29 @@ async def request_validation_exception_handler(request: Request, exc: RequestVal
         content={"detail": _json_safe_validation_detail(jsonable_encoder(exc.errors()))},
     )
 
-# CORS configuration with exact origin matching for Vite dev server (Crucial for Local Dev)
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
-for origin in settings.CORS_ORIGINS:
-    if origin and origin != "*" and origin not in ALLOWED_ORIGINS:
-        ALLOWED_ORIGINS.append(origin)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled server exception on {request.method} {request.url.path}: {exc}")
+    if settings.is_production:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An internal server error occurred."},
+        )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc) or "Internal server error"},
+    )
+
+
+# CORS configuration: strict configured origins in production, localhost permissible in dev
+if settings.is_production:
+    ALLOWED_ORIGINS = [o for o in settings.CORS_ORIGINS if o and o != "*"]
+else:
+    ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    for origin in settings.CORS_ORIGINS:
+        if origin and origin != "*" and origin not in ALLOWED_ORIGINS:
+            ALLOWED_ORIGINS.append(origin)
 
 app.add_middleware(
     CORSMiddleware,
@@ -140,6 +157,19 @@ app.add_middleware(
     # exposing any report content.
     expose_headers=["X-Buildwise-Report-Cache"],
 )
+
+
+@app.middleware("http")
+async def set_security_headers(request: Request, call_next):
+    """Enforce production HTTP security headers across all API endpoints."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(self)"
+    if settings.is_production:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 # Reject oversized request bodies early - the PDF
 # and floorplan endpoints accept large nested JSON payloads, and unbounded

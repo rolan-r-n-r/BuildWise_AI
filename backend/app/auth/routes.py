@@ -44,18 +44,30 @@ _test_last_otp: Optional[str] = None
 
 
 class SimpleRateLimiter:
-    """Sliding-window in-memory rate limiter per IP / identity."""
+    """Sliding-window in-memory rate limiter per IP / identity with auto-pruning."""
 
     def __init__(self, limit: int, window_seconds: int):
         self.limit = limit
         self.window_seconds = window_seconds
         self.requests = defaultdict(list)
+        self._last_prune = 0.0
+
+    def _prune(self, now: float) -> None:
+        """Prunes stale keys periodically to prevent unbounded memory growth."""
+        if now - self._last_prune < 30.0:
+            return
+        self._last_prune = now
+        cutoff = now - self.window_seconds
+        stale_keys = [k for k, timestamps in self.requests.items() if not timestamps or timestamps[-1] <= cutoff]
+        for k in stale_keys:
+            self.requests.pop(k, None)
 
     def check(self, key: str) -> bool:
         # In test mode, bypass by default so large test suites are not throttled
         if settings.ENVIRONMENT.lower() in ("test", "testing") or os.getenv("PYTEST_CURRENT_TEST"):
             return True
         now = time.time()
+        self._prune(now)
         cutoff = now - self.window_seconds
         self.requests[key] = [t for t in self.requests[key] if t > cutoff]
         if len(self.requests[key]) >= self.limit:
@@ -66,6 +78,7 @@ class SimpleRateLimiter:
     def check_forced(self, key: str) -> bool:
         """Forces rate limiting evaluation regardless of environment (for unit testing)."""
         now = time.time()
+        self._prune(now)
         cutoff = now - self.window_seconds
         self.requests[key] = [t for t in self.requests[key] if t > cutoff]
         if len(self.requests[key]) >= self.limit:
@@ -75,6 +88,7 @@ class SimpleRateLimiter:
 
     def reset(self):
         self.requests.clear()
+        self._last_prune = 0.0
 
 
 sign_in_limiter = SimpleRateLimiter(limit=5, window_seconds=60)
@@ -91,10 +105,43 @@ def reset_rate_limiters():
 
 
 def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "127.0.0.1"
+    """Extract client IP with trusted reverse proxy verification.
+
+    X-Forwarded-For is only parsed when the direct peer connection originates
+    from a configured trusted proxy, preventing IP spoofing and rate limit bypass.
+    """
+    direct_host = request.client.host if request.client else "127.0.0.1"
+    trusted = getattr(settings, "TRUSTED_PROXIES", ["127.0.0.1", "::1", "testclient", "localhost"])
+    if "*" in trusted or direct_host in trusted:
+        xff = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+        if xff:
+            first = xff.split(",")[0].strip()
+            if first:
+                return first
+    return direct_host
+
+
+def _mask_email(email: str) -> str:
+    """Mask email for safe logging in production (e.g. j***e@e***e.com)."""
+    if not email or "@" not in email:
+        return "[redacted]"
+    if settings.ENVIRONMENT.lower() != "production":
+        return email
+    try:
+        user_part, domain_part = email.split("@", 1)
+        if len(user_part) <= 2:
+            masked_user = user_part[0] + "***"
+        else:
+            masked_user = user_part[0] + "***" + user_part[-1]
+
+        if "." in domain_part:
+            d_name, d_tld = domain_part.rsplit(".", 1)
+            masked_domain = (d_name[0] + "***" if len(d_name) > 1 else "***") + "." + d_tld
+        else:
+            masked_domain = "***"
+        return f"{masked_user}@{masked_domain}"
+    except Exception:
+        return "[redacted]"
 
 
 def _now_iso() -> str:
@@ -140,7 +187,12 @@ def _set_session_cookie(response: Response, token: str, remember_me: bool = True
 
 
 def _clear_session_cookie(response: Response):
-    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        samesite="lax",
+    )
     response.delete_cookie(
         key=SECURE_SESSION_COOKIE_NAME,
         path="/",
@@ -257,7 +309,7 @@ def sign_up_email(
     db.commit()
 
     _set_session_cookie(response, session_token, remember_me=True)
-    logger.info("[Auth] New user registered: %s (id: %s)", email_clean, user_id)
+    logger.info("[Auth] New user registered: %s (id: %s)", _mask_email(email_clean), user_id)
 
     return {
         "redirect": False,
@@ -281,13 +333,15 @@ def sign_in_email(
     db: sqlite3.Connection = Depends(get_db),
 ):
     ip = _get_client_ip(request)
-    if not sign_in_limiter.check(ip):
+    email_clean = req.email.strip().lower()
+
+    # Dual-key rate limiting: evaluates both client IP and user identity
+    if not sign_in_limiter.check(ip) or not sign_in_limiter.check(f"user:{email_clean}"):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={"message": "Too many sign in attempts. Please try again later.", "code": "TOO_MANY_REQUESTS"},
         )
 
-    email_clean = req.email.strip().lower()
     cursor = db.cursor()
 
     cursor.execute(
@@ -304,14 +358,14 @@ def sign_in_email(
     if not row:
         # Constant-time dummy Scrypt computation to prevent user enumeration via timing
         verify_password(req.password, _DUMMY_SCRYPT_HASH)
-        logger.warning("[Auth] Invalid login attempt for non-existent user: %s", email_clean)
+        logger.warning("[Auth] Invalid login attempt for non-existent user: %s", _mask_email(email_clean))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"message": "Invalid email or password", "code": "INVALID_EMAIL_OR_PASSWORD"},
         )
 
     if not verify_password(req.password, row[6]):
-        logger.warning("[Auth] Invalid login attempt for: %s", email_clean)
+        logger.warning("[Auth] Invalid login attempt for: %s", _mask_email(email_clean))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"message": "Invalid email or password", "code": "INVALID_EMAIL_OR_PASSWORD"},
@@ -334,7 +388,7 @@ def sign_in_email(
     db.commit()
 
     _set_session_cookie(response, session_token, remember_me=bool(req.rememberMe))
-    logger.info("[Auth] User logged in: %s (id: %s)", email_clean, user_id)
+    logger.info("[Auth] User logged in: %s (id: %s)", _mask_email(email_clean), user_id)
 
     return {
         "redirect": False,
@@ -459,7 +513,8 @@ async def send_verification_otp(
 
     # Generate 6-digit cryptographically secure OTP
     otp = generate_otp()
-    _test_last_otp = otp
+    if settings.ENVIRONMENT.lower() in ("test", "testing", "development") or os.getenv("PYTEST_CURRENT_TEST"):
+        _test_last_otp = otp
     identifier = f"forget-password-otp-{email_clean}"
     now = _now_iso()
     expires_at = _otp_expires_iso(300)  # 5 minutes
@@ -517,7 +572,7 @@ def reset_password(
     )
     row = cursor.fetchone()
     if not row:
-        logger.warning("[Auth] Password reset attempted with no active OTP for: %s", email_clean)
+        logger.warning("[Auth] Password reset attempted with no active OTP for: %s", _mask_email(email_clean))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"message": "The verification code is invalid or has expired.", "code": "INVALID_OTP"},
@@ -540,7 +595,7 @@ def reset_password(
     if attempts >= MAX_OTP_ATTEMPTS:
         cursor.execute("DELETE FROM verification WHERE id = ?", (verif_id,))
         db.commit()
-        logger.warning("[Auth] OTP attempt limit reached (%d) for: %s. OTP locked.", attempts, email_clean)
+        logger.warning("[Auth] OTP attempt limit reached (%d) for: %s. OTP locked.", attempts, _mask_email(email_clean))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"message": "Too many failed attempts. This code has been invalidated. Please request a new one.", "code": "OTP_LOCKED"},
@@ -552,7 +607,7 @@ def reset_password(
         if new_attempts >= MAX_OTP_ATTEMPTS:
             cursor.execute("DELETE FROM verification WHERE id = ?", (verif_id,))
             db.commit()
-            logger.warning("[Auth] Max OTP attempts exceeded for: %s. Code deleted.", email_clean)
+            logger.warning("[Auth] Max OTP attempts exceeded for: %s. Code deleted.", _mask_email(email_clean))
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"message": "Too many failed attempts. This code has been invalidated. Please request a new one.", "code": "OTP_LOCKED"},
@@ -562,7 +617,7 @@ def reset_password(
             cursor.execute("UPDATE verification SET value = ?, updatedAt = ? WHERE id = ?", (new_val, new_now, verif_id))
             db.commit()
             remaining = MAX_OTP_ATTEMPTS - new_attempts
-            logger.warning("[Auth] Incorrect OTP entered for: %s (%d/%d attempts)", email_clean, new_attempts, MAX_OTP_ATTEMPTS)
+            logger.warning("[Auth] Incorrect OTP entered for: %s (%d/%d attempts)", _mask_email(email_clean), new_attempts, MAX_OTP_ATTEMPTS)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"message": f"Invalid verification code. {remaining} attempt{'s' if remaining != 1 else ''} remaining.", "code": "INVALID_OTP"},
@@ -593,6 +648,6 @@ def reset_password(
     cursor.execute("DELETE FROM verification WHERE id = ?", (verif_id,))
     db.commit()
 
-    logger.info("[Auth] Password successfully reset for: %s. All previous sessions revoked.", email_clean)
+    logger.info("[Auth] Password successfully reset for: %s. All previous sessions revoked.", _mask_email(email_clean))
     return {"success": True}
 
