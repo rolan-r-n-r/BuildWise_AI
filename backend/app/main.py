@@ -32,6 +32,7 @@ from app.schemas.site_vision import (
     SiteVisionResponse
 )
 from app.schemas.floorplan import FloorPlanRequest
+from app.schemas.blueprint_ai import BlueprintAIAnalysisRequest, BlueprintAIAnalysisResponse
 from app.schemas.multi_floor_plan import ExtractedClientConstraints
 from app.schemas.remediation import AdvisoryIn, RemediationIn
 from app.services.report_service import generate_pdf_report_with_cache
@@ -52,6 +53,9 @@ from app.services import (
 )
 
 from app.ai import get_ai_adapter, generate_room_program
+from app.auth import AuthenticatedUser, get_current_user, get_optional_current_user, auth_router
+from app.ai.routes import router as ai_router
+from app.ai.execution_resolver import ExecutionResolver
 from app.services.geocode_service import geocode_search, reverse_geocode_probe
 from app.services.hazard_service import (
     fetch_usgs_seismic_data,
@@ -293,9 +297,12 @@ def check_proxy_rate_limit(client_ip: str):
     _proxy_request_history[client_ip].append(now)
 
 @app.get("/api/status")
-async def api_status():
+async def api_status(
+    current_user: Optional[AuthenticatedUser] = Depends(get_optional_current_user)
+):
     """
-    Lightweight status endpoint indicating configured LLM keys and engine availability.
+    Lightweight status endpoint indicating configured LLM keys, BYOK capabilities,
+    and user-specific provider states.
     """
     has_groq = bool(
         settings.GROQ_API_KEY
@@ -307,11 +314,39 @@ async def api_status():
         and settings.GEMINI_API_KEY.strip()
         and not settings.GEMINI_API_KEY.startswith("your_")
     )
+
+    from app.db.ai_credential_repository import AICredentialRepository
+    ai_repo = AICredentialRepository()
+    user_configured = []
+    preferred = "deterministic"
+    preferred_model = None
+    configured_models = {}
+    if current_user and current_user.id:
+        user_creds = ai_repo.list_credentials(current_user.id)
+        user_configured = [c.provider for c in user_creds if c.status == "connected"]
+        configured_models = {
+            c.provider: c.selected_model
+            for c in user_creds
+            if c.status == "connected" and c.selected_model
+        }
+        pref = ai_repo.get_preference(current_user.id)
+        preferred = pref.preferred_provider
+        preferred_model = pref.preferred_model
+
     return {
         "status": "online",
-        "groq": has_groq,
-        "gemini": has_gemini,
-        "default_provider": settings.DEFAULT_AI_PROVIDER
+        "groq": has_groq or ("groq" in user_configured),
+        "gemini": has_gemini or ("gemini" in user_configured),
+        "openai": ("openai" in user_configured),
+        "anthropic": ("anthropic" in user_configured),
+        "ollama": ("ollama" in user_configured),
+        "default_provider": settings.DEFAULT_AI_PROVIDER,
+        "deterministic_engine": True,
+        "byok_supported": True,
+        "user_configured_providers": user_configured,
+        "user_preferred_provider": preferred,
+        "user_preferred_model": preferred_model,
+        "configured_models": configured_models,
     }
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -322,7 +357,7 @@ async def health_check():
     return HealthResponse(
         status="healthy",
         version="1.1.0",
-        ai_adapters_available=["mock", "groq", "gemini", "ollama"],
+        ai_adapters_available=["mock", "groq", "gemini", "openai", "anthropic", "ollama"],
         active_default_ai=settings.DEFAULT_AI_PROVIDER
     )
 
@@ -417,7 +452,11 @@ async def site_preview_endpoint(req: SitePreviewRequest):
         raise HTTPException(status_code=422, detail=str(exc))
 
 @app.post("/api/analyze", response_model=AnalysisResponse)
-async def analyze_site(req: AnalysisRequest, request: Request):
+async def analyze_site(
+    req: AnalysisRequest,
+    request: Request,
+    current_user: Optional[AuthenticatedUser] = Depends(get_optional_current_user)
+):
     """
     Executes full multi-criteria site feasibility, orientation optimization,
     CPWD construction cost estimation, risk synthesis, hazard profiling,
@@ -706,13 +745,18 @@ async def analyze_site(req: AnalysisRequest, request: Request):
         "client_requirements": req.client_requirements
     }
 
-    # 8. Generate engineering commentary via requested AI adapter
+    # 8. Generate engineering commentary via ExecutionResolver (Hybrid BYOK + Deterministic Engine)
     provider_name = req.ai_provider or settings.DEFAULT_AI_PROVIDER
-    adapter = get_ai_adapter(provider_name)
-    summary, ai_recs, ai_meta = await adapter.generate_explanation(intermediate_data)
+    resolver = ExecutionResolver()
+    summary, ai_recs, ai_meta = await resolver.execute_explanation(
+        intermediate_data,
+        user=current_user,
+        requested_provider=provider_name,
+        requested_model=getattr(req, "ai_model", None),
+    )
 
     if ai_meta.get("fallback_reason"):
-        warnings.append(f"AI Provider note: {ai_meta.get('fallback_reason')}")
+        warnings.append(f"Engine note: {ai_meta.get('fallback_reason')}")
 
     # AI adapters narrate only. Numeric report fields are
     # NEVER sourced from LLM metadata - feasibility_score always mirrors the
@@ -747,6 +791,16 @@ async def analyze_site(req: AnalysisRequest, request: Request):
     cost_breakdown_val = cost_estimate.model_dump()
     vastu_compliance_val = vastu_advisory.model_dump()
 
+    # Resolve structured AI narrative
+    from app.schemas.response import SiteFeasibilityAIAnalysis
+    validated_structured_narrative = None
+    structured_narrative_raw = ai_meta.get("structured_narrative")
+    if structured_narrative_raw and isinstance(structured_narrative_raw, dict):
+        try:
+            validated_structured_narrative = SiteFeasibilityAIAnalysis.model_validate(structured_narrative_raw)
+        except Exception as _sn_err:
+            logger.debug(f"Could not validate structured_narrative: {_sn_err}")
+
     try:
         return AnalysisResponse(
             request_id=request_id,
@@ -777,7 +831,8 @@ async def analyze_site(req: AnalysisRequest, request: Request):
             boundary_summary=boundary_summary,
             storeys=int(req.floors),
             building_typology=req.building_typology,
-            data_sources=data_sources
+            data_sources=data_sources,
+            structured_narrative=validated_structured_narrative
         )
     except ValidationError as val_err:
         logger.warning(f"Pydantic validation error constructing AnalysisResponse: {val_err}")
@@ -788,6 +843,12 @@ async def analyze_site(req: AnalysisRequest, request: Request):
         mock_meta["provider_used"] = "mock_fallback_validation_error"
         mock_meta["fallback_reason"] = f"Pydantic ValidationError: {str(val_err)[:100]}"
         warnings.append("AI response validation error. Applied deterministic mock calculations.")
+        fallback_sn = None
+        if mock_meta.get("structured_narrative"):
+            try:
+                fallback_sn = SiteFeasibilityAIAnalysis.model_validate(mock_meta["structured_narrative"])
+            except Exception:
+                fallback_sn = None
         return AnalysisResponse(
             request_id=request_id,
             timestamp=timestamp,
@@ -806,19 +867,21 @@ async def analyze_site(req: AnalysisRequest, request: Request):
             detailed_recommendations=detailed_recs,
             engineering_summary=mock_summary,
             ai_metadata=mock_meta,
-            degraded_mode=True,
+            degraded_mode=is_degraded,
             warnings=warnings,
-            parameter_reflection=mock_meta.get("parameter_reflection", param_reflection),
+            parameter_reflection=mock_meta.get("parameter_reflection"),
             methodology=methodology_notes(),
-            boundary_summary=boundary_summary,
-            feasibility_score=int(round(overall_score)),
+            feasibility_score=feasibility_score_val,
             structural_recommendations=mock_recs,
-            cost_breakdown=cost_estimate.model_dump(),
-            vastu_compliance=vastu_advisory.model_dump(),
+            cost_breakdown=cost_breakdown_val,
+            vastu_compliance=vastu_compliance_val,
+            boundary_summary=boundary_summary,
             storeys=int(req.floors),
             building_typology=req.building_typology,
-            data_sources=data_sources
+            data_sources=data_sources,
+            structured_narrative=fallback_sn
         )
+
 
 @app.post("/api/report")
 async def create_pdf_report(req: ReportRequest):
@@ -901,7 +964,8 @@ async def site_vision_analysis(req: SiteVisionRequest):
 @app.post("/api/generate-floorplan")
 async def create_generative_floorplan(
     req: FloorPlanRequest,
-    format: Optional[str] = Query(default=None, description="Output format: 'json' or 'pdf'")
+    format: Optional[str] = Query(default=None, description="Output format: 'json' or 'pdf'"),
+    current_user: Optional[AuthenticatedUser] = Depends(get_optional_current_user)
 ):
     """
     Executes the universal ontology-driven sole geometry engine (SoleGeometryEngine) for
@@ -1064,7 +1128,15 @@ async def create_generative_floorplan(
                 "vastu_strictness": req.vastu_strictness,
                 "bypass_cache": req.bypass_cache or False,
             }
-            prog, prog_source = await generate_room_program(params, req.ai_provider)
+            resolver = ExecutionResolver()
+            plan = resolver.resolve_plan(current_user, req.ai_provider, getattr(req, "ai_model", None))
+            prog, prog_source = await generate_room_program(
+                params,
+                provider=plan.provider,
+                api_key=plan.api_key,
+                model=plan.model,
+                base_url=plan.base_url,
+            )
             # Programme contract at the API boundary: a generated room programme
             # must actually shape the plate. The single-storey T1 partitioner keys
             # on required_rooms, so a caller that supplied only the plinth area
@@ -1197,7 +1269,10 @@ async def floorplan_remediation(req: RemediationIn):
 
 
 @app.post("/api/floorplan/advisory")
-async def floorplan_advisory(req: AdvisoryIn):
+async def floorplan_advisory(
+    req: AdvisoryIn,
+    current_user: Optional[AuthenticatedUser] = Depends(get_optional_current_user)
+):
     """Advisory narrative for the plan's blocking reasons and measured options.
 
     Labelled ``advisory_non_certified``; cached per plan hash; on timeout or a
@@ -1205,9 +1280,11 @@ async def floorplan_advisory(req: AdvisoryIn):
     deterministic summary stands alone.
     """
     from app.ai.floorplan_advisor import advise
+    resolver = ExecutionResolver()
+    plan = resolver.resolve_plan(current_user, req.provider)
 
     try:
-        return await advise(req)
+        return await advise(req, api_key=plan.api_key)
     except Exception as exc:  # noqa: BLE001 - the advisor must never break the plan
         logger.warning(f"Floorplan advisor failed: {exc}")
         from app.schemas.remediation import AdvisoryMeta, AdvisoryOut
@@ -1215,26 +1292,53 @@ async def floorplan_advisory(req: AdvisoryIn):
         return AdvisoryOut(
             narrative=None,
             meta=AdvisoryMeta(
-                provider_requested="groq",
+                provider_requested=plan.provider,
                 provider_used="deterministic_only",
                 fallback_reason=f"advisor error: {str(exc)[:120]}",
             ),
         )
 
 
+@app.post("/api/floorplan/ai-analysis", response_model=BlueprintAIAnalysisResponse)
+async def analyze_blueprint_warnings_endpoint(
+    req: BlueprintAIAnalysisRequest,
+    current_user: Optional[AuthenticatedUser] = Depends(get_optional_current_user),
+):
+    """
+    AI-powered plan warning analysis and architectural review.
+    Categorizes technical solver warnings into 7 standard categories, explains root causes,
+    groups interrelated issues, and provides prioritized action recommendations.
+    Supports BYOK AI providers with instant deterministic fallback.
+    """
+    from app.services.blueprint_ai_advisor import BlueprintAIAdvisorService
+    service = BlueprintAIAdvisorService()
+    return await service.analyze_blueprint(req, user=current_user)
+
+
 class ParseRequirementsRequest(BaseModel):
     requirements_text: str
     ai_provider: Optional[str] = "groq"
+    ai_model: Optional[str] = None
 
 
 @app.post("/api/parse-requirements", response_model=ExtractedClientConstraints)
-async def parse_requirements_endpoint(req: ParseRequirementsRequest):
+async def parse_requirements_endpoint(
+    req: ParseRequirementsRequest,
+    current_user: Optional[AuthenticatedUser] = Depends(get_optional_current_user)
+):
     """
     Extracts structured architectural design constraints from free-text client notes.
     """
     try:
+        resolver = ExecutionResolver()
+        plan = resolver.resolve_plan(current_user, req.ai_provider, req.ai_model)
         from app.ai.requirements_parser import parse_client_requirements
-        return await parse_client_requirements(req.requirements_text, req.ai_provider)
+        return await parse_client_requirements(
+            req.requirements_text,
+            ai_provider=plan.provider,
+            api_key=plan.api_key,
+            model=plan.model
+        )
     except Exception as e:
         logger.warning(f"Error parsing requirements: {e}")
         from app.ai.requirements_parser import parse_client_requirements_fallback
@@ -1251,9 +1355,9 @@ from app.schemas.project import (  # noqa: E402
     ProjectUpdate,
 )
 from app.db import ProjectRepository  # noqa: E402
-from app.auth import AuthenticatedUser, get_current_user, get_optional_current_user, auth_router  # noqa: E402
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(ai_router)
 
 
 @app.get("/api/auth/me")
