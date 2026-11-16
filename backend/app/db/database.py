@@ -87,6 +87,35 @@ CREATE TABLE IF NOT EXISTS projects (
 
 CREATE INDEX IF NOT EXISTS idx_projects_created_at ON projects(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_projects_bookmarked ON projects(is_bookmarked);
+
+-- Bring Your Own Key (BYOK) Hybrid AI Architecture Tables
+CREATE TABLE IF NOT EXISTS user_ai_credentials (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    encrypted_api_key TEXT NOT NULL,
+    key_hint TEXT NOT NULL,
+    base_url TEXT,
+    selected_model TEXT,
+    status TEXT NOT NULL DEFAULT 'connected',
+    last_validated_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES user(id) ON DELETE CASCADE,
+    UNIQUE(user_id, provider)
+);
+
+CREATE TABLE IF NOT EXISTS user_ai_preferences (
+    user_id TEXT PRIMARY KEY,
+    preferred_provider TEXT NOT NULL DEFAULT 'deterministic',
+    preferred_model TEXT,
+    fallback_to_deterministic INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES user(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_ai_credentials_user_id ON user_ai_credentials(user_id);
 """
 
 

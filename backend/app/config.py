@@ -62,6 +62,10 @@ class Settings:
     BREVO_API_KEY: str = os.getenv("BREVO_API_KEY", "")
     BREVO_SENDER_EMAIL: str = os.getenv("BREVO_SENDER_EMAIL", "security@buildwise.ai")
     BREVO_SENDER_NAME: str = os.getenv("BREVO_SENDER_NAME", "BuildWise AI")
+    AI_CREDENTIAL_ENCRYPTION_KEY: str = os.getenv(
+        "AI_CREDENTIAL_ENCRYPTION_KEY",
+        "buildwise-byok-default-dev-encryption-key-min-32-bytes",
+    )
 
     @property
     def is_production(self) -> bool:
@@ -74,6 +78,10 @@ class Settings:
                 warnings.append("SECURITY CRITICAL: BETTER_AUTH_SECRET is set to the default placeholder in production.")
             elif len(self.BETTER_AUTH_SECRET) < 32:
                 warnings.append("SECURITY WARNING: BETTER_AUTH_SECRET is shorter than 32 characters in production.")
+            if self.AI_CREDENTIAL_ENCRYPTION_KEY == "buildwise-byok-default-dev-encryption-key-min-32-bytes":
+                warnings.append("SECURITY CRITICAL: AI_CREDENTIAL_ENCRYPTION_KEY is set to the default placeholder in production.")
+            elif len(self.AI_CREDENTIAL_ENCRYPTION_KEY) < 32:
+                warnings.append("SECURITY WARNING: AI_CREDENTIAL_ENCRYPTION_KEY is shorter than 32 characters in production.")
         return warnings
 
 settings = Settings()
