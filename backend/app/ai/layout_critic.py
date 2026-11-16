@@ -151,31 +151,33 @@ def evaluate_layout_critic(
             return "skipped", []
         try:
             with httpx.Client(timeout=4.0) as client:
-                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-                headers = {
-                    "x-goog-api-key": api_key,
-                    "Content-Type": "application/json",
-                }
-                body = {
-                    "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-                    "contents": [{"parts": [{"text": user_prompt}]}],
-                    "generationConfig": {
-                        "temperature": 0.1,
-                        "maxOutputTokens": 400,
-                        "responseMimeType": "application/json"
+                candidate_models = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite"]
+                for target_model in candidate_models:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent"
+                    headers = {
+                        "x-goog-api-key": api_key,
+                        "Content-Type": "application/json",
                     }
-                }
-                resp = client.post(url, headers=headers, json=body)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    cands = data.get("candidates", [])
-                    if cands:
-                        text = cands[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                        parsed = json.loads(text)
-                        verdict = parsed.get("verdict", "pass").lower()
-                        violations = parsed.get("violations", [])
-                        _CRITIC_CACHE[layout_hash] = (now, verdict, violations)
-                        return verdict, violations
+                    body = {
+                        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                        "contents": [{"parts": [{"text": user_prompt}]}],
+                        "generationConfig": {
+                            "temperature": 0.1,
+                            "maxOutputTokens": 400,
+                            "responseMimeType": "application/json"
+                        }
+                    }
+                    resp = client.post(url, headers=headers, json=body)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        cands = data.get("candidates", [])
+                        if cands:
+                            text = cands[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                            parsed = json.loads(text)
+                            verdict = parsed.get("verdict", "pass").lower()
+                            violations = parsed.get("violations", [])
+                            _CRITIC_CACHE[layout_hash] = (now, verdict, violations)
+                            return verdict, violations
         except Exception as e:
             logger.warning(f"Gemini layout critic evaluation failed: {e}")
             return "skipped", []

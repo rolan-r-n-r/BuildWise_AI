@@ -236,6 +236,19 @@ class BoundarySummaryResponse(BaseModel):
     provenance: BoundaryProvenance
 
 
+class SiteFeasibilityAIAnalysis(BaseModel):
+    """Structured civil engineering narrative and multi-factor advisory."""
+    executive_summary: str = Field(..., description="High-level engineering narrative synthesizing site feasibility, project constraints, and architectural alignment")
+    overall_assessment: str = Field(..., description="Clear engineering evaluation of site suitability and balance between advantages and challenges")
+    key_strengths: List[str] = Field(default_factory=list, description="Top positive site attributes based on measured data")
+    key_concerns: List[str] = Field(default_factory=list, description="Top engineering challenges, hazard exposure, or logistical constraints")
+    engineering_considerations: List[str] = Field(default_factory=list, description="Specific structural, foundation, drainage, and civil engineering considerations")
+    environmental_and_hazards: List[str] = Field(default_factory=list, description="Seismic ductility, flood prevention, wind resistance, and passive orientation insights")
+    financial_considerations: List[str] = Field(default_factory=list, description="Contextual analysis of CPWD cost drivers, terrain surcharges, and budget allocation")
+    required_investigations: List[str] = Field(default_factory=list, description="Mandatory tests and site surveys before construction")
+    recommended_next_steps: List[str] = Field(default_factory=list, description="Prioritized chronological actions for planning and engineering teams")
+
+
 # --- Master Analysis Response ---
 class AnalysisResponse(BaseModel):
     request_id: str
@@ -254,7 +267,7 @@ class AnalysisResponse(BaseModel):
     recommendation_items: List[RecommendationItem]
     detailed_recommendations: List[str]
     engineering_summary: str
-    ai_metadata: Dict[str, str]
+    ai_metadata: Dict[str, Any] = Field(default_factory=dict)
     degraded_mode: bool
     warnings: List[str]
     # Per-source fetch provenance keyed by source id
@@ -279,6 +292,8 @@ class AnalysisResponse(BaseModel):
     # to 2 because this field did not exist.
     storeys: Optional[int] = Field(default=None, ge=1, le=10, description="Above-ground storeys analysed")
     building_typology: Optional[str] = Field(default=None, description="Typology analysed (echoed from the request)")
+    # Structured AI narrative synthesizing cross-factor relationships and engineering insights
+    structured_narrative: Optional[SiteFeasibilityAIAnalysis] = None
 
 class HealthResponse(BaseModel):
     status: str

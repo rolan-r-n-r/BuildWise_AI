@@ -2,6 +2,7 @@ import re
 import json
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
+from app.schemas.response import SiteFeasibilityAIAnalysis
 
 
 class AnalysisResponse(BaseModel):
@@ -42,6 +43,23 @@ class AnalysisResponse(BaseModel):
         default_factory=list,
         description="Specific actionable engineering and site planning recommendations"
     )
+    structured_analysis: Optional[SiteFeasibilityAIAnalysis] = Field(
+        default=None,
+        description="Comprehensive structured multi-section AI feasibility analysis"
+    )
+    structured_narrative: Optional[SiteFeasibilityAIAnalysis] = Field(
+        default=None,
+        description="Alias for structured_analysis matching response.py and frontend types"
+    )
+    executive_summary: Optional[str] = Field(default=None)
+    overall_assessment: Optional[str] = Field(default=None)
+    key_strengths: Optional[List[str]] = Field(default_factory=list)
+    key_concerns: Optional[List[str]] = Field(default_factory=list)
+    engineering_considerations: Optional[List[str]] = Field(default_factory=list)
+    environmental_and_hazards: Optional[List[str]] = Field(default_factory=list)
+    financial_considerations: Optional[List[str]] = Field(default_factory=list)
+    required_investigations: Optional[List[str]] = Field(default_factory=list)
+    recommended_next_steps: Optional[List[str]] = Field(default_factory=list)
     summary: Optional[str] = Field(
         default=None,
         description="Alternative summary field for engineering evaluation"
@@ -102,4 +120,23 @@ class AnalysisResponse(BaseModel):
             )
         if not self.detailed_recommendations and self.structural_recommendations:
             self.detailed_recommendations = list(self.structural_recommendations)
+
+        # Synchronize structured_analysis and structured_narrative
+        if not self.structured_analysis and self.structured_narrative:
+            self.structured_analysis = self.structured_narrative
+        elif not self.structured_narrative and self.structured_analysis:
+            self.structured_narrative = self.structured_analysis
+        elif not self.structured_analysis and (self.executive_summary or self.overall_assessment):
+            self.structured_analysis = SiteFeasibilityAIAnalysis(
+                executive_summary=self.executive_summary or self.engineering_summary or "",
+                overall_assessment=self.overall_assessment or self.engineering_summary or "",
+                key_strengths=self.key_strengths or ["Topographic suitability verified for planned footprint"],
+                key_concerns=self.key_concerns or ["Foundation drainage and retaining systems require geotechnical verification"],
+                engineering_considerations=self.engineering_considerations or ["Structural framing per IS 456 with ductile detailing under IS 13920"],
+                environmental_and_hazards=self.environmental_and_hazards or ["Seismic and wind loads factored into structural model"],
+                financial_considerations=self.financial_considerations or ["CPWD benchmark rates applied to built-up area schedule"],
+                required_investigations=self.required_investigations or ["Geotechnical soil investigation (borehole SPT tests per IS 1892)"],
+                recommended_next_steps=self.recommended_next_steps or ["Commission geotechnical site survey and finalize structural foundation design"]
+            )
+            self.structured_narrative = self.structured_analysis
         return self

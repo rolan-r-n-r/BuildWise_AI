@@ -105,20 +105,23 @@ def reason_placement_sync(
         api_key = getattr(settings, "GEMINI_API_KEY", None)
         if api_key and not api_key.startswith("your_"):
             try:
-                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-                headers = {
-                    "x-goog-api-key": api_key,
-                    "Content-Type": "application/json",
-                }
-                payload = {
-                    "contents": [{"parts": [{"text": f"{SYSTEM_PROMPT}\n\n{user_prompt}"}]}],
-                    "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
-                }
+                candidate_models = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite"]
                 with httpx.Client(timeout=10.0) as client:
-                    resp = client.post(url, headers=headers, json=payload)
-                if resp.status_code == 200:
-                    text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-                    raw_spec = json.loads(text)
+                    for target_model in candidate_models:
+                        url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent"
+                        headers = {
+                            "x-goog-api-key": api_key,
+                            "Content-Type": "application/json",
+                        }
+                        payload = {
+                            "contents": [{"parts": [{"text": f"{SYSTEM_PROMPT}\n\n{user_prompt}"}]}],
+                            "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
+                        }
+                        resp = client.post(url, headers=headers, json=payload)
+                        if resp.status_code == 200:
+                            text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+                            raw_spec = json.loads(text)
+                            break
             except Exception as e:
                 logger.warning(f"Gemini placement reasoning failed: {e}; falling back to KB standard.")
 

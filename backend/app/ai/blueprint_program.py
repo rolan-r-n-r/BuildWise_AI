@@ -361,11 +361,14 @@ def _generate_mock_program(
 
 async def generate_room_program(
     params: Dict[str, Any],
-    provider: Optional[str] = None
+    provider: Optional[str] = None,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None
 ) -> Tuple[RoomProgram, str]:
     """
     Synthesizes an architectural RoomProgram matching NBC 2016 and Vastu Shastra.
-    Called BEFORE the geometry solver.
+    Called BEFORE the geometry solver. Supports BYOK AI providers and deterministic mock generation.
     Returns: (RoomProgram, program_source: 'llm' | 'cache' | 'fallback')
     """
     typology = params.get("typology") or params.get("building_typology") or "residential_single"
@@ -528,22 +531,22 @@ async def generate_room_program(
 
     # 3. Provider Dispatch
     if selected_provider == "groq":
-        api_key = settings.GROQ_API_KEY
-        if api_key and not api_key.startswith("your_"):
+        target_key = api_key or settings.GROQ_API_KEY
+        if target_key and not target_key.startswith("your_"):
             try:
                 candidate_models = [
-                    getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile"),
+                    model or getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile"),
                     "llama-3.3-70b-versatile",
                     "llama-3.1-8b-instant"
                 ]
-                for model in candidate_models:
+                for target_model in candidate_models:
                     async with httpx.AsyncClient(timeout=10.0) as client:
                         headers = {
-                            "Authorization": f"Bearer {api_key}",
+                            "Authorization": f"Bearer {target_key}",
                             "Content-Type": "application/json"
                         }
                         payload = {
-                            "model": model,
+                            "model": target_model,
                             "response_format": {"type": "json_object"},
                             "messages": [
                                 {"role": "system", "content": f"{SYSTEM_PROMPT}\n\nSchema:\n{schema_json}"},
@@ -563,15 +566,25 @@ async def generate_room_program(
                 logger.warning(f"Groq room program generation failed: {e}")
 
     elif selected_provider == "gemini":
-        api_key = settings.GEMINI_API_KEY
-        if api_key and not api_key.startswith("your_"):
+        target_key = api_key or settings.GEMINI_API_KEY
+        if target_key and not target_key.startswith("your_"):
             try:
                 gemini_schema = to_gemini_schema(RoomProgram.model_json_schema())
-                candidate_models = ["gemini-2.0-flash", "gemini-1.5-flash"]
-                for model in candidate_models:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+                active_model = model if model and model not in ("gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash") else "gemini-2.5-flash-lite"
+                candidate_models = [
+                    active_model,
+                    "gemini-2.5-flash-lite",
+                    "gemini-3.5-flash",
+                    "gemini-3.5-flash-lite",
+                ]
+                seen_m = set()
+                candidate_models = [m for m in candidate_models if not (m in seen_m or seen_m.add(m))]
+                discovered_dynamic = False
+
+                for target_model in candidate_models:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent"
                     headers = {
-                        "x-goog-api-key": api_key,
+                        "x-goog-api-key": target_key,
                         "Content-Type": "application/json",
                     }
                     async with httpx.AsyncClient(timeout=12.0) as client:
@@ -594,11 +607,77 @@ async def generate_room_program(
                                 if prog:
                                     _cache_put_program(cache_key, prog)
                                     return prog, "llm"
+                        elif resp.status_code == 404 and not discovered_dynamic:
+                            discovered_dynamic = True
+                            from app.ai.gemini_adapter import validate_gemini_key
+                            _, _, live_models = await validate_gemini_key(target_key)
+                            for lm in live_models:
+                                if lm not in candidate_models:
+                                    candidate_models.append(lm)
             except Exception as e:
                 logger.warning(f"Gemini room program generation failed: {e}")
 
-    # 4. Mock intelligent synthesis (handles zero-config, testing, and mock provider)
-    if selected_provider in ("mock", "default") or not notes or required_rooms:
+    elif selected_provider == "openai":
+        target_key = api_key
+        if target_key:
+            try:
+                target_model = model or "gpt-4o-mini"
+                async with httpx.AsyncClient(timeout=12.0) as client:
+                    headers = {
+                        "Authorization": f"Bearer {target_key}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": target_model,
+                        "response_format": {"type": "json_object"},
+                        "messages": [
+                            {"role": "system", "content": f"{SYSTEM_PROMPT}\n\nSchema:\n{schema_json}"},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "temperature": 0.4,
+                        "max_tokens": 1200
+                    }
+                    resp = await client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+                    if resp.status_code == 200:
+                        content = resp.json()["choices"][0]["message"]["content"]
+                        prog = _clean_and_parse_llm_json(content, typology)
+                        if prog:
+                            _cache_put_program(cache_key, prog)
+                            return prog, "llm"
+            except Exception as e:
+                logger.warning(f"OpenAI room program generation failed: {e}")
+
+    elif selected_provider == "anthropic":
+        target_key = api_key
+        if target_key:
+            try:
+                target_model = model or "claude-3-5-haiku-20241022"
+                async with httpx.AsyncClient(timeout=12.0) as client:
+                    headers = {
+                        "x-api-key": target_key,
+                        "anthropic-version": "2023-06-01",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": target_model,
+                        "system": f"{SYSTEM_PROMPT}\n\nSchema:\n{schema_json}",
+                        "messages": [{"role": "user", "content": user_prompt}],
+                        "temperature": 0.4,
+                        "max_tokens": 1500
+                    }
+                    resp = await client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload)
+                    if resp.status_code == 200:
+                        blocks = resp.json().get("content", [])
+                        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+                        prog = _clean_and_parse_llm_json(text, typology)
+                        if prog:
+                            _cache_put_program(cache_key, prog)
+                            return prog, "llm"
+            except Exception as e:
+                logger.warning(f"Anthropic room program generation failed: {e}")
+
+    # 4. Mock intelligent synthesis (handles zero-config, testing, and mock/deterministic provider)
+    if selected_provider in ("mock", "default", "deterministic") or not notes or required_rooms:
         try:
             mock_prog = _generate_mock_program(typology, grade, storeys, coverage, notes, built_up_area, required_rooms=required_rooms)
             _cache_put_program(cache_key, mock_prog)

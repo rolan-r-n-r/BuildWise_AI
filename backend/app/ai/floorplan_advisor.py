@@ -312,7 +312,7 @@ def _fallback_meta(reason: str, cached: bool = False) -> AdvisoryMeta:
     )
 
 
-async def advise(payload: AdvisoryIn) -> AdvisoryOut:
+async def advise(payload: AdvisoryIn, api_key: Optional[str] = None) -> AdvisoryOut:
     started = time.perf_counter()
     key = payload.plan_hash.strip()
     cached = _cache_get(key)
@@ -321,18 +321,18 @@ async def advise(payload: AdvisoryIn) -> AdvisoryOut:
         return AdvisoryOut(narrative=narrative, option_notes=notes, meta=meta)
 
     provider = (payload.provider or "groq").lower()
-    if provider == "mock":
+    if provider in ("mock", "deterministic"):
         meta = _fallback_meta("Advisor disabled (deterministic summary only)")
         _cache_put(key, None, {}, meta)
         return AdvisoryOut(narrative=None, meta=meta)
 
-    api_key = os.getenv("GROQ_API_KEY") or getattr(settings, "GROQ_API_KEY", "")
-    if not api_key:
-        meta = _fallback_meta("GROQ_API_KEY is not configured")
+    effective_api_key = api_key or os.getenv("GROQ_API_KEY") or getattr(settings, "GROQ_API_KEY", "")
+    if not effective_api_key:
+        meta = _fallback_meta("GROQ_API_KEY (or AI provider key) is not configured. Using deterministic summary only.")
         _cache_put(key, None, {}, meta)
         return AdvisoryOut(narrative=None, meta=meta)
 
-    raw, used, error = await _ask_groq(payload, api_key)
+    raw, used, error = await _ask_groq(payload, effective_api_key)
     if raw is None:
         meta = _fallback_meta(error or "Groq advisor unavailable")
         _cache_put(key, None, {}, meta)

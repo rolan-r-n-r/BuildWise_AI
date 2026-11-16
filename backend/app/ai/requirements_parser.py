@@ -204,10 +204,12 @@ def parse_client_requirements_fallback(text: str) -> ExtractedClientConstraints:
 
 async def parse_client_requirements(
     text: str,
-    ai_provider: Optional[str] = None
+    ai_provider: Optional[str] = None,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> ExtractedClientConstraints:
     """
-    Parses client requirements via Groq Cloud LLM (Llama 3.3 70B) or Google Gemini.
+    Parses client requirements via configured AI provider (Groq, Gemini, OpenAI, Anthropic).
     Gracefully and instantly falls back to deterministic regex parser on any network,
     validation, or authentication failure.
     """
@@ -215,28 +217,27 @@ async def parse_client_requirements(
         return parse_client_requirements_fallback("")
 
     provider = (ai_provider or getattr(settings, "DEFAULT_AI_PROVIDER", "groq")).lower().strip()
+    schema_json = json.dumps(ExtractedClientConstraints.model_json_schema(), indent=2)
+    user_msg = f"Client Requirements Text:\n\"\"\"{text}\"\"\"\nExtract structured constraints JSON."
 
-    # Attempt Groq Cloud LLM
+    # 1. Attempt Groq
     if provider in ("groq", "default"):
-        api_key = settings.GROQ_API_KEY
-        if api_key and not api_key.startswith("your_"):
+        target_key = api_key or settings.GROQ_API_KEY
+        if target_key and not target_key.startswith("your_"):
             try:
                 candidate_models = [
-                    getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile"),
+                    model or getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile"),
                     "llama-3.3-70b-versatile",
                     "llama-3.1-8b-instant"
                 ]
-                schema_json = json.dumps(ExtractedClientConstraints.model_json_schema(), indent=2)
-                user_msg = f"Client Requirements Text:\n\"\"\"{text}\"\"\"\nExtract structured constraints JSON."
-
-                for model in candidate_models:
+                for target_model in candidate_models:
                     async with httpx.AsyncClient(timeout=4.0) as client:
                         headers = {
-                            "Authorization": f"Bearer {api_key}",
+                            "Authorization": f"Bearer {target_key}",
                             "Content-Type": "application/json"
                         }
                         payload = {
-                            "model": model,
+                            "model": target_model,
                             "response_format": {"type": "json_object"},
                             "messages": [
                                 {"role": "system", "content": f"{SYSTEM_PROMPT}\n\nSchema:\n{schema_json}"},
@@ -260,6 +261,115 @@ async def parse_client_requirements(
                                 return ExtractedClientConstraints.model_validate(data)
             except Exception as e:
                 logger.warning(f"Groq client requirements extraction failed: {e}; applying regex fallback.")
+
+    # 2. Attempt OpenAI
+    elif provider == "openai":
+        target_key = api_key
+        if target_key:
+            try:
+                target_model = model or "gpt-4o-mini"
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    headers = {
+                        "Authorization": f"Bearer {target_key}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": target_model,
+                        "response_format": {"type": "json_object"},
+                        "messages": [
+                            {"role": "system", "content": f"{SYSTEM_PROMPT}\n\nSchema:\n{schema_json}"},
+                            {"role": "user", "content": user_msg}
+                        ],
+                        "temperature": 0.1,
+                        "max_tokens": 800
+                    }
+                    resp = await client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+                    if resp.status_code == 200:
+                        content = resp.json()["choices"][0]["message"]["content"]
+                        match = re.search(r'\{.*\}', content, re.DOTALL)
+                        if match:
+                            data = json.loads(match.group(0))
+                            data["raw_notes"] = text.strip()
+                            data["extraction_source"] = "openai_llm"
+                            return ExtractedClientConstraints.model_validate(data)
+            except Exception as e:
+                logger.warning(f"OpenAI client requirements extraction failed: {e}; applying regex fallback.")
+
+    # 3. Attempt Anthropic
+    elif provider == "anthropic":
+        target_key = api_key
+        if target_key:
+            try:
+                target_model = model or "claude-3-5-haiku-20241022"
+                async with httpx.AsyncClient(timeout=6.0) as client:
+                    headers = {
+                        "x-api-key": target_key,
+                        "anthropic-version": "2023-06-01",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": target_model,
+                        "system": f"{SYSTEM_PROMPT}\n\nSchema:\n{schema_json}",
+                        "messages": [{"role": "user", "content": user_msg}],
+                        "temperature": 0.1,
+                        "max_tokens": 800
+                    }
+                    resp = await client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload)
+                    if resp.status_code == 200:
+                        blocks = resp.json().get("content", [])
+                        content = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+                        match = re.search(r'\{.*\}', content, re.DOTALL)
+                        if match:
+                            data = json.loads(match.group(0))
+                            data["raw_notes"] = text.strip()
+                            data["extraction_source"] = "anthropic_llm"
+                            return ExtractedClientConstraints.model_validate(data)
+            except Exception as e:
+                logger.warning(f"Anthropic client requirements extraction failed: {e}; applying regex fallback.")
+
+    # 4. Attempt Gemini
+    elif provider == "gemini":
+        target_key = api_key or settings.GEMINI_API_KEY
+        if target_key and not target_key.startswith("your_"):
+            try:
+                active_model = model if model and model not in ("gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash") else "gemini-2.5-flash-lite"
+                candidate_models = [
+                    active_model,
+                    "gemini-2.5-flash-lite",
+                    "gemini-3.5-flash",
+                    "gemini-3.5-flash-lite",
+                ]
+                seen_m = set()
+                candidate_models = [m for m in candidate_models if not (m in seen_m or seen_m.add(m))]
+
+                for target_model in candidate_models:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent"
+                    headers = {
+                        "x-goog-api-key": target_key,
+                        "Content-Type": "application/json",
+                    }
+                    async with httpx.AsyncClient(timeout=8.0) as client:
+                        gemini_payload = {
+                            "contents": [{"parts": [{"text": f"{SYSTEM_PROMPT}\n\nSchema:\n{schema_json}\n\n{user_msg}"}]}],
+                            "generationConfig": {
+                                "responseMimeType": "application/json",
+                                "temperature": 0.1,
+                                "maxOutputTokens": 800
+                            }
+                        }
+                        resp = await client.post(url, headers=headers, json=gemini_payload)
+                        if resp.status_code == 200:
+                            candidates = resp.json().get("candidates", [])
+                            if candidates:
+                                raw_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                                match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+                                if match:
+                                    data = json.loads(match.group(0))
+                                    data["raw_notes"] = text.strip()
+                                    data["extraction_source"] = "gemini_llm"
+                                    return ExtractedClientConstraints.model_validate(data)
+            except Exception as e:
+                logger.warning(f"Gemini client requirements extraction failed: {e}; applying regex fallback.")
 
     # Fallback to deterministic regex parser
     return parse_client_requirements_fallback(text)
