@@ -571,12 +571,12 @@ def get_session(
             "updatedAt": row[5],
         },
         "user": {
-            "id": row[6],
-            "name": row[7],
-            "email": row[8],
-            "emailVerified": bool(row[9]),
-            "createdAt": row[10],
-            "updatedAt": row[11],
+            "id": row[6] if len(row) > 6 else (row.get("id") or row.get("userid")),
+            "name": row[7] if len(row) > 7 else row.get("name"),
+            "email": row[8] if len(row) > 8 else row.get("email"),
+            "emailVerified": bool(row[9]) if len(row) > 9 else bool(row.get("emailVerified") or row.get("emailverified")),
+            "createdAt": row[10] if len(row) > 10 else (row.get("createdAt") or row.get("createdat")),
+            "updatedAt": row[11] if len(row) > 11 else (row.get("updatedAt") or row.get("updatedat")),
         },
     }
 

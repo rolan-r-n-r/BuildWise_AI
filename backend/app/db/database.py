@@ -263,6 +263,7 @@ class PgRow(dict):
     def __init__(self, mapping: dict, tuple_vals: tuple):
         super().__init__(mapping)
         self._tuple = tuple_vals
+        self._lower_map = {k.lower(): v for k, v in mapping.items() if isinstance(k, str)}
 
     def __getitem__(self, key: Any) -> Any:
         if isinstance(key, int):
@@ -271,9 +272,12 @@ class PgRow(dict):
             return super().__getitem__(key)
         if isinstance(key, str):
             lower_key = key.lower()
-            if lower_key in self:
-                return super().__getitem__(lower_key)
+            if lower_key in self._lower_map:
+                return self._lower_map[lower_key]
         return super().__getitem__(key)
+
+    def __len__(self) -> int:
+        return len(self._tuple)
 
     def __iter__(self):
         return iter(self._tuple)
@@ -310,6 +314,13 @@ class PgCursorWrapper:
     def _wrap_row(self, row):
         if row is None:
             return None
+        if isinstance(row, PgRow):
+            return row
+        desc = getattr(self._raw, "description", None)
+        if desc and isinstance(row, (tuple, list)):
+            names = [d[0] for d in desc]
+            mapping = dict(zip(names, row))
+            return PgRow(mapping, tuple(row))
         if isinstance(row, dict):
             return PgRow(row, tuple(row.values()))
         return row
@@ -318,11 +329,19 @@ class PgCursorWrapper:
         return self._wrap_row(self._raw.fetchone())
 
     def fetchall(self):
+        desc = getattr(self._raw, "description", None)
+        names = [d[0] for d in desc] if desc else None
         rows = self._raw.fetchall()
+        if names:
+            return [PgRow(dict(zip(names, r)), tuple(r)) if isinstance(r, (tuple, list)) else self._wrap_row(r) for r in rows]
         return [self._wrap_row(r) for r in rows]
 
     def fetchmany(self, size=None):
+        desc = getattr(self._raw, "description", None)
+        names = [d[0] for d in desc] if desc else None
         rows = self._raw.fetchmany(size) if size else self._raw.fetchmany()
+        if names:
+            return [PgRow(dict(zip(names, r)), tuple(r)) if isinstance(r, (tuple, list)) else self._wrap_row(r) for r in rows]
         return [self._wrap_row(r) for r in rows]
 
     @property
@@ -333,8 +352,13 @@ class PgCursorWrapper:
         self._raw.close()
 
     def __iter__(self):
+        desc = getattr(self._raw, "description", None)
+        names = [d[0] for d in desc] if desc else None
         for row in self._raw:
-            yield self._wrap_row(row)
+            if names and isinstance(row, (tuple, list)):
+                yield PgRow(dict(zip(names, row)), tuple(row))
+            else:
+                yield self._wrap_row(row)
 
 
 class PgConnectionWrapper:
@@ -447,7 +471,7 @@ def get_connection(db_path: Optional[str] = None) -> Generator[Any, None, None]:
         if "connect_timeout" not in conninfo:
             conninfo["connect_timeout"] = 10
 
-        raw_conn = psycopg.connect(**conninfo, row_factory=dict_row, autocommit=False)
+        raw_conn = psycopg.connect(**conninfo, autocommit=False)
         wrapper = PgConnectionWrapper(raw_conn)
         try:
             yield wrapper
