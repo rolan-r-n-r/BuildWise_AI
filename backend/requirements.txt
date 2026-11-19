@@ -10,6 +10,7 @@ pytest-asyncio>=0.24.0
 numpy>=2.0.0
 shapely>=2.0.0
 pypdf>=5.0.0
+psycopg[binary]>=3.2.0
 
 # Optional satellite-vision stack (app/services/vision/*). Imported lazily and
 # guarded: torch + transformers run SegFormer-B0, rasterio reads windowed COG

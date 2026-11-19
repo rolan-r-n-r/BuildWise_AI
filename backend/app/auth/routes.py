@@ -180,33 +180,38 @@ def _is_expired(expires_at_str: str) -> bool:
 
 
 def _set_session_cookie(response: Response, token: str, remember_me: bool = True):
-    is_prod = settings.ENVIRONMENT.lower() == "production"
-    cookie_name = SECURE_SESSION_COOKIE_NAME if is_prod else SESSION_COOKIE_NAME
+    is_prod = settings.is_production
+    cookie_name = SECURE_SESSION_COOKIE_NAME if (is_prod or settings.COOKIE_SECURE) else SESSION_COOKIE_NAME
     max_age = 60 * 60 * 24 * SESSION_TTL_DAYS if remember_me else 60 * 60 * 24
+    samesite = settings.COOKIE_SAMESITE.lower()
+    secure = settings.COOKIE_SECURE or (samesite == "none")
     response.set_cookie(
         key=cookie_name,
         value=token,
         max_age=max_age,
         httponly=True,
-        samesite="lax",
-        secure=is_prod,
+        samesite=samesite,
+        secure=secure,
         path="/",
     )
 
 
 def _clear_session_cookie(response: Response):
+    samesite = settings.COOKIE_SAMESITE.lower()
+    secure = settings.COOKIE_SECURE or (samesite == "none")
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,
         path="/",
         httponly=True,
-        samesite="lax",
+        samesite=samesite,
+        secure=secure,
     )
     response.delete_cookie(
         key=SECURE_SESSION_COOKIE_NAME,
         path="/",
-        secure=True,
+        secure=secure,
         httponly=True,
-        samesite="lax",
+        samesite=samesite,
     )
 
 
@@ -287,7 +292,7 @@ def sign_up_email(
         )
 
     cursor = db.cursor()
-    cursor.execute("SELECT id, emailVerified FROM user WHERE LOWER(email) = ?", (email_clean,))
+    cursor.execute("SELECT id, emailVerified FROM \"user\" WHERE LOWER(email) = ?", (email_clean,))
     existing_user = cursor.fetchone()
 
     now = _now_iso()
@@ -304,7 +309,7 @@ def sign_up_email(
         else:
             # Unverified account retrying registration: update profile credentials and issue fresh OTP
             cursor.execute(
-                "UPDATE user SET name = ?, updatedAt = ? WHERE id = ?",
+                "UPDATE \"user\" SET name = ?, updatedAt = ? WHERE id = ?",
                 (name_clean, now, user_id),
             )
             cursor.execute(
@@ -317,7 +322,7 @@ def sign_up_email(
         account_id = generate_id()
         cursor.execute(
             """
-            INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
+            INSERT INTO \"user\" (id, name, email, emailVerified, createdAt, updatedAt)
             VALUES (?, ?, ?, 0, ?, ?)
             """,
             (user_id, name_clean, email_clean, now, now),
@@ -394,7 +399,7 @@ def sign_in_email(
     cursor.execute(
         """
         SELECT u.id, u.name, u.email, u.emailVerified, u.createdAt, u.updatedAt, a.password
-        FROM user u
+        FROM "user" u
         JOIN account a ON u.id = a.userId
         WHERE LOWER(u.email) = ? AND a.providerId = 'credential'
         """,
@@ -536,7 +541,7 @@ def get_session(
         SELECT s.id, s.userId, s.token, s.expiresAt, s.createdAt, s.updatedAt,
                u.id, u.name, u.email, u.emailVerified, u.createdAt, u.updatedAt
         FROM session s
-        JOIN user u ON s.userId = u.id
+        JOIN "user" u ON s.userId = u.id
         WHERE s.token = ?
         """,
         (token,),
@@ -588,7 +593,7 @@ async def send_verification_otp(
         )
 
     cursor = db.cursor()
-    cursor.execute("SELECT id, emailVerified FROM user WHERE LOWER(email) = ?", (email_clean,))
+    cursor.execute("SELECT id, emailVerified FROM \"user\" WHERE LOWER(email) = ?", (email_clean,))
     user_row = cursor.fetchone()
 
     # Generate 6-digit cryptographically secure OTP
@@ -713,7 +718,7 @@ def verify_email_otp(
     # Valid OTP! Retrieve user
     cursor.execute(
         """
-        SELECT id, name, email, createdAt FROM user WHERE LOWER(email) = ?
+        SELECT id, name, email, createdAt FROM "user" WHERE LOWER(email) = ?
         """,
         (email_clean,),
     )
@@ -727,7 +732,7 @@ def verify_email_otp(
     # Mark user email as verified
     cursor.execute(
         """
-        UPDATE user SET emailVerified = 1, updatedAt = ? WHERE id = ?
+        UPDATE "user" SET emailVerified = 1, updatedAt = ? WHERE id = ?
         """,
         (now, user_id),
     )
@@ -850,7 +855,7 @@ def reset_password(
             )
 
     # Get user
-    cursor.execute("SELECT id FROM user WHERE LOWER(email) = ?", (email_clean,))
+    cursor.execute("SELECT id FROM \"user\" WHERE LOWER(email) = ?", (email_clean,))
     user_row = cursor.fetchone()
     if not user_row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

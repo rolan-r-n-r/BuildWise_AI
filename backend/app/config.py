@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from dotenv import load_dotenv
 
 # Explicitly load .env from the backend directory, then fallback to current working directory
@@ -18,13 +18,13 @@ def _parse_cors_origins(raw: str) -> List[str]:
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
-                return [str(o).strip().strip("'\"") for o in parsed if str(o).strip()]
+                return [str(o).strip().strip("'\"").rstrip("/") for o in parsed if str(o).strip()]
         except Exception:
             pass
-    # Comma-separated fallback, stripping stray brackets and quotation marks
+    # Comma-separated fallback, stripping stray brackets, quotation marks, and trailing slashes
     origins = []
     for item in raw.split(","):
-        cleaned = item.strip().strip("[]'\"").strip()
+        cleaned = item.strip().strip("[]'\"").strip().rstrip("/")
         if cleaned:
             origins.append(cleaned)
     return origins or ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -32,11 +32,23 @@ def _parse_cors_origins(raw: str) -> List[str]:
 
 class Settings:
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", os.getenv("ENV", "development"))
-    HOST: str = os.getenv("HOST", "127.0.0.1")
+    HOST: str = os.getenv(
+        "HOST",
+        "0.0.0.0" if (os.getenv("RENDER") or os.getenv("ENVIRONMENT", "").lower() == "production") else "127.0.0.1",
+    )
     PORT: int = int(os.getenv("PORT", "8000"))
     CORS_ORIGINS: List[str] = _parse_cors_origins(
         os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
     )
+    CORS_ORIGIN_REGEX: Optional[str] = os.getenv("CORS_ORIGIN_REGEX", None)
+    COOKIE_SAMESITE: str = os.getenv(
+        "COOKIE_SAMESITE",
+        "none" if os.getenv("ENVIRONMENT", "").lower() == "production" else "lax",
+    )
+    COOKIE_SECURE: bool = os.getenv(
+        "COOKIE_SECURE",
+        "true" if os.getenv("ENVIRONMENT", "").lower() == "production" else "false",
+    ).lower() in ("true", "1", "yes")
     TRUSTED_PROXIES: List[str] = [
         ip.strip()
         for ip in os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1,testclient,localhost").split(",")
@@ -44,12 +56,10 @@ class Settings:
     ]
     DEFAULT_AI_PROVIDER: str = os.getenv("DEFAULT_AI_PROVIDER", "mock").lower()
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    # Groq retired llama-3.3-70b-versatile; gpt-oss-120b is the first model the
-    # adapter's fallback chain actually succeeds on (audit F34). Keeping the
-    # retired id here made every live call waste a request before falling back.
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL", None)
     DATABASE_PATH: str = os.getenv(
         "DATABASE_PATH",
         str(Path(__file__).resolve().parent.parent / "data" / "buildwise.db"),

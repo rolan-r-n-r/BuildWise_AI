@@ -89,7 +89,7 @@ async def lifespan(app: FastAPI):
     try:
         from app.db import init_db
         init_db()
-        logger.info("Initialized BuildWise SQLite persistence layer.")
+        logger.info("Initialized BuildWise persistence layer.")
         yield
     finally:
         logger.info("Shutting down BuildWise backend cleanly.")
@@ -154,6 +154,7 @@ else:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -349,6 +350,9 @@ async def api_status(
         "configured_models": configured_models,
     }
 
+@app.get("/", response_model=HealthResponse)
+@app.head("/")
+@app.get("/health", response_model=HealthResponse)
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
     """

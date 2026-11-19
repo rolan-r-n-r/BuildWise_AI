@@ -76,7 +76,7 @@ def verify_session_token(token: str, db_path: Optional[str] = None) -> Optional[
                 u.emailVerified AS email_verified,
                 u.image AS user_image
             FROM session s
-            JOIN user u ON s.userId = u.id
+            JOIN "user" u ON s.userId = u.id
             WHERE s.token = ?
             LIMIT 1
             """,

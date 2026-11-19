@@ -1,0 +1,46 @@
+# =============================================================================
+# BuildWise AI — Render Infrastructure as Code (render.yaml Blueprint)
+# Free Web Service Deployment for FastAPI Backend
+# =============================================================================
+services:
+  - type: web
+    name: buildwise-api
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: CORS_ORIGINS
+        sync: false # Set in Render Dashboard to your Vercel URL (e.g. https://buildwise.vercel.app)
+      - key: COOKIE_SAMESITE
+        value: none
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: DATABASE_URL
+        sync: false # Set in Render Dashboard to your Supabase PostgreSQL pooler connection string
+      - key: BETTER_AUTH_SECRET
+        generateValue: true # Render automatically generates a cryptographically secure 256-bit random key
+      - key: BETTER_AUTH_URL
+        sync: false # Set in Render Dashboard to your Vercel URL (e.g. https://buildwise.vercel.app)
+      - key: AI_CREDENTIAL_ENCRYPTION_KEY
+        generateValue: true # Render automatically generates a 256-bit AES encryption key
+      - key: DEFAULT_AI_PROVIDER
+        value: mock
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      - key: BREVO_SENDER_NAME
+        value: BuildWise AI

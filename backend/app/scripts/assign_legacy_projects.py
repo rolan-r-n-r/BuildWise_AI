@@ -17,7 +17,7 @@ def assign_projects(user_email: str, project_id: str = None, assign_all: bool = 
         cursor = conn.cursor()
 
         # Find the target user
-        user = cursor.execute("SELECT id, name, email FROM user WHERE LOWER(email) = LOWER(?)", (user_email.strip(),)).fetchone()
+        user = cursor.execute("SELECT id, name, email FROM \"user\" WHERE LOWER(email) = LOWER(?)", (user_email.strip(),)).fetchone()
         if not user:
             print(f"[ERROR] User with email '{user_email}' not found.")
             sys.exit(1)
