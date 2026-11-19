@@ -22,7 +22,6 @@ scripts/audit_report.json
 .env
 .env.*
 !.env.example
-!.env.production
 
 # Editor directories and files
 .vscode/*
