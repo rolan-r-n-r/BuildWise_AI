@@ -16,6 +16,8 @@ services:
     envVars:
       - key: ENVIRONMENT
         value: production
+      - key: PYTHONUNBUFFERED
+        value: "1"
       - key: HOST
         value: 0.0.0.0
       - key: CORS_ORIGINS

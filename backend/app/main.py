@@ -88,8 +88,11 @@ async def lifespan(app: FastAPI):
         logger.warning(warning)
     try:
         from app.db import init_db
-        init_db()
-        logger.info("Initialized BuildWise persistence layer.")
+        try:
+            init_db()
+            logger.info("Initialized BuildWise persistence layer.")
+        except Exception as db_err:
+            logger.error(f"Database initialization warning (server will start and retry on request): {db_err}")
         yield
     finally:
         logger.info("Shutting down BuildWise backend cleanly.")

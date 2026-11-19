@@ -394,6 +394,9 @@ def get_connection(db_path: Optional[str] = None) -> Generator[Any, None, None]:
         # Enforce SSL for remote PostgreSQL hosts (e.g., Supabase) if not explicitly set
         if "sslmode" not in conninfo and host not in ("localhost", "127.0.0.1", ""):
             conninfo["sslmode"] = "require"
+        # Enforce strict connect timeout to avoid hanging startup if DB is temporarily unreachable
+        if "connect_timeout" not in conninfo:
+            conninfo["connect_timeout"] = 10
 
         raw_conn = psycopg.connect(**conninfo, row_factory=dict_row, autocommit=False)
         wrapper = PgConnectionWrapper(raw_conn)
