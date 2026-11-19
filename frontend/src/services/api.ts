@@ -12,7 +12,11 @@ import type {
   BlueprintAIAnalysisResponse,
 } from './types';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' && window.location.hostname.endsWith('.vercel.app')
+    ? 'https://buildwise-ai-gbva.onrender.com'
+    : 'http://localhost:8000');
 
 /**
  * A non-2xx response with the server's validation detail preserved.
