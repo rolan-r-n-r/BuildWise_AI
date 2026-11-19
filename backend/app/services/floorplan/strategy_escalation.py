@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import threading
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
@@ -42,6 +43,7 @@ T2_TYPOLOGY_ALIASES = ("residential_multi", "T2_FAMILY_APARTMENT", "apartment")
 # deterministic, so a cached dry-run is the same plan, not an approximation.
 _CACHE: "OrderedDict[str, FloorPlanResponse]" = OrderedDict()
 _CACHE_LOCK = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
 def clear_cache() -> None:
@@ -616,7 +618,9 @@ def solve_with_escalation(request: FloorPlanRequest) -> FloorPlanResponse:
                 })
                 continue
             try:
-                response = _cached_solve(request.model_copy(update=spec["patch"]), spec["id"])
+                trial_patch = dict(spec["patch"])
+                trial_patch["include_scheme_alternatives"] = False
+                response = _cached_solve(request.model_copy(update=trial_patch), spec["id"])
                 facts = _facts(response)
             except Exception as exc:  # noqa: BLE001 - a strategy must not sink the chain
                 chain.append({
@@ -708,6 +712,22 @@ def solve_with_escalation(request: FloorPlanRequest) -> FloorPlanResponse:
                 int(pair[0].get("warnings") or 0),
             ),
         )
+
+    if getattr(request, "include_scheme_alternatives", False) and getattr(selected, "scheme_portfolio", None) is None:
+        try:
+            from app.services.floorplan.floorplan_service import _scheme_portfolio_safely
+            chosen_patch = {}
+            for s in _strategy_specs(request, baseline):
+                if s["id"] == selected_entry.get("id"):
+                    chosen_patch = s.get("patch", {})
+                    break
+            winning_req = request.model_copy(update={**chosen_patch, "include_scheme_alternatives": True})
+            portfolio, portfolio_note = _scheme_portfolio_safely(winning_req)
+            if portfolio_note and portfolio_note not in selected.warnings:
+                selected.warnings.append(portfolio_note)
+            selected.scheme_portfolio = portfolio
+        except Exception as _e:
+            logger.warning("Failed to generate scheme portfolio for selected strategy %s: %s", selected_entry.get("id"), _e)
 
     chain_line = " -> ".join(
         f"{entry['id']} {entry['status']}" for entry in chain

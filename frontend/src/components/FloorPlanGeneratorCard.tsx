@@ -26,7 +26,7 @@ import {
   type SharedBoundaryState,
 } from '../services/siteBoundary';
 import { ConstraintChips } from './ConstraintChips';
-import { SegmentedControl } from '../design';
+import { SegmentedControl, useDesign } from '../design';
 import { Skeleton } from './report/Skeleton';
 
 /**
@@ -279,6 +279,8 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
     });
   }, [activeFloors]);
 
+  const { pushToast } = useDesign();
+  const isSubmittingRef = useRef<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   // Scheme profile the user picked. Sent with every generation so
   // the plate is re-solved with that profile's weights; the picker records what
@@ -480,18 +482,27 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
     profileOverride?: string | null,
     requestPatch?: Partial<FloorPlanRequest>,
   ) => {
+    if (isSubmittingRef.current || isGenerating) {
+      return;
+    }
+
     if (selectedRooms.length < 3) {
-      setErrorMessage('Please select at least 3 rooms to generate an architectural floor plan.');
+      const msg = 'Please select at least 3 rooms to generate an architectural floor plan.';
+      setErrorMessage(msg);
       setValidationIssues([]);
+      pushToast({ message: msg, tone: 'warning' });
       return;
     }
 
     if (siteMode === 'irregular' && !polyMetrics.isValid) {
-      setErrorMessage(`Invalid plot polygon: ${polyMetrics.reason}`);
+      const msg = `Invalid plot polygon: ${polyMetrics.reason}`;
+      setErrorMessage(msg);
       setValidationIssues([]);
+      pushToast({ message: msg, tone: 'critical' });
       return;
     }
 
+    isSubmittingRef.current = true;
     const activeSchemeProfile = profileOverride !== undefined ? profileOverride : schemeProfile;
     setIsGenerating(true);
     setErrorMessage(null);
@@ -572,12 +583,13 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
       typeof finalReq.floors === 'number' &&
       finalReq.floors % 2 === 1
     ) {
-      setErrorMessage(
-        `The two-storey duplex variant needs an even number of storeys; this request has ${finalReq.floors}. Add or remove a storey, or choose another strategy.`,
-      );
+      const duplexMsg = `The two-storey duplex variant needs an even number of storeys; this request has ${finalReq.floors}. Add or remove a storey, or choose another strategy.`;
+      setErrorMessage(duplexMsg);
       setValidationIssues([
         `floors: duplex needs an even number of storeys (received ${finalReq.floors}).`,
       ]);
+      pushToast({ message: duplexMsg, tone: 'warning' });
+      isSubmittingRef.current = false;
       setIsGenerating(false);
       setPendingSchemeProfile(null);
       return;
@@ -660,15 +672,42 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
     } catch (err: any) {
       const issues = Array.isArray(err?.issues) ? err.issues.map(String) : [];
       setValidationIssues(issues);
-      setErrorMessage(
-        timedOut
-          ? `Generation timed out after ${Math.round(timeoutMs / 1000)} s — the engine did not answer. Nothing was drawn; the previous plan is unchanged. Retry when the engine is responsive.`
-          : err?.status === 422
-            ? `The engine rejected this design: ${err.message}. Correct the named inputs and generate again. The previous plan is unchanged.`
-            : err?.message || 'Failed to generate floor plan.'
-      );
+
+      let userFriendlyMessage = 'Failed to generate floor plan.';
+      const status = err?.status;
+      const rawMsg = String(err?.message || '');
+
+      if (timedOut) {
+        userFriendlyMessage = `Generation timed out after ${Math.round(timeoutMs / 1000)}s — the solver did not answer in time. The previous blueprint is unchanged. You can retry with fewer storeys or simplified constraints.`;
+      } else if (status === 400) {
+        userFriendlyMessage = `Invalid generation parameters: ${rawMsg || 'Please review your input values.'}`;
+      } else if (status === 401) {
+        userFriendlyMessage = 'Your session has expired or authentication is required. Please sign in again.';
+      } else if (status === 403) {
+        userFriendlyMessage = 'Access denied: You do not have permission to execute this blueprint generation.';
+      } else if (status === 422) {
+        userFriendlyMessage = `The architectural engine rejected this design: ${rawMsg}. Correct the named inputs and generate again.`;
+      } else if (status === 429) {
+        userFriendlyMessage = 'Generation rate limit exceeded. Please wait a moment before trying again.';
+      } else if (status === 502 || status === 503) {
+        userFriendlyMessage = 'The backend server is temporarily unavailable or restarting (common on free-tier cold starts). Please wait a few seconds and click Retry.';
+      } else if (status === 504) {
+        userFriendlyMessage = 'The backend server timed out while solving the layout (exceeded 35s limit). Please simplify the layout or reduce storey count and try again.';
+      } else if (status === 500) {
+        userFriendlyMessage = rawMsg && !rawMsg.includes('internal error occurred')
+          ? `Engine solver error: ${rawMsg}`
+          : 'An unexpected engine error occurred while computing the floor plan. Please try adjusting dimensions or room selections.';
+      } else if (rawMsg.toLowerCase().includes('failed to fetch') || rawMsg.toLowerCase().includes('networkerror')) {
+        userFriendlyMessage = 'Network connection failed or backend instance is unreachable/restarting. Please verify your connection and click Retry.';
+      } else if (rawMsg) {
+        userFriendlyMessage = rawMsg;
+      }
+
+      setErrorMessage(userFriendlyMessage);
+      pushToast({ message: userFriendlyMessage, tone: 'critical' });
     } finally {
       window.clearTimeout(timeoutTimer);
+      isSubmittingRef.current = false;
       setIsGenerating(false);
       setPendingSchemeProfile(null);
     }
@@ -1371,7 +1410,11 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
         {isGenerating ? (
           <>
             <Icon name="loader" size={14} className="animate-spin" />
-            <span>Solving Spatial Layout...</span>
+            <span>
+              {activeFloors > 1
+                ? `Solving ${activeFloors}-Storey Spatial Layout...`
+                : 'Solving Spatial Layout...'}
+            </span>
           </>
         ) : (
           <>
@@ -1385,10 +1428,46 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
         )}
       </button>
 
+      {/* Error Notice & Immediate Retry Button */}
+      {errorMessage && (
+        <div
+          role="alert"
+          className="p-3 rounded-[12px] bg-[var(--fill)] border border-[var(--semantic-red-ink)]/30 text-[12px] text-[var(--semantic-red-ink)] space-y-2"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2 min-w-0">
+              <Icon name="alert-triangle" size={15} className="shrink-0 mt-0.5 text-[var(--semantic-red-ink)]" />
+              <span className="min-w-0 break-words font-medium leading-relaxed">{errorMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleGenerate()}
+              disabled={isGenerating}
+              className="px-3 py-1 rounded-[8px] bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-[11px] font-semibold flex items-center gap-1.5 shrink-0 transition-ui shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Icon name="refresh" size={12} />
+              <span>Retry</span>
+            </button>
+          </div>
+          {validationIssues.length > 0 && (
+            <ul className="list-disc space-y-0.5 pl-6 text-[11px] leading-snug opacity-90">
+              {validationIssues.map((issue) => (
+                <li key={issue} className="break-words">
+                  {issue}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* Blueprint render placeholder while the solver runs (no plan yet) */}
       {isGenerating && !floorPlan && (
         <div className="space-y-3 pt-1" aria-label="Solving architectural layout">
-          <Skeleton className="h-[320px] w-full rounded-[16px]" label="Generating architectural blueprint" />
+          <Skeleton
+            className="h-[320px] w-full rounded-[16px]"
+            label={`Generating ${activeFloors > 1 ? `${activeFloors}-storey ` : ''}architectural blueprint and spatial layout...`}
+          />
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <Skeleton className="h-12" />
             <Skeleton className="h-12" />

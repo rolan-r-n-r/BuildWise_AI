@@ -968,6 +968,18 @@ async def site_vision_analysis(req: SiteVisionRequest):
         logger.exception("Site vision analysis error")
         raise HTTPException(status_code=500, detail="An internal error occurred during site vision analysis.")
 
+
+_BLUEPRINT_SEMAPHORE = asyncio.Semaphore(1)
+
+
+def _get_rss_mb() -> float:
+    try:
+        import psutil
+        return round(psutil.Process().memory_info().rss / 1024 / 1024, 1)
+    except Exception:
+        return 0.0
+
+
 @app.post("/api/generate-floorplan")
 async def create_generative_floorplan(
     req: FloorPlanRequest,
@@ -984,7 +996,20 @@ async def create_generative_floorplan(
     from app.services.floorplan.errors import DesignInfeasibleError
     from app.services.plan_verdict import compute_plan_verdict, plan_verdict_reasons
 
+    req_id = f"fp_{uuid.uuid4().hex[:8]}"
+    t0 = time.perf_counter()
+    stage = "request_received"
+
+    logger.info(
+        f"[BLUEPRINT][{req_id}] Request received: format={format or 'json'}, "
+        f"typology={req.building_typology or 'default'}, floors={req.floors or 1}, "
+        f"area_sqft={req.built_up_area_sqft}, rooms={len(req.required_rooms or [])}, "
+        f"provider={req.ai_provider or 'default'} (rss={_get_rss_mb()}MB)"
+    )
+
     try:
+        stage = "validation"
+        logger.info(f"[BLUEPRINT][{req_id}] Input validation completed (rss={_get_rss_mb()}MB)")
         if format == "pdf" and req.multi_storey is not None:
             # Direct export of pre-generated multi-storey model (skips solver re-run)
             ms_dict = req.multi_storey.model_dump()
@@ -1108,11 +1133,13 @@ async def create_generative_floorplan(
 
         # Pre-compute or resolve RoomProgram via LLM before solver execution if not provided
         if req.room_program is None:
+            stage = "ai_room_program"
+            t_ai_start = time.perf_counter()
             typology = req.building_typology or "residential_single"
             grade = req.quality_grade or "standard"
             storeys = req.floors or 1
             coverage = req.ground_coverage_ratio or 0.60
-            built_up_area = req.built_up_area_sqft or (req.plot_width_m * req.plot_depth_m * 10.764 * coverage)
+            built_up_area = req.built_up_area_sqft or ((req.plot_width_m or 10.0) * (req.plot_depth_m or 12.0) * 10.764 * coverage)
             notes = req.client_notes
             params = {
                 "typology": typology,
@@ -1137,12 +1164,18 @@ async def create_generative_floorplan(
             }
             resolver = ExecutionResolver()
             plan = resolver.resolve_plan(current_user, req.ai_provider, getattr(req, "ai_model", None))
+            logger.info(f"[BLUEPRINT][{req_id}] AI room program resolution started: provider={plan.provider}, model={plan.model}")
             prog, prog_source = await generate_room_program(
                 params,
                 provider=plan.provider,
                 api_key=plan.api_key,
                 model=plan.model,
                 base_url=plan.base_url,
+            )
+            ai_duration_ms = (time.perf_counter() - t_ai_start) * 1000
+            logger.info(
+                f"[BLUEPRINT][{req_id}] AI room program resolution completed: "
+                f"{len(prog.rooms)} rooms resolved from source='{prog_source}' in {ai_duration_ms:.1f}ms (rss={_get_rss_mb()}MB)"
             )
             # Programme contract at the API boundary: a generated room programme
             # must actually shape the plate. The single-storey T1 partitioner keys
@@ -1164,15 +1197,28 @@ async def create_generative_floorplan(
                     _req_update["required_rooms"] = _mapped
             req = req.model_copy(update=_req_update)
 
-        # The solver is a pure, synchronous CSP/geometry engine (2-8 s for a
-        # multi-storey programme).  Run it in a worker thread so a blueprint
-        # request cannot freeze the analysis, site-vision or report endpoints
-        # that the same page fires concurrently.
-        # Solve the ladder before stamping FAIL: S0 as-is, then the ordered
-        # S1-S5 strategies.  Certified S0 short-circuits, so good plans are not
-        # churned; every tried strategy stays on the response as a chain.
-        from app.services.floorplan.strategy_escalation import solve_with_escalation
-        response = await asyncio.to_thread(solve_with_escalation, req)
+        stage = "geometry_calculation"
+        logger.info(f"[BLUEPRINT][{req_id}] Geometry calculations started (concurrency lock acquired, rss={_get_rss_mb()}MB)")
+        t_solve_start = time.perf_counter()
+
+        await asyncio.sleep(0)  # Yield execution slice to event loop for /health checks
+        try:
+            async with _BLUEPRINT_SEMAPHORE:
+                from app.services.floorplan.strategy_escalation import solve_with_escalation
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(solve_with_escalation, req),
+                    timeout=35.0,
+                )
+        except asyncio.TimeoutError:
+            duration_s = time.perf_counter() - t_solve_start
+            logger.error(f"[BLUEPRINT][{req_id}] Geometry calculations timed out after {duration_s:.1f}s (rss={_get_rss_mb()}MB)")
+            raise HTTPException(
+                status_code=504,
+                detail="Floor plan generation timed out on server (exceeded 35s limit). Please simplify constraints or select a different typology.",
+            )
+        await asyncio.sleep(0)  # Yield execution slice again
+
+        solve_duration_ms = (time.perf_counter() - t_solve_start) * 1000
 
         # ONE verdict for this generation, computed from the certificate, the
         # gate and the page-1 plan warnings.  Card, certificate panel and PDF
@@ -1185,7 +1231,14 @@ async def create_generative_floorplan(
             }
         )
 
+        logger.info(
+            f"[BLUEPRINT][{req_id}] Geometry calculations completed: "
+            f"status={response.status}, verdict={response.plan_verdict or 'N/A'}, "
+            f"duration={solve_duration_ms:.1f}ms (rss={_get_rss_mb()}MB)"
+        )
+
         if format == "pdf":
+            stage = "pdf_export"
             # Stream architectural multi-page PDF dossier directly
             typ_label = (req.building_typology or "Architectural").replace("_", " ").title()
             _generated_ms = getattr(response, "generated_at", None)
@@ -1205,7 +1258,7 @@ async def create_generative_floorplan(
                 ),
                 "overall_suitability_score": 90.0,
                 "suitability_verdict": "Architectural Design Complete",
-                "built_up_area_sqft": req.built_up_area_sqft or (req.plot_width_m * req.plot_depth_m * 10.764 * (req.ground_coverage_ratio or 0.6)),
+                "built_up_area_sqft": req.built_up_area_sqft or ((req.plot_width_m or 10.0) * (req.plot_depth_m or 12.0) * 10.764 * (req.ground_coverage_ratio or 0.6)),
                 "quality_grade": req.quality_grade or "standard",
                 "floors": req.floors or 1,
                 "building_typology": req.building_typology or "residential_single",
@@ -1226,6 +1279,8 @@ async def create_generative_floorplan(
                 include_construction_schedules=True,
                 cache_key_data=_cache_key_data,
             )
+            total_duration_ms = (time.perf_counter() - t0) * 1000
+            logger.info(f"[BLUEPRINT][{req_id}] Response successfully returned (PDF): total_duration={total_duration_ms:.1f}ms (rss={_get_rss_mb()}MB)")
             return StreamingResponse(
                 pdf_stream,
                 media_type="application/pdf",
@@ -1235,26 +1290,26 @@ async def create_generative_floorplan(
                 },
             )
 
+        total_duration_ms = (time.perf_counter() - t0) * 1000
+        logger.info(f"[BLUEPRINT][{req_id}] Response successfully returned: total_duration={total_duration_ms:.1f}ms (rss={_get_rss_mb()}MB)")
         return response
+    except HTTPException:
+        raise
     except DesignInfeasibleError as e:
-        # A measured, client-fixable design refusal: the request is valid, the
-        # site is real, and the engine has measured that the requested layout
-        # cannot be drawn on the legal plate.  Answer 422 with the named reason
-        # instead of turning a design answer into a server fault.
+        logger.warning(f"[BLUEPRINT][{req_id}] Design infeasible at stage '{stage}': [{e.code}] {e.reason}")
         raise HTTPException(
             status_code=422,
             detail=f"Floor plan design infeasible [{e.code}]: {e.reason}",
         )
     except ValueError as e:
-        # Client-fixable design-constraint violations (RULE-FP-*, Hard Constraint
-        # Violation, vertical stacking) are bad requests (422), not server faults.
         msg = str(e)
+        logger.warning(f"[BLUEPRINT][{req_id}] Constraint/validation error at stage '{stage}': {msg}")
         if "Hard Constraint Violation" in msg or "RULE-FP-" in msg:
             raise HTTPException(status_code=422, detail=f"Floor plan constraint violation: {msg}")
-        logger.exception("Floor plan generation invalid value error")
+        logger.exception(f"[BLUEPRINT][{req_id}] Floor plan generation invalid value error at stage '{stage}'")
         raise HTTPException(status_code=500, detail="An internal error occurred during floor plan generation.")
     except Exception as e:
-        logger.exception("Floor plan generation unexpected error")
+        logger.exception(f"[BLUEPRINT][{req_id}] Floor plan generation unexpected error at stage '{stage}': {e}")
         raise HTTPException(status_code=500, detail="An internal error occurred during floor plan generation.")
 
 
