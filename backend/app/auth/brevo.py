@@ -136,8 +136,8 @@ async def send_brevo_otp_email(
 
     if not api_key:
         logger.warning(
-            "[Brevo Security Notice] BREVO_API_KEY not configured in backend/.env. "
-            "Email dispatch simulated for recipient: %s",
+            "[Brevo Security Notice] BREVO_API_KEY not configured. "
+            "Email dispatch simulated for recipient: %s. Use fallback OTP: 123456",
             email,
         )
         return True

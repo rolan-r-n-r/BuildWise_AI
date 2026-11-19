@@ -1,6 +1,7 @@
 import os
 import re
 import sqlite3
+import urllib.parse
 from contextlib import contextmanager
 from typing import Any, Generator, Optional
 from app.config import settings
@@ -361,6 +362,39 @@ class PgConnectionWrapper:
             self.commit()
 
 
+def _parse_pg_conninfo(db_url: str) -> dict:
+    """
+    Parses a PostgreSQL connection URL into psycopg connection parameters.
+    Handles unencoded special characters in passwords (such as '@' or '#')
+    commonly present in strong generated database passwords.
+    """
+    import psycopg
+    url = db_url.strip()
+    try:
+        info = psycopg.conninfo.conninfo_to_dict(url)
+        if "@" not in info.get("host", ""):
+            return info
+    except Exception:
+        pass
+
+    prefix = ""
+    for p in ("postgresql://", "postgres://"):
+        if url.startswith(p):
+            prefix = p
+            break
+
+    if prefix and "@" in url[len(prefix):]:
+        rest = url[len(prefix):]
+        creds, host_and_rest = rest.rsplit("@", 1)
+        if ":" in creds:
+            user, password = creds.split(":", 1)
+            unquoted = urllib.parse.unquote(password)
+            quoted_pwd = urllib.parse.quote(unquoted, safe="")
+            reconstructed = f"{prefix}{user}:{quoted_pwd}@{host_and_rest}"
+            return psycopg.conninfo.conninfo_to_dict(reconstructed)
+    return psycopg.conninfo.conninfo_to_dict(url)
+
+
 @contextmanager
 def get_connection(db_path: Optional[str] = None) -> Generator[Any, None, None]:
     """Yield a configured database connection (SQLite by default, or PostgreSQL if DATABASE_URL is set)."""
@@ -389,7 +423,7 @@ def get_connection(db_path: Optional[str] = None) -> Generator[Any, None, None]:
             ) from e
 
         db_url = settings.DATABASE_URL.strip()
-        conninfo = psycopg.conninfo.conninfo_to_dict(db_url)
+        conninfo = _parse_pg_conninfo(db_url)
         host = conninfo.get("host", "")
         # Enforce SSL for remote PostgreSQL hosts (e.g., Supabase) if not explicitly set
         if "sslmode" not in conninfo and host not in ("localhost", "127.0.0.1", ""):
