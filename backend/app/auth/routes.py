@@ -10,7 +10,7 @@ import os
 import re
 import sqlite3
 import time
-from typing import Optional
+from typing import Any, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
@@ -164,14 +164,20 @@ def _otp_expires_iso(seconds: int = 300) -> str:
     return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-def _is_expired(expires_at_str: str) -> bool:
+def _is_expired(expires_at: Any) -> bool:
     """
     Robust ISO-8601 UTC datetime expiration check.
-    Fixes SQLite string comparison flaw where ' ' < 'T' evaluated expiration as false.
+    Supports str, datetime objects, and ensures timezone-awareness.
     """
     try:
-        clean_str = expires_at_str.replace("Z", "+00:00")
-        exp_dt = datetime.fromisoformat(clean_str)
+        if isinstance(expires_at, datetime):
+            exp_dt = expires_at
+        elif isinstance(expires_at, str):
+            clean_str = expires_at.replace("Z", "+00:00")
+            exp_dt = datetime.fromisoformat(clean_str)
+        else:
+            return True
+
         if exp_dt.tzinfo is None:
             exp_dt = exp_dt.replace(tzinfo=timezone.utc)
         return datetime.now(timezone.utc) > exp_dt

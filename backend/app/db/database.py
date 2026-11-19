@@ -258,7 +258,7 @@ def _translate_query_to_pg(query: str) -> str:
 
 
 class PgRow(dict):
-    """Row wrapper supporting both dict-key access ('emailVerified') and tuple-index access (0)."""
+    """Row wrapper supporting dict-key access ('emailVerified'), case-insensitive fallback, tuple indexing, and tuple unpacking."""
 
     def __init__(self, mapping: dict, tuple_vals: tuple):
         super().__init__(mapping)
@@ -267,7 +267,22 @@ class PgRow(dict):
     def __getitem__(self, key: Any) -> Any:
         if isinstance(key, int):
             return self._tuple[key]
+        if key in self:
+            return super().__getitem__(key)
+        if isinstance(key, str):
+            lower_key = key.lower()
+            if lower_key in self:
+                return super().__getitem__(lower_key)
         return super().__getitem__(key)
+
+    def __iter__(self):
+        return iter(self._tuple)
+
+    def values(self):
+        return self._tuple
+
+    def items(self):
+        return super().items()
 
     def keys(self):
         return super().keys()
