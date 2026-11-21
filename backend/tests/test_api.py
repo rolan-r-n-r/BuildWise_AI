@@ -694,6 +694,24 @@ def test_cors_origins_json_array_parsing():
     assert parsed_single == ["https://example.com"]
 
 
+def test_cors_vercel_origin_allowed():
+    """Verify that Vercel origins are allowed by CORS policy."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    c = TestClient(app)
+    resp = c.options(
+        "/api/floorplan/remediation",
+        headers={
+            "Origin": "https://buildwise-studio.vercel.app",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "https://buildwise-studio.vercel.app"
+
+
 def test_request_body_size_limit_rejection():
     """Verify that oversized requests are rejected with HTTP 413."""
     from fastapi.testclient import TestClient

@@ -827,7 +827,7 @@ const AppShell: React.FC = () => {
 
   // Run Satellite Vision Analysis
   const handleRunSiteVision = async (
-    modeOverride?: 'segformer' | 'index-only',
+    modeOverride: 'segformer' | 'index-only' = 'index-only',
     signal?: AbortSignal
   ) => {
     if (!siteLocation) return;
@@ -897,8 +897,8 @@ const AppShell: React.FC = () => {
     setIsMobileControlOpen(false);
     setActiveResultsTab('overview');
 
-    // Concurrently trigger site vision scan with signal
-    handleRunSiteVision(undefined, controller.signal);
+    // Concurrently trigger site vision scan with signal (index-only for fast, memory-safe execution)
+    handleRunSiteVision('index-only', controller.signal);
 
     try {
       // The site's coordinates come from `siteLocation` — the same value the map

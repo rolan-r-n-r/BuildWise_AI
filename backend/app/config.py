@@ -38,9 +38,16 @@ class Settings:
     )
     PORT: int = int(os.getenv("PORT", "8000"))
     CORS_ORIGINS: List[str] = _parse_cors_origins(
-        os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+        os.getenv(
+            "CORS_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173,https://buildwise-studio.vercel.app,https://buildwise.vercel.app",
+        )
     )
-    CORS_ORIGIN_REGEX: Optional[str] = os.getenv("CORS_ORIGIN_REGEX", None)
+    CORS_ORIGIN_REGEX: Optional[str] = os.getenv(
+        "CORS_ORIGIN_REGEX",
+        r"^https://(buildwise-studio[a-zA-Z0-9-]*|buildwise[a-zA-Z0-9-]*)\.vercel\.app$",
+    )
+    ENABLE_SEGFORMER: bool = os.getenv("ENABLE_SEGFORMER", "false").lower() in ("true", "1", "yes")
     COOKIE_SAMESITE: str = os.getenv(
         "COOKIE_SAMESITE",
         "none" if os.getenv("ENVIRONMENT", "").lower() == "production" else "lax",

@@ -21,7 +21,11 @@ services:
       - key: HOST
         value: 0.0.0.0
       - key: CORS_ORIGINS
-        sync: false # Set in Render Dashboard to your Vercel URL (e.g. https://buildwise.vercel.app)
+        sync: false # Set in Render Dashboard to your Vercel URL (e.g. https://buildwise-studio.vercel.app)
+      - key: CORS_ORIGIN_REGEX
+        value: ^https://(buildwise-studio[a-zA-Z0-9-]*|buildwise[a-zA-Z0-9-]*)\.vercel\.app$
+      - key: ENABLE_SEGFORMER
+        value: "false"
       - key: COOKIE_SAMESITE
         value: none
       - key: COOKIE_SECURE

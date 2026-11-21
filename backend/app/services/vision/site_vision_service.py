@@ -5,6 +5,7 @@ import logging
 from typing import Dict, Any, Optional, List
 import numpy as np
 
+from app.config import settings
 from app.utils.cache_utils import vision_cache
 from app.services.vision.stac_client import (
     search_latest_sentinel_scene,
@@ -285,6 +286,11 @@ async def analyze_site_vision(
     seg_water_mask = None
     inference_t0 = time.time()
 
+    should_run_segformer = (
+        getattr(settings, "ENABLE_SEGFORMER", False)
+        and mode_override != "index-only"
+    )
+
     if "B02" not in bands:
         # The optional blue band did not arrive; SegFormer cannot run on
         # red/green alone.  Say so instead of failing the scan.
@@ -293,7 +299,15 @@ async def analyze_site_vision(
             "Spectral-index vegetation and water detection are unaffected."
         )
         timing["inference_ms"] = 0.0
-    elif mode_override != "index-only":
+    elif not should_run_segformer:
+        active_mode = "index-only"
+        timing["inference_ms"] = 0.0
+        if mode_override == "segformer":
+            warnings.append(
+                "SegFormer deep learning segmentation is disabled in this environment to protect memory limits; "
+                "operating in high-precision spectral index mode."
+            )
+    else:
         try:
             # Model load + CPU inference are blocking work too - keep them off
             # the event loop like the imagery read above.
@@ -315,9 +329,6 @@ async def analyze_site_vision(
             warnings.append(f"Deep learning segmentation bypassed: {exc}")
             active_mode = "index-only"
             timing["inference_ms"] = round((time.time() - inference_t0) * 1000.0, 1)
-    else:
-        active_mode = "index-only"
-        timing["inference_ms"] = 0.0
 
     # Step 5: Deterministic Mask Fusion
     # Constraint 5: Final tree mask = SegFormer tree AND NDVI >= 0.35 in segformer mode; NDVI >= 0.35 in index-only mode
