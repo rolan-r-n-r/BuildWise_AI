@@ -213,11 +213,10 @@ export const Footer: React.FC = () => (
               className="rounded-[8px] hidden dark:block"
               decoding="async"
             />
-            <p className="text-[15px] font-bold text-bw-ink">BuildWise AI</p>
+            <p className="text-[15px] font-bold text-bw-ink">BuildWise</p>
           </div>
-          <p className="mt-3 max-w-xs text-[13px] leading-[1.6] text-bw-ink-2">
-            Geo-based site feasibility and construction planning. From a map pin to a buildable plan,
-            without a paid API in the path.
+          <p className="mt-3 max-w-sm text-[13px] leading-[1.6] text-bw-ink-2">
+            AI-powered construction planning and blueprint generation platform. From ideas to intelligent building plans, grounded in codified civil standards.
           </p>
           <button
             type="button"
@@ -230,8 +229,19 @@ export const Footer: React.FC = () => (
             </span>
           </button>
 
-          {/* Quick Authentication Access Links */}
+          {/* Quick Authentication & Overview Links */}
           <div className="mt-3 flex flex-wrap items-center gap-1 text-[12px] text-bw-ink-2">
+            <a
+              href="#about"
+              onClick={(e) => {
+                e.preventDefault();
+                scrollToId('about');
+              }}
+              className="min-h-[44px] min-w-[44px] px-2.5 inline-flex items-center justify-center hover:text-bw-ink hover:underline cursor-pointer"
+            >
+              About
+            </a>
+            <span aria-hidden="true" className="text-bw-line">·</span>
             <button
               type="button"
               onClick={() => navigate(SIGN_IN_PATH)}

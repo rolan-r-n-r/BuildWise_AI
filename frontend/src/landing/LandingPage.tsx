@@ -25,6 +25,7 @@ import React, { useEffect } from 'react';
 import { MotionConfig } from 'framer-motion';
 import { Navbar } from './Navbar';
 import { Hero } from './Hero';
+import { AboutSection } from './AboutSection';
 import { Backdrop } from './Backdrop';
 import { FeatureStrip } from './FeatureStrip';
 import { StandardsSection } from './StandardsSection';
@@ -32,7 +33,7 @@ import { CtaBand, Footer } from './CtaBand';
 import { ScrollRail } from './ScrollRail';
 import { initLenis } from './scroll';
 
-const LANDING_TITLE = 'BuildWise AI — AI Construction Planning & Blueprint Generator';
+const LANDING_TITLE = 'BuildWise — AI-Powered Construction Planning & Blueprint Generation Platform';
 
 export const LandingPage: React.FC = () => {
   useEffect(() => {
@@ -50,14 +51,6 @@ export const LandingPage: React.FC = () => {
   }, []);
 
   return (
-    /* reducedMotion="user" — for readers who ask for less motion, framer drops
-       every TRANSFORM animation to its end state and keeps the fade, which is
-       the whole point: the reveal still arrives, it just arrives in place
-       instead of sliding and curtain-lifting. The scroll-LINKED layer is not
-       affected by this setting — those values are MotionValue bindings rather
-       than animations — and they do not need to be: they are already forced to
-       their settled state under reduced motion (see scrollLink.useEntryProgress),
-       because motion a reader drives themselves is position, not animation. */
     <MotionConfig reducedMotion="user">
       <div className="bw-landing relative min-h-screen font-sans text-bw-ink antialiased">
         <Backdrop />
@@ -65,11 +58,8 @@ export const LandingPage: React.FC = () => {
         <Navbar />
         <main className="relative z-10">
           <Hero />
+          <AboutSection />
           <FeatureStrip />
-          {/* Standards sits BEFORE the closing band on purpose: it is the section
-              both "Standards" doorways travel to, and a destination placed above
-              the button that points at it gives that click a real journey (see
-              StandardsSection's header). */}
           <StandardsSection />
           <CtaBand />
         </main>

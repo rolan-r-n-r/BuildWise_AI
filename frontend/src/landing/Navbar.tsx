@@ -14,6 +14,7 @@ import { LANDING } from './theme';
 import { LOGO_SRC, LOGO_SRCSET, LOGO_WHITE_SRC, LOGO_WHITE_SRCSET } from './logo';
 
 const LINKS: ReadonlyArray<{ label: string; target: string }> = [
+  { label: 'About', target: 'about' },
   { label: 'Capabilities', target: 'capabilities' },
   { label: 'Standards', target: 'standards' },
   { label: 'Blueprint', target: 'blueprint' },

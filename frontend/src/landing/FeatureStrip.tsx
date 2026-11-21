@@ -22,51 +22,51 @@ interface Feature {
 
 const FEATURES: ReadonlyArray<Feature> = [
   {
-    title: 'Land suitability',
-    meta: 'MCDA',
-    telemetry: 'Score 87/100 · 4 Terrain Layers',
-    specDetail: 'USGS 3DEP & Cop-DEM',
-    copy: 'Multi-criteria scoring over topography, land use, and environmental data, with the weightings disclosed.',
-    icon: <Icon name="mountain" size={17} strokeWidth={1.9} />,
-  },
-  {
-    title: 'Seismic and flood risk',
-    meta: 'IS 1893',
-    telemetry: 'Zone III · 0.16g PGA · 100-yr Discharge',
-    specDetail: 'IS 1893:2016 · Open-Meteo',
-    copy: 'Zone and inundation stress from the code plus historical event and river-discharge telemetry.',
-    icon: <Icon name="activity" size={17} strokeWidth={1.9} />,
-  },
-  {
-    title: 'Cost estimation',
-    meta: 'CPWD DSR',
-    telemetry: 'Benchmark ₹2,450 / sq.ft',
-    specDetail: 'CPWD DSR 2023 Rates',
-    copy: 'Benchmarked construction cost by elemental head, with terrain and quality surcharges shown separately.',
-    icon: <Icon name="currency-rupee" size={17} strokeWidth={1.9} />,
-  },
-  {
-    title: 'Vastu orientation',
-    meta: '9-zone mandala',
-    telemetry: '88/100 · NE Ishanya Entrance',
-    specDetail: 'Solar & Wind Alignments',
-    copy: 'Orientation and placement guidance scored per zone, alongside the solar and wind bearings that drive it.',
-    icon: <Icon name="compass" size={17} strokeWidth={1.9} />,
-  },
-  {
-    title: 'Generative blueprints',
+    title: 'BuildWise Blueprint Generator',
     meta: 'Spatial CSP',
     telemetry: 'Slicing-Tree CSP · Invariants Solved',
     specDetail: 'Topological Non-Overlap',
-    copy: 'Floor plans solved against a placement knowledge base and non-negotiable topological invariants.',
+    copy: 'Generates preliminary floor plans using an algorithmic Constraint Satisfaction Problem (CSP) solver enforcing room adjacencies, circulation, and statutory setbacks.',
     icon: <Icon name="blueprint" size={17} strokeWidth={1.9} />,
   },
   {
-    title: 'Print-ready dossier',
+    title: 'Construction cost & materials',
+    meta: 'CPWD DSR',
+    telemetry: 'Benchmark ₹2,450 / sq.ft',
+    specDetail: 'CPWD DSR 2023 Rates',
+    copy: 'Benchmarked construction cost and material requirements by elemental head (structural, finishes, services), with terrain and quality surcharges shown separately.',
+    icon: <Icon name="currency-rupee" size={17} strokeWidth={1.9} />,
+  },
+  {
+    title: 'Land suitability & terrain',
+    meta: 'MCDA',
+    telemetry: 'Score 87/100 · 4 Terrain Layers',
+    specDetail: 'USGS 3DEP & Cop-DEM',
+    copy: 'Multi-criteria scoring over slope, elevation, land use, and environmental data, with the weightings disclosed.',
+    icon: <Icon name="mountain" size={17} strokeWidth={1.9} />,
+  },
+  {
+    title: 'Seismic and flood hazard',
+    meta: 'IS 1893',
+    telemetry: 'Zone III · 0.16g PGA · 100-yr Discharge',
+    specDetail: 'IS 1893:2016 · Open-Meteo',
+    copy: 'Zone and inundation stress from codified Indian standards plus historical event and river-discharge telemetry.',
+    icon: <Icon name="activity" size={17} strokeWidth={1.9} />,
+  },
+  {
+    title: 'Vastu orientation & solar',
+    meta: '9-zone mandala',
+    telemetry: '88/100 · NE Ishanya Entrance',
+    specDetail: 'Solar & Wind Alignments',
+    copy: 'Orientation and room placement guidance scored per zone, alongside the solar and wind bearings that drive it.',
+    icon: <Icon name="compass" size={17} strokeWidth={1.9} />,
+  },
+  {
+    title: 'Print-ready engineering dossier',
     meta: 'Vector PDF',
     telemetry: '174mm Vector Stamp · Arch D',
     specDetail: 'Pure-Python Vector Engine',
-    copy: 'One click compiles the scorecard, risk matrices, benchmarks, and a 174mm vector blueprint.',
+    copy: 'One click compiles the executive scorecard, hazard matrices, cost benchmarks, and a 174mm vector blueprint into a contractor-ready PDF.',
     icon: <Icon name="printer" size={17} strokeWidth={1.9} />,
   },
 ];
@@ -113,9 +113,9 @@ export const FeatureStrip: React.FC = () => (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-10">
       <motion.div variants={staggerParent(0.06)} initial="hidden" whileInView="show" viewport={SETTLE_VIEWPORT}>
         <SectionHeading
-          eyebrow="Capabilities"
-          title="Six analyses behind every pin"
-          copy="The same run produces suitability, hazard, cost, orientation, and a buildable plan — grounded in Indian code and open data."
+          eyebrow="Core Capabilities"
+          title="Six engineering benchmarks, calculated live"
+          copy="The same run produces blueprints, site suitability, hazard risks, CPWD cost schedules, and Vastu orientation — grounded in Indian code and open data."
         />
         {/* The section boundary draws with the wheel */}
         <ScrollRule className="mt-10" />

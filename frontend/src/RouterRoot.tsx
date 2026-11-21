@@ -49,8 +49,8 @@ const PreviewTrace = PREVIEW_ENABLED
   ? lazy(() => import('./preview/PreviewTrace').then((m) => ({ default: m.PreviewTrace })))
   : null;
 
-const APP_TITLE = 'BuildWise AI - Geo-Based Intelligent Construction Planning';
-const LANDING_TITLE = 'BuildWise AI — AI Construction Planning & Blueprint Generator';
+const APP_TITLE = 'BuildWise — AI Construction Planner & Analysis Tool';
+const LANDING_TITLE = 'BuildWise — AI-Powered Construction Planning & Blueprint Generation Platform';
 
 /** Updates route-level SEO metadata (title, robots directive, and canonical link). */
 function updateDocumentSEO(title: string, isPublicIndexable: boolean, canonicalPath: string) {

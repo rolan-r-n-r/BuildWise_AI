@@ -39,35 +39,23 @@ import { LANDING } from './theme.ts';
 
 /** The first screen's copy. Whitespace-significant characters are explicit. */
 export const HERO_COPY = {
-  eyebrow: 'Geo-based site feasibility',
-  headlineFirst: 'From a map pin',
+  eyebrow: 'BuildWise · AI Construction Planning & Blueprint Platform',
+  headlineFirst: 'From ideas to',
   /**
    * The LEADING SPACE IS LOAD-BEARING. Each headline fragment is its own
    * `display: block` span, so at the end of a line a space would be collapsed
    * away visually — but `textContent` (what a screen reader reads, and what
-   * selecting the headline to copy produces) contains no line break at all, and
-   * without it the H1 announces and copies as "From a map pinto a buildable
-   * plan." The landing audit's own heading extraction printed exactly that. A
-   * block-level leading space collapses under `white-space: normal`, so this
-   * changes nothing that is rendered.
+   * selecting the headline to copy produces) contains no line break at all.
+   * A block-level leading space collapses under `white-space: normal`, so this
+   * changes nothing that is rendered visually.
    */
-  headlineSecondLead: ' to a ',
-  headlineSecondAccent: 'buildable plan',
+  headlineSecondLead: ' ',
+  headlineSecondAccent: 'intelligent building plans',
   headlineSecondTrail: '.',
-  /**
-   * The closing clause used to be "a 174 mm vector floor plan". That number came
-   * from the old hand-built mock-up, not from the engine (Phase A's F-20 flagged it
-   * as an invented specific), and it is the kind of figure a reader reasonably reads
-   * as a real wall thickness. The claim that survives is the one the product
-   * actually makes: the plan is DIMENSIONED. No count is printed here, so there is
-   * no figure for this line to get wrong — the certified counts and the generation
-   * they came from live in the generated `landing/heroMassing.ts`, beside the
-   * geometry they describe.
-   */
   subcopy:
-    'For architects, builders and landowners: draw your plot on the map and BuildWise returns a ' +
-    'buildable dossier — land suitability, IS 1893 seismic and flood risk, CPWD cost benchmarks, ' +
-    'Vastu orientation, and a\u00a0dimensioned vector floor plan you can hand to a contractor.',
+    'BuildWise is an AI-powered construction planning and blueprint generation platform. ' +
+    'From ideas to intelligent building plans: architects, civil engineers, builders, and landowners draw a plot on the map ' +
+    'to generate construction blueprints, elemental cost estimates, material requirements, and a\u00a0complete IS 1893 site feasibility dossier.',
 } as const;
 
 /** Display stack, mirroring FONT_DISPLAY in theme.ts (the landing's `font-sans`). */

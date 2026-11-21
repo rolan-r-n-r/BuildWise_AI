@@ -157,7 +157,7 @@ export const Hero: React.FC = () => {
           <div className="lg:col-span-8">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-bw-line bg-bw-surface text-[12px] font-semibold text-bw-ink-2 shadow-xs mb-6">
               <span aria-hidden="true" className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>NBC 2016 &amp; IS 1893:2016 Spatial Engine</span>
+              <span>BuildWise AI · Intelligent Construction Planning &amp; Blueprint Generator</span>
             </div>
 
             <h1
