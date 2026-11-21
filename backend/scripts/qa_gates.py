@@ -98,7 +98,7 @@ def run_step(step: Step) -> Tuple[bool, str, float]:
     )
     elapsed = time.time() - started
     output = (proc.stdout or "") + (proc.stderr or "")
-    tail = "\n".join(output.strip().splitlines()[-14:])
+    tail = "\n".join(output.strip().splitlines()[-50:])
     if not step.sweep:
         return proc.returncode == 0, tail, elapsed
 

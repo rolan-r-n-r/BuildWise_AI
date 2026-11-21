@@ -82,6 +82,17 @@ def test_profiles_produce_distinct_weighted_outcomes():
         assert abs(total_weight - 1.0) < 1e-9
 
 
+_VOLATILE_KEYS = {"solver_timing_ms", "timing_ms", "generated_at", "evaluated_at"}
+
+
+def _without_wall_clock(value):
+    if isinstance(value, dict):
+        return {k: _without_wall_clock(v) for k, v in value.items() if k not in _VOLATILE_KEYS}
+    if isinstance(value, list):
+        return [_without_wall_clock(v) for v in value]
+    return value
+
+
 def test_legacy_geometry_is_unchanged_when_portfolio_requested():
     request = _t1(1)
     legacy = generate_floor_plan(request)
@@ -91,8 +102,12 @@ def test_legacy_geometry_is_unchanged_when_portfolio_requested():
     assert legacy.scheme_alternatives is None
     assert with_portfolio.scheme_alternatives is not None
     assert len(with_portfolio.scheme_alternatives) == 3
-    assert legacy.multi_storey.floors[0].model_dump() == with_portfolio.multi_storey.floors[0].model_dump()
-    assert legacy.rectangles.model_dump() == with_portfolio.rectangles.model_dump()
+    assert _without_wall_clock(legacy.multi_storey.floors[0].model_dump()) == _without_wall_clock(
+        with_portfolio.multi_storey.floors[0].model_dump()
+    )
+    assert _without_wall_clock(legacy.rectangles.model_dump()) == _without_wall_clock(
+        with_portfolio.rectangles.model_dump()
+    )
     assert with_portfolio.params_snapshot["selected_scheme_id"] == with_portfolio.selected_scheme_id
 
 
