@@ -32,8 +32,7 @@ import { CtaBand, Footer } from './CtaBand';
 import { ScrollRail } from './ScrollRail';
 import { initLenis } from './scroll';
 
-const LANDING_TITLE = 'BuildWise AI — From a map pin to a buildable plan';
-const APP_TITLE = 'BuildWise AI - Geo-Based Intelligent Construction Planning';
+const LANDING_TITLE = 'BuildWise AI — AI Construction Planning & Blueprint Generator';
 
 export const LandingPage: React.FC = () => {
   useEffect(() => {
@@ -46,7 +45,6 @@ export const LandingPage: React.FC = () => {
       destroyLenis();
       document.body.classList.remove('bw-landing-open');
       document.documentElement.classList.remove('bw-landing-open');
-      document.title = APP_TITLE;
       window.scrollTo(0, 0);
     };
   }, []);

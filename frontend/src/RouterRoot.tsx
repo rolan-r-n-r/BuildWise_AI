@@ -50,6 +50,32 @@ const PreviewTrace = PREVIEW_ENABLED
   : null;
 
 const APP_TITLE = 'BuildWise AI - Geo-Based Intelligent Construction Planning';
+const LANDING_TITLE = 'BuildWise AI — AI Construction Planning & Blueprint Generator';
+
+/** Updates route-level SEO metadata (title, robots directive, and canonical link). */
+function updateDocumentSEO(title: string, isPublicIndexable: boolean, canonicalPath: string) {
+  document.title = title;
+
+  // Manage <meta name="robots">
+  let robotsMeta = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
+  if (!robotsMeta) {
+    robotsMeta = document.createElement('meta');
+    robotsMeta.name = 'robots';
+    document.head.appendChild(robotsMeta);
+  }
+  robotsMeta.content = isPublicIndexable
+    ? 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'
+    : 'noindex, nofollow';
+
+  // Manage <link rel="canonical">
+  let canonicalLink = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+  if (!canonicalLink) {
+    canonicalLink = document.createElement('link');
+    canonicalLink.rel = 'canonical';
+    document.head.appendChild(canonicalLink);
+  }
+  canonicalLink.href = `https://buildwise-studio.vercel.app${canonicalPath === '/' ? '/' : canonicalPath}`;
+}
 
 /** Route-level loading placeholder. */
 const RouteFallback: React.FC = () => (
@@ -132,20 +158,26 @@ export function RouterRoot() {
 
   useEffect(() => {
     if (isApp) {
-      document.title = APP_TITLE;
+      updateDocumentSEO(APP_TITLE, false, APP_PATH);
       window.scrollTo(0, 0);
     } else if (isSignIn) {
-      document.title = 'Sign In — BuildWise AI';
+      updateDocumentSEO('Sign In — BuildWise AI', false, SIGN_IN_PATH);
     } else if (isSignUp) {
-      document.title = 'Create Account — BuildWise AI';
+      updateDocumentSEO('Create Account — BuildWise AI', false, SIGN_UP_PATH);
     } else if (isVerifyEmail) {
-      document.title = 'Verify Email — BuildWise AI';
+      updateDocumentSEO('Verify Email — BuildWise AI', false, VERIFY_EMAIL_PATH);
     } else if (isForgotPassword || isResetPassword) {
-      document.title = 'Password Recovery — BuildWise AI';
+      updateDocumentSEO(
+        'Password Recovery — BuildWise AI',
+        false,
+        isForgotPassword ? FORGOT_PASSWORD_PATH : RESET_PASSWORD_PATH
+      );
+    } else if (isPreview) {
+      updateDocumentSEO('Trace stage — centrepiece prototype', false, PREVIEW_PREFIX);
     } else {
-      document.title = 'BuildWise AI — Intelligent Construction Planning';
+      updateDocumentSEO(LANDING_TITLE, true, '/');
     }
-  }, [isApp, isSignIn, isSignUp, isVerifyEmail, isForgotPassword, isResetPassword]);
+  }, [isApp, isSignIn, isSignUp, isVerifyEmail, isForgotPassword, isResetPassword, isPreview]);
 
   return (
     <Suspense fallback={<RouteFallback />}>
