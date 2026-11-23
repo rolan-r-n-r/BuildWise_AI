@@ -149,7 +149,7 @@ export const SignInPage: React.FC = () => {
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
               placeholder="architect@studio.com"
-              className="w-full h-11 px-3.5 rounded-[10px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[13.5px] text-[var(--text-1)] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-colors"
+              className="w-full h-11 px-3.5 rounded-[12px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[13.5px] text-[var(--text-1)] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-colors"
             />
           </div>
         </div>
@@ -183,7 +183,7 @@ export const SignInPage: React.FC = () => {
               onKeyUp={handleKeyDown}
               disabled={isLoading}
               placeholder="••••••••••••"
-              className="w-full h-11 pl-3.5 pr-11 rounded-[10px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[13.5px] text-[var(--text-1)] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-colors"
+              className="w-full h-11 pl-3.5 pr-11 rounded-[12px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[13.5px] text-[var(--text-1)] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-colors"
             />
             <button
               type="button"

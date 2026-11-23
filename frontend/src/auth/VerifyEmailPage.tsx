@@ -300,7 +300,7 @@ export const VerifyEmailPage: React.FC = () => {
                 onChange={(e) => handleOtpChange(idx, e.target.value)}
                 onKeyDown={(e) => handleOtpKeyDown(idx, e)}
                 onPaste={handleOtpPaste}
-                className="w-11 h-13 sm:w-12 sm:h-14 text-center font-mono text-[20px] font-bold rounded-[12px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[var(--text-1)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-all shadow-2xs"
+                className="w-11 h-13 sm:w-12 sm:h-14 text-center font-mono text-[20px] font-bold rounded-[12px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[var(--text-1)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-[color,background-color,border-color,box-shadow] shadow-2xs"
               />
             ))}
           </div>

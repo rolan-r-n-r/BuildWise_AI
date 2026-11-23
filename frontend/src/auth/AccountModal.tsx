@@ -114,7 +114,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, onO
       <div
         ref={modalRef}
         tabIndex={-1}
-        className="w-full max-w-[440px] bg-white dark:bg-slate-900 rounded-[20px] border border-slate-200/90 dark:border-slate-800 shadow-2xl p-6 relative overflow-hidden animate-in fade-in zoom-in-95 duration-150 outline-none"
+        className="w-full max-w-[440px] bg-white dark:bg-slate-900 rounded-[20px] border border-slate-200/90 dark:border-slate-800 bw-glass-dialog shadow-2xl p-6 relative overflow-hidden animate-in fade-in zoom-in-95 duration-150 outline-none"
       >
         {/* Close Button */}
         <button

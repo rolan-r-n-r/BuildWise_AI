@@ -108,7 +108,7 @@ export const ForgotPasswordPage: React.FC = () => {
             onChange={(e) => setEmail(e.target.value)}
             disabled={isLoading}
             placeholder="architect@buildwise.ai"
-            className="w-full h-11 px-3.5 rounded-[10px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[13.5px] text-[var(--text-1)] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-colors"
+            className="w-full h-11 px-3.5 rounded-[12px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[13.5px] text-[var(--text-1)] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-colors"
           />
         </div>
 

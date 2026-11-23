@@ -224,7 +224,7 @@ export const ResetPasswordPage: React.FC = () => {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={isLoading || Boolean(initialEmail)}
-            className="w-full h-11 px-3.5 rounded-[10px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[13.5px] text-[var(--text-1)] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-colors disabled:opacity-75"
+            className="w-full h-11 px-3.5 rounded-[12px] bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[13.5px] text-[var(--text-1)] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 focus:border-[var(--accent)] transition-colors disabled:opacity-75"
           />
         </div>
 

@@ -137,7 +137,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
             </div>
 
             {/* Interactive Vector Blueprint Cadastral Preview */}
-            <div className="relative rounded-[16px] bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-5 shadow-lg overflow-hidden">
+            <div className="relative rounded-[16px] bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-5 bw-glass-dialog shadow-lg overflow-hidden">
               {/* Header Bar */}
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
                 <div className="flex items-center gap-2">
@@ -353,8 +353,8 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
           </div>
 
           {/* ---------------- Right Authentication Form Column ---------------- */}
-          <div className="w-full lg:col-span-6 flex justify-center">
-            <div className="w-full max-w-[440px] bg-white dark:bg-slate-900 rounded-[20px] p-6 sm:p-8 shadow-xl border border-slate-200/90 dark:border-slate-800 transition-colors">
+          <div className="w-full lg:col-span-6 flex justify-center min-w-0">
+            <div className="w-full max-w-[440px] bg-white dark:bg-slate-900 rounded-[20px] p-6 sm:p-8 bw-glass-dialog shadow-xl border border-slate-200/90 dark:border-slate-800 transition-colors min-w-0">
               {/* Header */}
               <div className="mb-6 text-left">
                 {badge && (
