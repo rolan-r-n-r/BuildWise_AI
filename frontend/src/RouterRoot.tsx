@@ -9,7 +9,7 @@
  *
  * All routes are code-split for performance and isolated dependency graphs.
  */
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import {
   APP_PATH,
   SIGN_IN_PATH,
@@ -96,7 +96,6 @@ const RouteFallback: React.FC = () => (
 /** Protected Route wrapper for /app ensuring only authenticated sessions enter the tool. */
 const ProtectedApp: React.FC = () => {
   const { data: session, isPending } = useSession();
-  const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
     if (!isPending) {
@@ -104,7 +103,6 @@ const ProtectedApp: React.FC = () => {
         // Before bouncing to sign-in, double check directly with getSession()
         // to resolve any race conditions with un-hydrated in-memory session atoms
         let isMounted = true;
-        setIsVerifying(true);
         getSession()
           .then((res) => {
             if (!isMounted) return;
@@ -122,9 +120,6 @@ const ProtectedApp: React.FC = () => {
           .catch(() => {
             if (!isMounted) return;
             navigate(SIGN_IN_PATH);
-          })
-          .finally(() => {
-            if (isMounted) setIsVerifying(false);
           });
 
         return () => {
@@ -136,7 +131,7 @@ const ProtectedApp: React.FC = () => {
     }
   }, [session, isPending]);
 
-  if (isPending || isVerifying || !session || !session.user?.emailVerified) {
+  if (isPending || !session || !session.user?.emailVerified) {
     return <RouteFallback />;
   }
 
@@ -165,6 +160,7 @@ export function RouterRoot() {
     } else if (isSignUp) {
       updateDocumentSEO('Create Account — BuildWise AI', false, SIGN_UP_PATH);
     } else if (isVerifyEmail) {
+      document.title = 'Verify Email — BuildWise AI';
       updateDocumentSEO('Verify Email — BuildWise AI', false, VERIFY_EMAIL_PATH);
     } else if (isForgotPassword || isResetPassword) {
       updateDocumentSEO(

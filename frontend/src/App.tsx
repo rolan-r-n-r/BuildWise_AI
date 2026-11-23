@@ -636,38 +636,60 @@ const AppShell: React.FC = () => {
     setMapResizeTrigger((prev) => prev + 1);
   }, []);
 
-  // Initial Backend Status & LLM Key Verification
+  // Initial Backend Status & LLM Key Verification with cold-start backoff retry
   useEffect(() => {
-    fetchBackendStatus()
-      .then((res) => {
-        setBackendConnected(res.status === 'online');
-        setServerStatus({
-          groq: res.groq,
-          gemini: res.gemini,
-          openai: res.openai,
-          anthropic: res.anthropic,
-          ollama: res.ollama,
-          configured_models: res.configured_models,
-          user_preferred_model: res.user_preferred_model,
-        });
-        if (res.user_preferred_provider && res.user_preferred_provider !== 'deterministic') {
-          dispatchSession({
-            type: 'request',
-            patch: {
-              ai_provider: res.user_preferred_provider,
-              ...(res.user_preferred_model ? { ai_model: res.user_preferred_model } : {}),
-            },
+    let isMounted = true;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    const maxAttempts = 4;
+    const delays = [2000, 4000, 8000];
+
+    const probe = () => {
+      fetchBackendStatus()
+        .then((res) => {
+          if (!isMounted) return;
+          setBackendConnected(res.status === 'online');
+          setServerStatus({
+            groq: res.groq,
+            gemini: res.gemini,
+            openai: res.openai,
+            anthropic: res.anthropic,
+            ollama: res.ollama,
+            configured_models: res.configured_models,
+            user_preferred_model: res.user_preferred_model,
           });
-        } else if (res.groq) {
-          dispatchSession({ type: 'request', patch: { ai_provider: 'groq' } });
-        } else if (res.gemini) {
-          dispatchSession({ type: 'request', patch: { ai_provider: 'gemini' } });
-        }
-      })
-      .catch(() => {
-        setBackendConnected(false);
-        setServerStatus(null);
-      });
+          if (res.user_preferred_provider && res.user_preferred_provider !== 'deterministic') {
+            dispatchSession({
+              type: 'request',
+              patch: {
+                ai_provider: res.user_preferred_provider,
+                ...(res.user_preferred_model ? { ai_model: res.user_preferred_model } : {}),
+              },
+            });
+          } else if (res.groq) {
+            dispatchSession({ type: 'request', patch: { ai_provider: 'groq' } });
+          } else if (res.gemini) {
+            dispatchSession({ type: 'request', patch: { ai_provider: 'gemini' } });
+          }
+        })
+        .catch(() => {
+          if (!isMounted) return;
+          setBackendConnected(false);
+          setServerStatus(null);
+          if (attempt < maxAttempts - 1) {
+            const delay = delays[attempt] || 8000;
+            attempt += 1;
+            retryTimer = setTimeout(probe, delay);
+          }
+        });
+    };
+
+    probe();
+
+    return () => {
+      isMounted = false;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, []);
 
   // Focus management for Responsive Drawer
