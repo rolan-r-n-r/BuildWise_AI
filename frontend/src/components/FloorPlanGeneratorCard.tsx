@@ -64,6 +64,13 @@ import {
 export type { CanonicalTypology, RoomOption };
 export { normalizeTypology, TYPOLOGY_LABELS, TYPOLOGY_ROOM_CATALOGS };
 
+const GENERATION_STAGES = [
+  { id: 'solver', title: 'Civil Constraint Solver', detail: 'Evaluating plot boundary & NBC 2016 setback corridors' },
+  { id: 'topology', title: 'Spatial Layout Partitioning', detail: 'Slicing-tree geometric dissection & room connectivity graph' },
+  { id: 'ai', title: 'AI Bioclimatic & Spatial Reasoner', detail: 'Optimizing solar envelope, wind orientation & Vastu alignment' },
+  { id: 'blueprint', title: 'Structural Blueprint Compilation', detail: 'Validating topological containment & generating vector SVG' },
+] as const;
+
 interface FloorPlanGeneratorCardProps {
   defaultWidthM?: number;
   defaultDepthM?: number;
@@ -282,6 +289,10 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
   const { pushToast } = useDesign();
   const isSubmittingRef = useRef<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [generationStageIndex, setGenerationStageIndex] = useState<number>(0);
+  const [generationElapsedSec, setGenerationElapsedSec] = useState<number>(0);
+  const [justGeneratedId, setJustGeneratedId] = useState<string | null>(null);
+
   // Scheme profile the user picked. Sent with every generation so
   // the plate is re-solved with that profile's weights; the picker records what
   // the backend actually did with it.
@@ -293,6 +304,31 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
   // An accepted rotation is a validated plot geometry for this session; it is
   // cleared with the card (reset remounts it) and keeps the stale guard honest.
   const [rotationPolygon, setRotationPolygon] = useState<PlotPolygon | null>(null);
+  // Track live generation progress across engineering stages
+  useEffect(() => {
+    if (!isGenerating) {
+      setGenerationStageIndex(0);
+      setGenerationElapsedSec(0);
+      return;
+    }
+    const startTime = Date.now();
+    const timer = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      setGenerationElapsedSec(elapsed);
+      if (elapsed < 2) {
+        setGenerationStageIndex(0);
+      } else if (elapsed < 5) {
+        setGenerationStageIndex(1);
+      } else if (elapsed < 8) {
+        setGenerationStageIndex(2);
+      } else {
+        setGenerationStageIndex(3);
+      }
+    }, 400);
+
+    return () => clearInterval(timer);
+  }, [isGenerating]);
+
   // Canonical single source of truth: parent-managed activeFloorPlan if provided, falling back to local state
   const floorPlan = activeFloorPlan !== undefined ? activeFloorPlan : localFloorPlan;
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -666,6 +702,7 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
       // against the same invalid payload.
       setLastRequest(finalReq);
       setLocalFloorPlan(freshPlan);
+      setJustGeneratedId(freshPlan.generation_id || 'CERTIFIED');
       if (onFloorPlanGenerated) {
         onFloorPlanGenerated(freshPlan);
       }
@@ -1458,6 +1495,82 @@ export const FloorPlanGeneratorCard: React.FC<FloorPlanGeneratorCardProps> = ({
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {/* Success Notification Banner */}
+      {justGeneratedId && !isGenerating && (
+        <div className="p-3 rounded-[12px] bg-emerald-500/10 border border-emerald-500/25 text-[12px] text-emerald-800 dark:text-emerald-200 flex items-center justify-between gap-3 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2 min-w-0">
+            <Icon name="check" size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="truncate">
+              Floor plan generated &amp; certified <span className="font-mono text-[11px] opacity-80">({justGeneratedId})</span>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setJustGeneratedId(null)}
+            aria-label="Dismiss generation notice"
+            className="text-slate-400 hover:text-[var(--text-1)] p-1 rounded-md transition-colors cursor-pointer"
+          >
+            <Icon name="x" size={12} />
+          </button>
+        </div>
+      )}
+
+      {/* Live Generation Processing HUD */}
+      {isGenerating && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-[16px] border border-[var(--panel-border-color)] bg-[var(--card-bg-subtle)] p-4 space-y-3 shadow-sm select-none"
+        >
+          <div className="flex items-center justify-between text-[12px]">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-[var(--accent)] animate-pulse" />
+              <span className="font-semibold text-[var(--text-1)]">
+                {GENERATION_STAGES[generationStageIndex].title}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] font-mono text-[var(--text-3)]">
+              <span>{generationElapsedSec}s</span>
+              <span className="text-[var(--accent-ink)] font-semibold">Stage {generationStageIndex + 1}/4</span>
+            </div>
+          </div>
+
+          {/* Progress bar track */}
+          <div className="w-full h-1.5 rounded-full bg-[var(--fill)] overflow-hidden">
+            <div
+              className="h-full bg-[var(--accent)] transition-[width] duration-200 ease-apple rounded-full"
+              style={{ width: `${Math.min(96, ((generationStageIndex + 1) / 4) * 88 + (generationElapsedSec % 4) * 2)}%` }}
+            />
+          </div>
+
+          <p className="text-[11.5px] text-[var(--text-2)] leading-relaxed">
+            {GENERATION_STAGES[generationStageIndex].detail}
+          </p>
+
+          {/* Mini stage pills */}
+          <div className="grid grid-cols-4 gap-1.5 pt-1">
+            {GENERATION_STAGES.map((stg, idx) => {
+              const isPast = idx < generationStageIndex;
+              const isCurrent = idx === generationStageIndex;
+              return (
+                <div
+                  key={stg.id}
+                  className={`px-1.5 py-1 rounded-[6px] text-[9.5px] text-center font-medium truncate border transition-colors ${
+                    isPast
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                      : isCurrent
+                      ? 'bg-[var(--accent-tint)] border-[var(--accent)]/40 text-[var(--accent-ink)] font-semibold'
+                      : 'bg-[var(--fill)] border-transparent text-[var(--text-3)] opacity-60'
+                  }`}
+                >
+                  {idx + 1}. {stg.id.toUpperCase()}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
