@@ -169,7 +169,7 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[2200] flex items-center justify-center p-4 select-none">
       <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/50"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -178,7 +178,7 @@ export const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
         aria-modal="true"
         aria-label="Save Project Feasibility Study"
         style={{ backgroundColor: 'var(--card-bg-subtle)' }}
-        className="relative z-10 w-full max-w-md bg-[var(--card-bg-subtle)] text-[var(--text-1)] rounded-2xl border border-[var(--panel-border-color)] shadow-2xl p-5 sm:p-6 space-y-4 select-text"
+        className="relative z-10 w-full max-w-md bg-[var(--card-bg-subtle)] text-[var(--text-1)] rounded-2xl border border-[var(--panel-border-color)] bw-glass-dialog shadow-2xl p-5 sm:p-6 space-y-4 select-text"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-3">

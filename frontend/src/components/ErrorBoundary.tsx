@@ -39,7 +39,7 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div
           role="alert"
-          className="fixed inset-0 z-[1300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs select-none"
+          className="fixed inset-0 z-[1300] flex items-center justify-center p-4 bg-slate-900/60 select-none"
         >
           <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-[20px] border border-slate-200 dark:border-slate-800 shadow-2xl p-6 text-center space-y-4">
             <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 mx-auto flex items-center justify-center">
@@ -56,7 +56,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <button
               type="button"
               onClick={this.reset}
-              className="px-4 py-2 bg-[var(--accent)] text-white text-[13px] font-semibold rounded-xl hover:brightness-110 active:brightness-95 transition-all cursor-pointer"
+              className="px-4 py-2 bg-[var(--accent)] text-white text-[13px] font-semibold rounded-xl hover:brightness-110 active:brightness-95 transition-[background-color,filter] cursor-pointer"
             >
               Dismiss
             </button>

@@ -135,7 +135,7 @@ export const BlueprintAIInsightsPanel: React.FC<BlueprintAIInsightsPanelProps> =
           <button
             type="button"
             onClick={() => setViewMode('ai_insights')}
-            className={`px-3 py-1 rounded-md font-medium transition-all cursor-pointer ${
+            className={`px-3 py-1 rounded-md font-medium transition-[color,background-color,box-shadow] cursor-pointer ${
               viewMode === 'ai_insights'
                 ? 'bg-[var(--card-bg)] text-[var(--text-1)] shadow-sm'
                 : 'text-[var(--text-3)] hover:text-[var(--text-2)]'
@@ -146,7 +146,7 @@ export const BlueprintAIInsightsPanel: React.FC<BlueprintAIInsightsPanelProps> =
           <button
             type="button"
             onClick={() => setViewMode('raw_solver')}
-            className={`px-3 py-1 rounded-md font-medium transition-all cursor-pointer ${
+            className={`px-3 py-1 rounded-md font-medium transition-[color,background-color,box-shadow] cursor-pointer ${
               viewMode === 'raw_solver'
                 ? 'bg-[var(--card-bg)] text-[var(--text-1)] shadow-sm'
                 : 'text-[var(--text-3)] hover:text-[var(--text-2)]'

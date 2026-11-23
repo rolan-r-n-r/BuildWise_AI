@@ -1847,7 +1847,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                       onClick={() => setMode('cad')}
                       className={`h-6 px-2.5 sm:px-3 rounded-[6px] sm:rounded-[7px] text-[11px] sm:text-[12px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${mode === 'cad'
                           ? 'bg-[var(--segmented-active-bg)] text-[var(--segmented-active-label)] bw-segmented-active-shadow'
-                          : 'text-[var(--text-1)] hover:text-[var(--text-1)]'
+                          : 'text-[var(--text-2)] hover:text-[var(--text-1)]'
                         }`}
                     >
                       CAD
@@ -1857,7 +1857,7 @@ export const BlueprintViewer: React.FC<BlueprintViewerProps> = ({
                       onClick={() => setMode('paper')}
                       className={`h-6 px-2.5 sm:px-3 rounded-[6px] sm:rounded-[7px] text-[11px] sm:text-[12px] font-semibold flex items-center transition-colors duration-150 ease-out cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${mode === 'paper'
                           ? 'bg-[var(--segmented-active-bg)] text-[var(--segmented-active-label)] bw-segmented-active-shadow'
-                          : 'text-[var(--text-1)] hover:text-[var(--text-1)]'
+                          : 'text-[var(--text-2)] hover:text-[var(--text-1)]'
                         }`}
                     >
                       Paper

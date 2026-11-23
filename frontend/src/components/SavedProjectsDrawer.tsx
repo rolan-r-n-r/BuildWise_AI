@@ -153,7 +153,7 @@ export const SavedProjectsDrawer: React.FC<SavedProjectsDrawerProps> = ({
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[2200] flex justify-end select-none">
       <div
-        className="fixed inset-0 bg-black/45 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/45"
         onClick={onClose}
         aria-hidden="true"
       />

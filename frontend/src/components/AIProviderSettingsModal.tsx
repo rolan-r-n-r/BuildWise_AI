@@ -297,12 +297,12 @@ export const AIProviderSettingsModal: React.FC<AIProviderSettingsModalProps> = (
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-[1250] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/75 backdrop-blur-xs select-none"
+      className="fixed inset-0 z-[1250] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/75 select-none"
     >
       <div
         ref={modalRef}
         tabIndex={-1}
-        className="w-full max-w-[620px] bg-white dark:bg-slate-900 rounded-[20px] border border-slate-200/90 dark:border-slate-800 shadow-2xl p-6 relative overflow-hidden animate-in fade-in zoom-in-95 duration-150 outline-none max-h-[90vh] flex flex-col"
+        className="w-full max-w-[620px] bg-white dark:bg-slate-900 rounded-[20px] border border-slate-200/90 dark:border-slate-800 bw-glass-dialog shadow-2xl p-6 relative overflow-hidden animate-in fade-in zoom-in-95 duration-150 outline-none max-h-[90vh] flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-200/80 dark:border-slate-800 shrink-0">
@@ -517,7 +517,7 @@ export const AIProviderSettingsModal: React.FC<AIProviderSettingsModalProps> = (
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="px-4 h-10 rounded-xl bg-[var(--accent)] hover:brightness-110 active:brightness-95 text-white text-[12px] font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                  className="px-4 h-10 rounded-xl bg-[var(--accent)] hover:brightness-110 active:brightness-95 text-white text-[12px] font-semibold flex items-center gap-1.5 transition-[background-color,filter,opacity] shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   {isSaving ? (
                     <>
@@ -565,7 +565,7 @@ export const AIProviderSettingsModal: React.FC<AIProviderSettingsModalProps> = (
                   return (
                     <div
                       key={provider.id}
-                      className={`p-3.5 rounded-xl border transition-all ${isPreferred
+                      className={`p-3.5 rounded-xl border transition-[background-color,border-color] ${isPreferred
                         ? 'border-[var(--accent)]/60 bg-blue-50/20 dark:bg-blue-950/20'
                         : 'border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700'
                         }`}

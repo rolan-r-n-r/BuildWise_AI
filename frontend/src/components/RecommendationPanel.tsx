@@ -242,7 +242,7 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveIntelTab('structural')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                  className={`px-2.5 py-1 rounded-md font-medium transition-[color,background-color,box-shadow] ${
                     activeIntelTab === 'structural'
                       ? 'bg-[var(--card-bg)] text-[var(--text-1)] shadow-sm'
                       : 'text-[var(--text-3)] hover:text-[var(--text-2)]'
@@ -253,7 +253,7 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveIntelTab('hazards')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                  className={`px-2.5 py-1 rounded-md font-medium transition-[color,background-color,box-shadow] ${
                     activeIntelTab === 'hazards'
                       ? 'bg-[var(--card-bg)] text-[var(--text-1)] shadow-sm'
                       : 'text-[var(--text-3)] hover:text-[var(--text-2)]'
@@ -264,7 +264,7 @@ export const RecommendationPanel: React.FC<RecommendationPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveIntelTab('financial')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                  className={`px-2.5 py-1 rounded-md font-medium transition-[color,background-color,box-shadow] ${
                     activeIntelTab === 'financial'
                       ? 'bg-[var(--card-bg)] text-[var(--text-1)] shadow-sm'
                       : 'text-[var(--text-3)] hover:text-[var(--text-2)]'
