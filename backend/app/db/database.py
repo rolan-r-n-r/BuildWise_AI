@@ -1,6 +1,8 @@
 import os
+import queue
 import re
 import sqlite3
+import threading
 import urllib.parse
 from contextlib import contextmanager
 from typing import Any, Generator, Optional
@@ -89,6 +91,7 @@ CREATE TABLE IF NOT EXISTS projects (
 
 CREATE INDEX IF NOT EXISTS idx_projects_created_at ON projects(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_projects_bookmarked ON projects(is_bookmarked);
+CREATE INDEX IF NOT EXISTS idx_projects_user_sort ON projects(user_id, is_bookmarked DESC, updated_at DESC);
 
 -- Bring Your Own Key (BYOK) Hybrid AI Architecture Tables
 CREATE TABLE IF NOT EXISTS user_ai_credentials (
@@ -206,6 +209,7 @@ CREATE TABLE IF NOT EXISTS public.projects (
 CREATE INDEX IF NOT EXISTS idx_projects_created_at ON public.projects(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_projects_bookmarked ON public.projects(is_bookmarked);
 CREATE INDEX IF NOT EXISTS idx_projects_user_id ON public.projects(user_id);
+CREATE INDEX IF NOT EXISTS idx_projects_user_sort ON public.projects(user_id, is_bookmarked DESC, updated_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_user_name_unique ON public.projects(user_id, LOWER(TRIM(name)));
 
 -- Bring Your Own Key (BYOK) Hybrid AI Architecture Tables
@@ -434,6 +438,99 @@ def _parse_pg_conninfo(db_url: str) -> dict:
     return psycopg.conninfo.conninfo_to_dict(url)
 
 
+class _PgPool:
+    """Thread-safe connection pool for PostgreSQL/Supabase on Render Free Tier."""
+
+    def __init__(self, max_size: int = 5, connect_timeout: int = 10):
+        self.max_size = max_size
+        self.connect_timeout = connect_timeout
+        self._pool: queue.Queue = queue.Queue(maxsize=max_size)
+        self._lock = threading.Lock()
+        self._current_size = 0
+
+    def get_connection(self, conninfo: dict) -> Any:
+        import psycopg
+        # Try getting an idle connection from the pool without blocking
+        try:
+            raw_conn = self._pool.get_nowait()
+            if not getattr(raw_conn, "closed", True):
+                return raw_conn
+            else:
+                with self._lock:
+                    self._current_size = max(0, self._current_size - 1)
+        except queue.Empty:
+            pass
+
+        # If pool has capacity, open a new connection
+        with self._lock:
+            can_open = self._current_size < self.max_size
+            if can_open:
+                self._current_size += 1
+
+        if can_open:
+            try:
+                raw_conn = psycopg.connect(**conninfo, autocommit=False)
+                return raw_conn
+            except Exception:
+                with self._lock:
+                    self._current_size = max(0, self._current_size - 1)
+                raise
+
+        # Pool is at max size, wait up to connect_timeout for a released connection
+        try:
+            raw_conn = self._pool.get(timeout=self.connect_timeout)
+            if not getattr(raw_conn, "closed", True):
+                return raw_conn
+            else:
+                with self._lock:
+                    self._current_size = max(0, self._current_size - 1)
+                raw_conn = psycopg.connect(**conninfo, autocommit=False)
+                with self._lock:
+                    self._current_size += 1
+                return raw_conn
+        except queue.Empty:
+            # Fallback if pool waiting timed out
+            raw_conn = psycopg.connect(**conninfo, autocommit=False)
+            return raw_conn
+
+    def release_connection(self, raw_conn: Any):
+        if raw_conn is None:
+            return
+        if getattr(raw_conn, "closed", True):
+            with self._lock:
+                self._current_size = max(0, self._current_size - 1)
+            return
+        try:
+            raw_conn.rollback()
+            self._pool.put_nowait(raw_conn)
+        except (queue.Full, Exception):
+            try:
+                raw_conn.close()
+            except Exception:
+                pass
+            with self._lock:
+                self._current_size = max(0, self._current_size - 1)
+
+    def close_all(self):
+        with self._lock:
+            while not self._pool.empty():
+                try:
+                    conn = self._pool.get_nowait()
+                    if not getattr(conn, "closed", True):
+                        conn.close()
+                except Exception:
+                    pass
+            self._current_size = 0
+
+
+_pg_pool = _PgPool(max_size=5, connect_timeout=10)
+
+
+def close_pg_pool():
+    """Close all idle PostgreSQL connections in the pool on shutdown."""
+    _pg_pool.close_all()
+
+
 @contextmanager
 def get_connection(db_path: Optional[str] = None) -> Generator[Any, None, None]:
     """Yield a configured database connection (SQLite by default, or PostgreSQL if DATABASE_URL is set)."""
@@ -471,12 +568,12 @@ def get_connection(db_path: Optional[str] = None) -> Generator[Any, None, None]:
         if "connect_timeout" not in conninfo:
             conninfo["connect_timeout"] = 10
 
-        raw_conn = psycopg.connect(**conninfo, autocommit=False)
+        raw_conn = _pg_pool.get_connection(conninfo)
         wrapper = PgConnectionWrapper(raw_conn)
         try:
             yield wrapper
         finally:
-            wrapper.close()
+            _pg_pool.release_connection(raw_conn)
 
 
 def get_db() -> Generator[Any, None, None]:
@@ -503,6 +600,9 @@ def init_db(db_path: Optional[str] = None) -> None:
 
             # Ensure index on user_id exists
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);")
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_projects_user_sort ON projects(user_id, is_bookmarked DESC, updated_at DESC);"
+            )
 
             # Drop old global name uniqueness index if present, transitioning to per-user name uniqueness
             cursor.execute("DROP INDEX IF EXISTS idx_projects_name_unique;")
