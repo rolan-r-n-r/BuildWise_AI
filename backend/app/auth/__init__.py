@@ -4,6 +4,7 @@ from app.auth.dependencies import (
     get_optional_current_user,
     verify_session_token,
     extract_token_from_request,
+    invalidate_session_cache,
 )
 from app.auth.routes import router as auth_router
 
@@ -13,5 +14,6 @@ __all__ = [
     "get_optional_current_user",
     "verify_session_token",
     "extract_token_from_request",
+    "invalidate_session_cache",
     "auth_router",
 ]

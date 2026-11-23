@@ -1,4 +1,6 @@
 import logging
+import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import unquote
@@ -7,6 +9,45 @@ from app.auth.models import AuthenticatedUser
 from app.db.database import get_connection
 
 logger = logging.getLogger("buildwise.auth")
+
+# Bounded thread-safe in-memory cache for verified sessions: token -> (timestamp, AuthenticatedUser)
+_SESSION_CACHE: "OrderedDict[str, tuple[float, AuthenticatedUser]]" = OrderedDict()
+_SESSION_CACHE_LOCK = threading.Lock()
+SESSION_CACHE_TTL_SECONDS = 30.0
+SESSION_CACHE_MAX_ENTRIES = 512
+
+
+def invalidate_session_cache(token: Optional[str] = None) -> None:
+    """Invalidate one or all cached session records on sign-out, password reset, or revocation."""
+    with _SESSION_CACHE_LOCK:
+        if token:
+            _SESSION_CACHE.pop(token.strip(), None)
+        else:
+            _SESSION_CACHE.clear()
+
+
+def _get_cached_session(token: str) -> Optional[AuthenticatedUser]:
+    now = datetime.now(timezone.utc).timestamp()
+    with _SESSION_CACHE_LOCK:
+        entry = _SESSION_CACHE.get(token)
+        if entry is None:
+            return None
+        cached_time, user = entry
+        if now - cached_time < SESSION_CACHE_TTL_SECONDS:
+            _SESSION_CACHE.move_to_end(token)
+            return user
+        else:
+            _SESSION_CACHE.pop(token, None)
+            return None
+
+
+def _put_cached_session(token: str, user: AuthenticatedUser) -> None:
+    now = datetime.now(timezone.utc).timestamp()
+    with _SESSION_CACHE_LOCK:
+        _SESSION_CACHE[token] = (now, user)
+        _SESSION_CACHE.move_to_end(token)
+        while len(_SESSION_CACHE) > SESSION_CACHE_MAX_ENTRIES:
+            _SESSION_CACHE.popitem(last=False)
 
 
 def extract_token_from_request(
@@ -58,11 +99,17 @@ def _parse_iso_datetime(val: str) -> Optional[datetime]:
 
 
 def verify_session_token(token: str, db_path: Optional[str] = None) -> Optional[AuthenticatedUser]:
-    """Look up active session and user in SQLite and verify validity."""
+    """Look up active session and user in SQLite/PostgreSQL and verify validity with caching."""
     if not token or not token.strip():
         return None
 
     clean_token = token.strip()
+    # In production/default runtime, serve verified sessions from short-lived bounded cache
+    if db_path is None:
+        cached_user = _get_cached_session(clean_token)
+        if cached_user is not None:
+            return cached_user
+
     with get_connection(db_path) as conn:
         cursor = conn.execute(
             """
@@ -94,7 +141,7 @@ def verify_session_token(token: str, db_path: Optional[str] = None) -> Optional[
                 logger.info(f"Session {row['session_id']} expired at {row['expires_at']}.")
                 return None
 
-        return AuthenticatedUser(
+        user = AuthenticatedUser(
             id=row["user_id"],
             name=row["user_name"],
             email=row["user_email"],
@@ -103,6 +150,9 @@ def verify_session_token(token: str, db_path: Optional[str] = None) -> Optional[
             session_id=row["session_id"],
             token=row["session_token"],
         )
+        if db_path is None:
+            _put_cached_session(clean_token, user)
+        return user
 
 
 async def get_current_user(

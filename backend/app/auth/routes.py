@@ -516,6 +516,8 @@ def sign_out(
         cursor = db.cursor()
         cursor.execute("DELETE FROM session WHERE token = ?", (token,))
         db.commit()
+        from app.auth.dependencies import invalidate_session_cache
+        invalidate_session_cache(token)
 
     _clear_session_cookie(response)
     logger.info("[Auth] User signed out cleanly.")
@@ -892,6 +894,9 @@ def reset_password(
     # Invalidate used verification OTP
     cursor.execute("DELETE FROM verification WHERE id = ?", (verif_id,))
     db.commit()
+
+    from app.auth.dependencies import invalidate_session_cache
+    invalidate_session_cache()
 
     logger.info("[Auth] Password successfully reset for: %s. All previous sessions revoked.", _mask_email(email_clean))
     return {"success": True}
