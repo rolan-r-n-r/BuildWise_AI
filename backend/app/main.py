@@ -1,9 +1,12 @@
 import asyncio
+import hashlib
+import json
 import math
 import uuid
 import time
 import logging
-from collections import defaultdict
+import threading
+from collections import defaultdict, OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Request, Query, Depends
@@ -11,7 +14,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, ValidationError
 
 from app.config import settings
@@ -96,6 +99,11 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         logger.info("Shutting down BuildWise backend cleanly.")
+        try:
+            from app.db import close_pg_pool
+            close_pg_pool()
+        except Exception as pool_err:
+            logger.warning(f"Error closing PostgreSQL connection pool: {pool_err}")
 
 
 app = FastAPI(
@@ -149,7 +157,12 @@ async def global_exception_handler(request: Request, exc: Exception):
 if settings.is_production:
     ALLOWED_ORIGINS = [o for o in settings.CORS_ORIGINS if o and o != "*"]
 else:
-    ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    ALLOWED_ORIGINS = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ]
     for origin in settings.CORS_ORIGINS:
         if origin and origin != "*" and origin not in ALLOWED_ORIGINS:
             ALLOWED_ORIGINS.append(origin)
@@ -360,6 +373,7 @@ async def api_status(
 async def health_check():
     """
     Returns system status, active version, and AI provider availability.
+    Lightweight liveness probe that avoids database or external network I/O.
     """
     return HealthResponse(
         status="healthy",
@@ -367,6 +381,29 @@ async def health_check():
         ai_adapters_available=["mock", "groq", "gemini", "openai", "anthropic", "ollama"],
         active_default_ai=settings.DEFAULT_AI_PROVIDER
     )
+
+
+@app.get("/ready")
+@app.get("/api/ready")
+async def readiness_check():
+    """
+    Readiness probe: validates database connectivity with a bounded 2-second timeout.
+    Used by orchestrators to confirm the backend is ready to accept client traffic.
+    """
+    from app.db.database import get_connection
+    try:
+        def _db_ping():
+            with get_connection() as conn:
+                cursor = conn.execute("SELECT 1")
+                cursor.fetchone()
+        await asyncio.wait_for(asyncio.to_thread(_db_ping), timeout=2.0)
+        return {"status": "ready", "database": "connected"}
+    except Exception as exc:
+        logger.warning(f"Readiness check failed: {exc}")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "database": "unreachable", "detail": "Database is not currently reachable."},
+        )
 
 @app.get("/api/geocode")
 async def geocode_endpoint(q: str = Query(..., min_length=1, description="Free-text location search query")):
@@ -971,6 +1008,24 @@ async def site_vision_analysis(req: SiteVisionRequest):
 
 _BLUEPRINT_SEMAPHORE = asyncio.Semaphore(1)
 
+# In-flight deduplication and short-lived caching for generative floorplans
+_FLOORPLAN_CACHE: "OrderedDict[str, Tuple[float, Any]]" = OrderedDict()
+_FLOORPLAN_CACHE_LOCK = threading.Lock()
+_FLOORPLAN_CACHE_TTL = 300.0  # 5 minutes
+_FLOORPLAN_CACHE_MAX = 32
+
+_IN_FLIGHT_FLOORPLANS: Dict[str, asyncio.Future] = {}
+_IN_FLIGHT_LOCK = asyncio.Lock()
+
+
+def _compute_floorplan_fingerprint(req: FloorPlanRequest) -> str:
+    # Serialize all input parameters into a canonical sorted JSON dictionary
+    data = req.model_dump(mode="json", exclude={"bypass_cache"})
+    if isinstance(data.get("required_rooms"), list):
+        data["required_rooms"] = sorted(data["required_rooms"])
+    raw = json.dumps(data, sort_keys=True, ensure_ascii=True, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
 
 def _get_rss_mb() -> float:
     try:
@@ -1006,6 +1061,36 @@ async def create_generative_floorplan(
         f"area_sqft={req.built_up_area_sqft}, rooms={len(req.required_rooms or [])}, "
         f"provider={req.ai_provider or 'default'} (rss={_get_rss_mb()}MB)"
     )
+
+    fingerprint = _compute_floorplan_fingerprint(req) if format != "pdf" else None
+    bypass = bool(req.bypass_cache) or (format == "pdf")
+    leader_future: Optional[asyncio.Future] = None
+
+    if not bypass and fingerprint:
+        now = time.time()
+        with _FLOORPLAN_CACHE_LOCK:
+            cached_entry = _FLOORPLAN_CACHE.get(fingerprint)
+            if cached_entry is not None:
+                cached_time, cached_resp = cached_entry
+                if now - cached_time < _FLOORPLAN_CACHE_TTL:
+                    _FLOORPLAN_CACHE.move_to_end(fingerprint)
+                    logger.info(f"[BLUEPRINT][{req_id}] Cache hit: returning cached blueprint (fingerprint={fingerprint[:8]})")
+                    return cached_resp
+                else:
+                    _FLOORPLAN_CACHE.pop(fingerprint, None)
+
+        async with _IN_FLIGHT_LOCK:
+            if fingerprint in _IN_FLIGHT_FLOORPLANS:
+                logger.info(f"[BLUEPRINT][{req_id}] Coalescing with in-flight generation task (fingerprint={fingerprint[:8]})")
+                existing_future = _IN_FLIGHT_FLOORPLANS[fingerprint]
+            else:
+                existing_future = None
+                loop = asyncio.get_running_loop()
+                leader_future = loop.create_future()
+                _IN_FLIGHT_FLOORPLANS[fingerprint] = leader_future
+
+        if existing_future is not None:
+            return await asyncio.shield(existing_future)
 
     try:
         stage = "validation"
@@ -1203,13 +1288,14 @@ async def create_generative_floorplan(
 
         await asyncio.sleep(0)  # Yield execution slice to event loop for /health checks
         try:
-            async with _BLUEPRINT_SEMAPHORE:
-                from app.services.floorplan.strategy_escalation import solve_with_escalation
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(solve_with_escalation, req),
-                    timeout=35.0,
-                )
-        except asyncio.TimeoutError:
+            async with asyncio.timeout(45.0):
+                async with _BLUEPRINT_SEMAPHORE:
+                    from app.services.floorplan.strategy_escalation import solve_with_escalation
+                    response = await asyncio.wait_for(
+                        asyncio.to_thread(solve_with_escalation, req),
+                        timeout=35.0,
+                    )
+        except (asyncio.TimeoutError, TimeoutError):
             duration_s = time.perf_counter() - t_solve_start
             logger.error(f"[BLUEPRINT][{req_id}] Geometry calculations timed out after {duration_s:.1f}s (rss={_get_rss_mb()}MB)")
             raise HTTPException(
@@ -1290,18 +1376,45 @@ async def create_generative_floorplan(
                 },
             )
 
+        # Cache result and resolve leader future for coalesced requests
+        if fingerprint and not bypass:
+            with _FLOORPLAN_CACHE_LOCK:
+                _FLOORPLAN_CACHE[fingerprint] = (time.time(), response)
+                _FLOORPLAN_CACHE.move_to_end(fingerprint)
+                while len(_FLOORPLAN_CACHE) > _FLOORPLAN_CACHE_MAX:
+                    _FLOORPLAN_CACHE.popitem(last=False)
+            async with _IN_FLIGHT_LOCK:
+                f = _IN_FLIGHT_FLOORPLANS.pop(fingerprint, None)
+                if f is not None and not f.done():
+                    f.set_result(response)
+
         total_duration_ms = (time.perf_counter() - t0) * 1000
         logger.info(f"[BLUEPRINT][{req_id}] Response successfully returned: total_duration={total_duration_ms:.1f}ms (rss={_get_rss_mb()}MB)")
         return response
-    except HTTPException:
+    except HTTPException as e:
+        if fingerprint:
+            async with _IN_FLIGHT_LOCK:
+                f = _IN_FLIGHT_FLOORPLANS.pop(fingerprint, None)
+                if f is not None and not f.done():
+                    f.set_exception(e)
         raise
     except DesignInfeasibleError as e:
+        if fingerprint:
+            async with _IN_FLIGHT_LOCK:
+                f = _IN_FLIGHT_FLOORPLANS.pop(fingerprint, None)
+                if f is not None and not f.done():
+                    f.set_exception(e)
         logger.warning(f"[BLUEPRINT][{req_id}] Design infeasible at stage '{stage}': [{e.code}] {e.reason}")
         raise HTTPException(
             status_code=422,
             detail=f"Floor plan design infeasible [{e.code}]: {e.reason}",
         )
     except ValueError as e:
+        if fingerprint:
+            async with _IN_FLIGHT_LOCK:
+                f = _IN_FLIGHT_FLOORPLANS.pop(fingerprint, None)
+                if f is not None and not f.done():
+                    f.set_exception(e)
         msg = str(e)
         logger.warning(f"[BLUEPRINT][{req_id}] Constraint/validation error at stage '{stage}': {msg}")
         if "Hard Constraint Violation" in msg or "RULE-FP-" in msg:
@@ -1309,6 +1422,11 @@ async def create_generative_floorplan(
         logger.exception(f"[BLUEPRINT][{req_id}] Floor plan generation invalid value error at stage '{stage}'")
         raise HTTPException(status_code=500, detail="An internal error occurred during floor plan generation.")
     except Exception as e:
+        if fingerprint:
+            async with _IN_FLIGHT_LOCK:
+                f = _IN_FLIGHT_FLOORPLANS.pop(fingerprint, None)
+                if f is not None and not f.done():
+                    f.set_exception(e)
         logger.exception(f"[BLUEPRINT][{req_id}] Floor plan generation unexpected error at stage '{stage}': {e}")
         raise HTTPException(status_code=500, detail="An internal error occurred during floor plan generation.")
 
