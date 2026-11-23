@@ -6,7 +6,7 @@
     "off-scale-duration": 1
   },
   "src/components/BlueprintViewer.tsx": {
-    "hex-color": 56,
+    "hex-color": 50,
     "arbitrary-shadow": 9
   },
   "src/components/CoordinatesInput.tsx": {
@@ -16,7 +16,7 @@
     "off-scale-duration": 1
   },
   "src/components/MapCanvas.tsx": {
-    "hex-color": 24
+    "hex-color": 20
   },
   "src/components/MapStyleSelector.tsx": {
     "hex-color": 21
@@ -29,9 +29,6 @@
   },
   "src/landing/Hero.tsx": {
     "hex-color": 2
-  },
-  "src/landing/LandingPage.tsx": {
-    "hex-color": 1
   },
   "src/landing/theme.ts": {
     "hex-color": 10

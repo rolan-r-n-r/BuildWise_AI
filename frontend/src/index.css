@@ -4,15 +4,15 @@
 
 :root,
 [data-theme="light"] {
-  --panel: rgba(255, 255, 255, 0.72);
-  --panel-border-color: rgba(255, 255, 255, 0.6);
+  --panel: rgba(255, 255, 255, 0.75);
+  --panel-border-color: rgba(255, 255, 255, 0.65);
   --panel-border: 1px solid var(--panel-border-color);
   /* Near-opaque float surface for chips/pills read over a busy basemap.
      0.96 keeps 11px muted ink at >= 4.5:1 even over the darkest map tiles. */
   --surface-overlay: rgba(255, 255, 255, 0.96);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 32px rgba(0, 0, 0, 0.12);
+  --shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 32px rgba(0, 0, 0, 0.08);
   /* Hover-elevation shadow (card grammar); one step above --shadow. */
-  --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.05), 0 18px 44px rgba(0, 0, 0, 0.16);
+  --shadow-lift: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 4px rgba(0, 0, 0, 0.05), 0 18px 44px rgba(0, 0, 0, 0.14);
   --fill: rgba(120, 120, 128, 0.12);
   --fill-hover: rgba(120, 120, 128, 0.18);
   --fill-active: rgba(120, 120, 128, 0.24);
@@ -84,13 +84,13 @@
 }
 
 [data-theme="dark"] {
-  --panel: rgba(28, 28, 30, 0.68);
-  --panel-border-color: rgba(255, 255, 255, 0.08);
+  --panel: rgba(28, 28, 30, 0.72);
+  --panel-border-color: rgba(255, 255, 255, 0.12);
   --panel-border: 1px solid var(--panel-border-color);
   /* Near-opaque float surface for chips/pills read over a busy basemap */
   --surface-overlay: rgba(28, 28, 30, 0.94);
-  --shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-  --shadow-lift: 0 18px 44px rgba(0, 0, 0, 0.62);
+  --shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-lift: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 4px rgba(0, 0, 0, 0.45), 0 18px 44px rgba(0, 0, 0, 0.65);
   --fill: rgba(120, 120, 128, 0.24);
   --fill-hover: rgba(120, 120, 128, 0.32);
   --fill-active: rgba(120, 120, 128, 0.40);
@@ -229,6 +229,11 @@
    Keeping the declaration here preserves the token as the single source. */
 .bw-segmented-active-shadow {
   box-shadow: var(--segmented-active-shadow);
+}
+
+/* Glass dialog surface shadow, backed directly by the token variable --shadow */
+.bw-glass-dialog {
+  box-shadow: var(--shadow);
 }
 
 /* The well the active pill sits in. Token-backed so new controls never add an
