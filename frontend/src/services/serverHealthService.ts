@@ -117,18 +117,20 @@ export async function checkBackendHealth(options?: {
 /**
  * Triggers server wake-up.
  * Target URL priority:
- *   1. VITE_WAKEUP_URL (e.g. AWS API Gateway + Lambda for EC2 instances)
+ *   1. VITE_WAKEUP_URL (e.g. custom proxy or cloud gateway)
  *   2. ${VITE_API_URL}/api/wake-up (Render Free Tier or continuous backend)
+ *
+ * Uses a lightweight GET request first to avoid browser CORS preflight OPTIONS
+ * round-trips while Render is cold-starting.
  */
 export async function triggerServerWakeUp(options?: {
   authToken?: string;
 }): Promise<WakeUpResult> {
   const targetUrl = env.VITE_WAKEUP_URL || `${env.VITE_API_URL}/api/wake-up`;
   const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => controller.abort(), 10000);
+  let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => controller.abort(), 8000);
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     Accept: 'application/json',
   };
   if (options?.authToken) {
@@ -136,8 +138,9 @@ export async function triggerServerWakeUp(options?: {
   }
 
   try {
+    // 1. Prefer GET probe: simple CORS request that does NOT trigger an OPTIONS preflight!
     const resp = await fetch(targetUrl, {
-      method: 'POST',
+      method: 'GET',
       headers,
       signal: controller.signal,
       cache: 'no-store',
@@ -153,34 +156,41 @@ export async function triggerServerWakeUp(options?: {
       };
     }
 
-    // In case target only accepts GET
+    // 2. Fall back to POST if the endpoint specifically requires it (e.g. custom webhooks)
     if (resp.status === 405) {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => controller.abort(), 10000);
-      const getResp = await fetch(targetUrl, {
-        method: 'GET',
-        headers: options?.authToken ? { 'X-Wakeup-Token': options.authToken } : undefined,
-        signal: controller.signal,
-        cache: 'no-store',
-      });
-      if (timer) clearTimeout(timer);
-      if (getResp.ok) {
-        return {
-          triggered: true,
-          message: 'Server wake-up initiated successfully.',
-        };
+      const postController = new AbortController();
+      const postTimer = setTimeout(() => postController.abort(), 8000);
+      try {
+        const postResp = await fetch(targetUrl, {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          signal: postController.signal,
+          cache: 'no-store',
+        });
+        clearTimeout(postTimer);
+        if (postResp.ok) {
+          const postData = await postResp.json().catch(() => ({}));
+          return {
+            triggered: true,
+            message: postData.message || 'Server wake-up initiated successfully.',
+            state: postData.state,
+          };
+        }
+      } catch {
+        clearTimeout(postTimer);
       }
     }
 
     if (timer) clearTimeout(timer);
     return {
-      triggered: true, // Request reached network layer and triggered cold start
+      triggered: true,
       message: 'Wake-up request transmitted.',
     };
   } catch {
     if (timer) clearTimeout(timer);
-    // On free platforms like Render, even an aborted initial HTTP connection or CORS timeout
-    // wakes up the sleeping container!
+    // On free platforms like Render, even an in-flight or queued HTTP connection
+    // immediately activates container spin-up.
     return {
       triggered: true,
       message: 'Wake-up packet dispatched to backend host.',
