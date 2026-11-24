@@ -315,7 +315,7 @@ def check_proxy_rate_limit(client_ip: str):
 
 # Sliding-window rate limit for wake-up requests: protects cold-start wake triggers from spam
 WAKEUP_RATE_LIMIT_WINDOW_SEC = 60.0
-WAKEUP_RATE_LIMIT_MAX_REQUESTS = 15
+WAKEUP_RATE_LIMIT_MAX_REQUESTS = 45
 _wakeup_request_history = defaultdict(list)
 
 def check_wakeup_rate_limit(client_ip: str):
