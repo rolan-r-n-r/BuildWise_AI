@@ -1,47 +1,81 @@
 /**
  * CtaBand.tsx — the closing band (#blueprint) plus the site footer.
- *
- * Left: heading and CTAs. Right: the printable dossier the platform produces,
- * presented as a second macOS window so the page's two artefacts share one
- * language — the app you use, and the document it hands you.
- *
- * The window body is opaque and unblurred on purpose. This card scrolls over
- * the fixed porcelain backdrop, where a backdrop-filter is imperceptible while
- * still re-blurring its own area on every frame of the scroll.
- *
- * The footer is a real footer: the standards the product implements and the
- * sources it consumes, each in its own column, above a baseline row. It
- * SUMMARISES the #standards section that now sits mid-page — the detail lives
- * there, and both "Standards" doorways (the nav link and this band's secondary
- * button) travel to it rather than to the footer that sits directly beneath
- * this band.
- *
- * The three columns are DERIVED from landing/standards.ts, the same module the
- * sheet renders from: labels and names, no roles and no credit lines. Those
- * lists used to be typed out here as well, in a different vocabulary from the
- * sheet's — "IS 1893 seismic zones" against "IS 1893 (Part 1): 2016", and an
- * imagery column that credited three providers the sheet had merged into one
- * row. A footer is where people look for the licence line, so it is the last
- * place that should be able to disagree with the section it summarises.
+ * Presents an interactive Feasibility Dossier preview inside macOS window chrome,
+ * alongside the primary CTA and provenance-derived footer columns.
  */
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { motion, useReducedMotion, useTransform } from 'framer-motion';
-import { EASE_APPLE, fadeRise, staggerParent, timed, SETTLE_VIEWPORT } from './motion';
+import { fadeRise, staggerParent, timed, SETTLE_VIEWPORT } from './motion';
 import { useEntryProgress } from './scrollLink';
 import { APP_PATH, SIGN_IN_PATH, SIGN_UP_PATH, FORGOT_PASSWORD_PATH, navigate } from './router';
 import { scrollToId } from './scroll';
 import { Icon } from '../components/Icon';
+import type { IconName } from '../components/Icon';
 import { SectionHeading } from './SectionHeading';
 import { GROUP_LABELS, GROUP_ORDER, sourcesIn } from './standards';
 import { WindowBar } from './WindowBar';
 import { LANDING } from './theme';
 import { LOGO_SRC, LOGO_SRCSET, LOGO_WHITE_SRC, LOGO_WHITE_SRCSET } from './logo';
+import { CountUp } from './CountUp';
 
-const DOSSIER_ROWS: ReadonlyArray<{ label: string; meta: string }> = [
-  { label: 'Executive scorecard', meta: 'MCDA' },
-  { label: 'Risk matrix', meta: 'IS 1893' },
-  { label: 'Cost benchmark', meta: 'CPWD DSR' },
-  { label: 'Vector blueprint', meta: '174 mm' },
+interface DossierRow {
+  id: string;
+  label: string;
+  meta: string;
+  icon: IconName;
+  summary: string;
+  metrics: ReadonlyArray<{ k: string; v: string }>;
+}
+
+const DOSSIER_ROWS: ReadonlyArray<DossierRow> = [
+  {
+    id: 'scorecard',
+    label: 'Executive scorecard',
+    meta: 'MCDA',
+    icon: 'mountain',
+    summary: 'Multi-criteria land suitability across slope, elevation, land use, and drainage.',
+    metrics: [
+      { k: 'Suitability', v: '87 / 100' },
+      { k: 'Plot Area', v: '317.8 m²' },
+      { k: 'Buildable', v: '191.5 m²' },
+    ],
+  },
+  {
+    id: 'risk',
+    label: 'Risk matrix',
+    meta: 'IS 1893',
+    icon: 'activity',
+    summary: 'Codified seismic zone factor paired with historical precipitation and river-discharge telemetry.',
+    metrics: [
+      { k: 'Seismic Zone', v: 'Zone II' },
+      { k: 'Design PGA', v: '0.10 g' },
+      { k: 'Flood Horizon', v: '100-yr' },
+    ],
+  },
+  {
+    id: 'cost',
+    label: 'Cost benchmark',
+    meta: 'CPWD DSR',
+    icon: 'currency-rupee',
+    summary: 'Elemental schedule across structural frame, masonry finishes, and MEP services.',
+    metrics: [
+      { k: 'Rate Basis', v: 'DSR 2023' },
+      { k: 'Benchmark', v: '₹2,450 / sq.ft' },
+      { k: 'Schedule', v: 'Elemental' },
+    ],
+  },
+  {
+    id: 'blueprint',
+    label: 'Vector blueprint',
+    meta: '174 mm',
+    icon: 'blueprint',
+    summary: 'Dimensioned G+1 floorplan solved by slicing-tree CSP with topological invariants.',
+    metrics: [
+      { k: 'Sheet Plate', v: '174 mm PDF' },
+      { k: 'Footprint', v: '13.5 × 9.0 m' },
+      { k: 'Rule Layers', v: '11 / 15 Pass' },
+    ],
+  },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -50,22 +84,39 @@ const DOSSIER_ROWS: ReadonlyArray<{ label: string; meta: string }> = [
 
 export const CtaBand: React.FC = () => {
   const reduced = useReducedMotion();
+  const [selectedRowId, setSelectedRowId] = useState<string>('scorecard');
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const activeRow = DOSSIER_ROWS.find((r) => r.id === selectedRowId) ?? DOSSIER_ROWS[0];
 
-  /* The dossier window's own entry band. It settles from +18px to -8px as the
-     section crosses the reading position, i.e. the artefact keeps rising a
-     little after the copy beside it has stopped. Transform-only. */
+  const onTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex = -1;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+      nextIndex = (index + 1) % DOSSIER_ROWS.length;
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+      nextIndex = (index - 1 + DOSSIER_ROWS.length) % DOSSIER_ROWS.length;
+    } else if (e.key === 'Home') {
+      nextIndex = 0;
+    } else if (e.key === 'End') {
+      nextIndex = DOSSIER_ROWS.length - 1;
+    }
+    if (nextIndex < 0) return;
+    e.preventDefault();
+    setSelectedRowId(DOSSIER_ROWS[nextIndex].id);
+    tabRefs.current[nextIndex]?.focus();
+  };
+
   const windowRef = useRef<HTMLDivElement>(null);
   const entry = useEntryProgress(windowRef);
   const windowY = useTransform(entry, [0, 1], [18, -8]);
 
   return (
-    <section id="blueprint" aria-label="Print-ready output" className="relative scroll-mt-24 pb-28 pt-4 sm:pb-32">
+    <section id="blueprint" aria-label="Print-ready output" className="relative scroll-mt-24 pb-12 pt-4 md:pb-20 md:pt-6 lg:pb-28">
       <motion.div
         variants={staggerParent(0.08)}
         initial="hidden"
         whileInView="show"
         viewport={SETTLE_VIEWPORT}
-        className="mx-auto grid max-w-7xl items-center gap-12 px-6 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:px-10"
+        className="mx-auto grid max-w-7xl items-center gap-8 md:gap-12 px-4 sm:px-6 lg:grid-cols-[1.02fr_0.98fr] lg:gap-16 lg:px-10"
       >
         <div>
           <SectionHeading
@@ -78,7 +129,7 @@ export const CtaBand: React.FC = () => {
             <button
               type="button"
               onClick={() => navigate(APP_PATH)}
-              className="group inline-flex h-12 items-center gap-2 rounded-full bg-bw-cta px-6 text-[15px] font-semibold text-bw-cta-ink transition-[background-color,transform] duration-200 hover:bg-bw-cta-hover active:scale-[0.98]"
+              className="group inline-flex h-12 items-center gap-2 rounded-full bg-bw-cta px-6 text-[15px] font-semibold text-bw-cta-ink transition-[background-color,transform] duration-200 hover:bg-bw-cta-hover active:scale-[0.98] cursor-pointer"
               style={{ boxShadow: LANDING.shadow.dark }}
             >
               Open the app
@@ -89,93 +140,135 @@ export const CtaBand: React.FC = () => {
                 <Icon name="chevron-right" size={15} />
               </span>
             </button>
-            {/* This button used to target the footer — which, from here, is
-                already on screen: measured, it moved the page 121px and read as
-                broken. It points at the #standards section instead, which is
-                the content its label names and is far enough away to be an
-                actual journey. */}
             <button
               type="button"
               onClick={() => scrollToId('standards')}
-              className="inline-flex h-12 items-center rounded-full border border-bw-line bg-bw-surface px-5 text-[15px] font-semibold text-bw-ink transition-[background-color,border-color,transform] duration-200 hover:bg-bw-line-soft active:scale-[0.98]"
+              className="inline-flex h-12 items-center rounded-full border border-bw-line bg-bw-surface px-5 text-[15px] font-semibold text-bw-ink transition-[background-color,border-color,transform] duration-200 hover:bg-bw-line-soft active:scale-[0.98] cursor-pointer"
             >
               Standards and data
             </button>
           </motion.div>
         </div>
 
-        {/* The dossier, as the window that produces it. The wrapper is the
-            scroll layer: it rides a little faster than the copy beside it, so
-            the row separates in depth. The inner motion.div still owns the
-            one-shot entrance; the two transforms compose. */}
+        {/* The dossier preview inside macOS window chrome */}
         <motion.div ref={windowRef} style={{ y: windowY }}>
           <motion.div
-            /* The transition is stated, not inherited: without one this window
-               animated on framer's default spring while the copy beside it moved
-               on the Apple curve, so the two halves of the row arrived with
-               visibly different weight. */
             variants={
               reduced
-                ? { hidden: { opacity: 0 }, show: { opacity: 1, transition: timed(0.3) } }
-                : { hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: timed(0.7) } }
+                ? { hidden: { opacity: 1 }, show: { opacity: 1, transition: timed(0.3) } }
+                : { hidden: { opacity: 1, y: 16 }, show: { opacity: 1, y: 0, transition: timed(0.55) } }
             }
             className="bw-window"
           >
             <WindowBar
               title="Feasibility Dossier"
-              subtitle="Bengaluru · 2,450 m²"
+              subtitle="Bengaluru · 317.8 m² · GEN-T1-2F"
               toolbar={
                 <span className="bw-window-chip gap-1.5">
-                  <span className="text-[11px] font-bold tabular-nums text-bw-accent">87</span>
-                  <span className="text-[11px] font-semibold uppercase text-bw-ink-3" style={{ letterSpacing: '0.06em' }}>
+                  <span className="text-[11px] font-bold tabular-nums text-bw-accent">
+                    <CountUp value={87} />
+                  </span>
+                  <span className="text-[10.5px] font-semibold uppercase text-bw-ink-3" style={{ letterSpacing: '0.06em' }}>
                     score
                   </span>
                 </span>
               }
             />
 
-            <div className="rounded-b-[14px] bg-bw-porcelain p-3.5">
+            <div className="rounded-b-[14px] bg-bw-porcelain p-3.5 sm:p-4">
               {/* Executive quick indicators */}
-              <div className="grid grid-cols-3 gap-1.5 mb-2.5 text-center text-[10.5px]">
-                <div className="p-1.5 rounded-[7px] bg-bw-surface border border-bw-line-soft">
-                  <span className="text-bw-ink-2 block">NBC 2016</span>
-                  <span className="font-bold text-bw-green-ink">Compliant</span>
+              <div className="grid grid-cols-3 gap-2 mb-3 text-center text-[11px]">
+                <div className="p-2 rounded-[8px] bg-bw-surface border border-bw-line-soft">
+                  <span className="text-bw-ink-2 block text-[10px] uppercase font-mono">NBC 2016</span>
+                  <span className="font-bold text-bw-green-ink mt-0.5 block">Compliant</span>
                 </div>
-                <div className="p-1.5 rounded-[7px] bg-bw-surface border border-bw-line-soft">
-                  <span className="text-bw-ink-2 block">IS 1893</span>
-                  <span className="font-bold text-bw-ink">Zone III</span>
+                <div className="p-2 rounded-[8px] bg-bw-surface border border-bw-line-soft">
+                  <span className="text-bw-ink-2 block text-[10px] uppercase font-mono">IS 1893</span>
+                  <span className="font-bold text-bw-ink mt-0.5 block">Zone II</span>
                 </div>
-                <div className="p-1.5 rounded-[7px] bg-bw-surface border border-bw-line-soft">
-                  <span className="text-bw-ink-2 block">Vastu</span>
-                  <span className="font-bold text-bw-accent">88 / 100</span>
+                <div className="p-2 rounded-[8px] bg-bw-surface border border-bw-line-soft">
+                  <span className="text-bw-ink-2 block text-[10px] uppercase font-mono">Vastu</span>
+                  <span className="font-bold text-bw-accent mt-0.5 block">
+                    <CountUp value={88} /> / 100
+                  </span>
                 </div>
               </div>
 
-              <ul className="flex flex-col gap-1.5">
-                {DOSSIER_ROWS.map((row, i) => (
-                  <motion.li
-                    key={row.label}
-                    initial={{ opacity: 0, x: -8 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true, amount: 0.6 }}
-                    transition={{ duration: 0.45, delay: i * 0.07, ease: EASE_APPLE }}
-                    className="flex items-center justify-between gap-3 rounded-[9px] border border-bw-line-soft bg-bw-surface px-3 py-2"
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-bw-accent-tint text-bw-accent" aria-hidden>
-                        <Icon name="check" size={10} strokeWidth={2.4} />
+              {/* Interactive deliverable sections list */}
+              <div role="tablist" aria-label="Dossier sections" aria-orientation="vertical" className="flex flex-col gap-1.5">
+                {DOSSIER_ROWS.map((row, index) => {
+                  const isSelected = row.id === activeRow.id;
+                  return (
+                    <button
+                      key={row.id}
+                      ref={(el) => {
+                        tabRefs.current[index] = el;
+                      }}
+                      id={`dossier-tab-${row.id}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={isSelected}
+                      aria-controls={`dossier-panel-${row.id}`}
+                      tabIndex={isSelected ? 0 : -1}
+                      onClick={() => setSelectedRowId(row.id)}
+                      onKeyDown={(e) => onTabKeyDown(e, index)}
+                      className={`w-full min-h-11 flex items-center justify-between gap-3 rounded-[9px] border px-3 py-2 text-left transition-colors duration-150 cursor-pointer ${
+                        isSelected
+                          ? 'border-bw-accent bg-bw-surface'
+                          : 'border-bw-line-soft bg-bw-surface/70 hover:bg-bw-surface hover:border-bw-line'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <span
+                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors duration-150 ${
+                            isSelected
+                              ? 'bg-bw-accent text-bw-cta-ink'
+                              : 'bg-bw-accent-tint text-bw-accent'
+                          }`}
+                          aria-hidden
+                        >
+                          <Icon name={isSelected ? 'check' : row.icon} size={12} strokeWidth={2.2} />
+                        </span>
+                        <span className="text-[13px] font-semibold text-bw-ink truncate">{row.label}</span>
                       </span>
-                      <span className="text-[13px] font-semibold text-bw-ink">{row.label}</span>
-                    </span>
-                    <span className="text-[11px] font-semibold uppercase text-bw-ink-2" style={{ letterSpacing: '0.08em' }}>
-                      {row.meta}
-                    </span>
-                  </motion.li>
-                ))}
-              </ul>
-              <p className="mt-3 flex items-center justify-between rounded-[9px] px-1 text-[12px] text-bw-ink-2">
+                      <span
+                        className={`font-mono text-[10.5px] font-semibold uppercase shrink-0 ${
+                          isSelected ? 'text-bw-accent-deep' : 'text-bw-ink-2'
+                        }`}
+                        style={{ letterSpacing: '0.08em' }}
+                      >
+                        {row.meta}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Active Dossier Section Preview Panel */}
+              <div
+                id={`dossier-panel-${activeRow.id}`}
+                role="tabpanel"
+                aria-labelledby={`dossier-tab-${activeRow.id}`}
+                tabIndex={0}
+                className="mt-2.5 rounded-[10px] border border-bw-line-soft bg-bw-surface p-3"
+              >
+                <p className="text-[12px] leading-[1.55] text-bw-ink-2">{activeRow.summary}</p>
+                <dl className="mt-2.5 grid grid-cols-1 xs:grid-cols-3 gap-2.5 border-t border-bw-line-soft pt-2.5">
+                  {activeRow.metrics.map((m) => (
+                    <div key={m.k} className="flex items-baseline justify-between xs:block min-w-0">
+                      <dt className="font-mono text-[9.5px] uppercase text-bw-ink-3">{m.k}</dt>
+                      <dd className="xs:mt-0.5 ui-font-tabular text-[12px] font-semibold text-bw-ink">{m.v}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+
+              <p className="mt-3 flex items-center justify-between gap-2 px-1 text-[12px] text-bw-ink-2">
                 <span>PDF · Vector drawings · Room schedule</span>
-                <span className="font-semibold text-bw-green-ink">Ready to print</span>
+                <span className="inline-flex items-center gap-1.5 font-semibold text-bw-green-ink shrink-0">
+                  <Icon name="printer" size={12} />
+                  <span>Ready to print</span>
+                </span>
               </p>
             </div>
           </motion.div>
@@ -191,8 +284,8 @@ export const CtaBand: React.FC = () => {
 
 export const Footer: React.FC = () => (
   <footer id="footer" className="scroll-mt-24 border-t border-bw-line-soft bg-bw-surface">
-    <div className="mx-auto max-w-7xl px-6 py-14 lg:px-10">
-      <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr_1fr_1fr]">
+    <div className="mx-auto max-w-7xl px-4 py-10 md:py-14 sm:px-6 lg:px-10">
+      <div className="grid gap-8 md:gap-10 md:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr_1fr]">
         <div>
           <div className="flex items-center gap-2.5">
             <img
@@ -216,7 +309,7 @@ export const Footer: React.FC = () => (
             <p className="text-[15px] font-bold text-bw-ink">BuildWise</p>
           </div>
           <p className="mt-3 max-w-sm text-[13px] leading-[1.6] text-bw-ink-2">
-            AI-powered construction planning and blueprint generation platform. From ideas to intelligent building plans, grounded in codified civil standards.
+            AI-powered construction planning and blueprint generation platform. From a map pin to a buildable plan, grounded in codified civil standards.
           </p>
           <button
             type="button"
@@ -268,9 +361,7 @@ export const Footer: React.FC = () => (
           </div>
         </div>
 
-        {/* The index of the #standards sheet: one column per group, in the
-            sheet's own order, showing the names without the roles and credits
-            the sheet renders in full. */}
+        {/* The index of the #standards sheet */}
         {GROUP_ORDER.map((group) => (
           <div key={group}>
             <p className="text-[11px] font-semibold uppercase text-bw-ink-2" style={{ letterSpacing: '0.14em' }}>
@@ -287,7 +378,7 @@ export const Footer: React.FC = () => (
         ))}
       </div>
 
-      <div className="mt-12 flex flex-col gap-3 border-t border-bw-line-soft pt-6 text-[12px] text-bw-ink-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-8 md:mt-12 flex flex-col gap-3 border-t border-bw-line-soft pt-6 text-[12px] text-bw-ink-2 sm:flex-row sm:items-center sm:justify-between">
         <p>© 2026 BuildWise AI · MIT License</p>
         <p>
           Press{' '}

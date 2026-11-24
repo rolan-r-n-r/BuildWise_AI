@@ -1,41 +1,8 @@
 /**
  * StandardsSection.tsx — what the engine implements, and on what data.
- *
- * WHY THIS EXISTS. The nav's "Standards" link pointed at the footer, and the
- * closing band's "Standards and data" button pointed there too — while sitting
- * directly above it. Measured: that button moved the page 67px, because the
- * footer was already on screen. A control that promises a destination and moves
- * the page 67px reads as broken, and the fault was the label: it named a
- * SECTION THE PAGE DID NOT HAVE. This section is that destination — mid-page,
- * so both doorways can actually travel to it — and it carries the two things a
- * technical reader evaluates before believing any of the numbers above:
- * which code the calculations answer to, and whose data feeds them.
- *
- * IT IS THE DETAIL VIEW OF ONE LIST. The rows come from landing/standards.ts,
- * which also feeds the footer's three columns and the hero's spec bar. This file
- * used to hold its own copy of the facts, and the footer held a second: the
- * footer credited "Esri World Imagery / Copernicus Sentinel-2 / OpenTopoMap
- * terrain" while this sheet merged those three into the single row "Esri,
- * Sentinel-2, OpenTopoMap" — under a caption, "Open data", that was wrong for
- * all three of them (see the module's header). The sheet is where the detail
- * belongs, so it renders more per group than the footer does, not different
- * facts.
- *
- * THREE GROUPS, THREE DENSITIES OF THE SAME LIST: the codes the engine answers
- * to, the open data it measures with, and the imagery it draws on — the same
- * three columns the footer summarises, in the same order, plus each source's
- * own credit line. Provenance is the one place on a marketing page where a
- * table beats a paragraph, and a table with rows missing their rights column is
- * not a table: the closing sentence that used to do that job by hand covered
- * four of the seven providers and waved the rest through ("provider terms for
- * the basemaps"). A credit per row cannot go stale the way a summary sentence
- * can.
- *
- * The entrance follows the sheet's own logic — the caption, then the rows one
- * at a time, each on the tighter reveal (fadeRiseTight) because a 44px row
- * travelling 20px would look like the list coming apart. The three lists do
- * this in parallel, so the section assembles as three columns filing themselves
- * in rather than as one block arriving.
+ * Renders the three provenance groups from landing/standards.ts inside
+ * structured specification panels, paired with the Survey Datum Bearing dial
+ * and the verbatim certification definition.
  */
 import React, { useRef } from 'react';
 import { motion } from 'framer-motion';
@@ -46,125 +13,161 @@ import { Bearing } from './Bearing';
 import { useDampedScrub, useOnScreen } from './interaction';
 import { GROUP_LABELS, GROUP_ORDER, sourcesIn, type Source, type SourceGroup } from './standards';
 import { CERTIFIED_DEFINITION } from '../components/report/statusTaxonomy';
+import { Icon } from '../components/Icon';
+import type { IconName } from '../components/Icon';
 
-const SpecList: React.FC<{ group: SourceGroup; rows: ReadonlyArray<Source> }> = ({ group, rows }) => (
-  /* A stagger group of its own: the caption, then each row. The `dl` between
-     them is a plain element, which variant propagation passes straight through,
-     so the rows still count as children of this motion.div. */
-  <motion.div variants={staggerParent(0.05)}>
-    {/* ink-2, not ink-3: at 10.5px uppercase this caption is small text under WCAG,
-        and `--bw-ink-3` is 4.05:1 on the porcelain ground (it only clears 4.5:1 on
-        white). Axe flagged these three captions at every width. */}
-    <motion.h3
+const GROUP_META: Record<SourceGroup, { icon: IconName; unit: string; toneClass: string }> = {
+  standards: {
+    icon: 'shield-check',
+    unit: 'codes',
+    toneClass: 'bg-bw-green-tint text-bw-green-ink',
+  },
+  siteData: {
+    icon: 'activity',
+    unit: 'datasets',
+    toneClass: 'bg-bw-accent-tint text-bw-accent',
+  },
+  imagery: {
+    icon: 'satellite',
+    unit: 'layers',
+    toneClass: 'bg-bw-accent-tint text-bw-accent',
+  },
+};
+
+const SpecPanel: React.FC<{ group: SourceGroup; rows: ReadonlyArray<Source>; wideTablet?: boolean }> = ({
+  group,
+  rows,
+  wideTablet = false,
+}) => {
+  const meta = GROUP_META[group];
+  return (
+    <motion.div
       variants={fadeRise}
-      className="text-[11px] font-semibold uppercase text-bw-ink-2"
-      style={{ letterSpacing: '0.14em' }}
+      className={`bw-surface flex flex-col rounded-[14px] p-5 sm:p-6 min-w-0 ${
+        wideTablet ? 'md:col-span-2 min-[1200px]:col-span-1' : ''
+      }`}
     >
-      {GROUP_LABELS[group]}
-    </motion.h3>
-    <dl className="mt-4 border-t border-bw-line-soft">
-      {rows.map((row) => (
-        <motion.div
-          key={row.name}
-          variants={fadeRiseTight}
-          /* Three lines a row rather than the old name-left/role-right pair: the
-             row has to carry its credit, and in a third-width column there is no
-             room left for a two-column line. The hairline between rows is what
-             keeps it reading as a table. */
-          className="border-b border-bw-line-soft py-3.5"
-        >
-          <dt className="text-[14px] font-semibold text-bw-ink">{row.name}</dt>
-          <dd className="mt-0.5 text-[13px] leading-[1.5] text-bw-ink-2">{row.role}</dd>
-          <dd className="mt-1.5 text-[12px] leading-[1.5] text-bw-ink-3">{row.credit}</dd>
-        </motion.div>
-      ))}
-    </dl>
-  </motion.div>
-);
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-bw-line-soft">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span
+            aria-hidden
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-bw-line-soft ${meta.toneClass}`}
+          >
+            <Icon name={meta.icon} size={16} strokeWidth={1.9} />
+          </span>
+          <h3
+            className="text-[11px] font-semibold uppercase text-bw-ink"
+            style={{ letterSpacing: '0.12em' }}
+          >
+            {GROUP_LABELS[group]}
+          </h3>
+        </div>
+        <span className="font-mono text-[10.5px] text-bw-ink-2 shrink-0">
+          {rows.length} {meta.unit}
+        </span>
+      </div>
+
+      <dl
+        className={`mt-1 divide-y divide-bw-line-soft ${
+          wideTablet ? 'md:grid md:grid-cols-2 md:gap-x-6 md:divide-y-0 min-[1200px]:block min-[1200px]:divide-y' : ''
+        }`}
+      >
+        {rows.map((row) => (
+          <motion.div
+            key={row.name}
+            variants={fadeRiseTight}
+            className={`py-3.5 px-2 rounded-[8px] transition-colors duration-150 hover:bg-bw-porcelain ${
+              wideTablet ? 'md:border-b md:border-bw-line-soft min-[1200px]:border-b-0' : ''
+            }`}
+          >
+            <dt className="flex items-baseline justify-between gap-2 text-[14px] font-semibold text-bw-ink">
+              <span className="min-w-0">{row.name}</span>
+              <span className="font-mono text-[10px] font-medium uppercase text-bw-ink-3 shrink-0">{row.short}</span>
+            </dt>
+            <dd className="mt-1 text-[13px] leading-[1.5] text-bw-ink-2">{row.role}</dd>
+            <dd className="mt-1.5 font-mono text-[11px] leading-[1.45] text-bw-ink-3">{row.credit}</dd>
+          </motion.div>
+        ))}
+      </dl>
+    </motion.div>
+  );
+};
 
 export const StandardsSection: React.FC = () => {
-  /* The header row's own entry band, shared by one instrument: the sheet's dial
-     turns as this section arrives and comes to rest as the heading settles at the
-     reading position.
-
-     WHY THE SCRUB ENGINE RATHER THAN THE RAW BAND VALUE. `useEntryProgress` hands
-     the rotation straight to the wheel, so the dial is a mirror of the scrollbar:
-     it starts and stops with the wheel, and a fling snaps it to its end angle.
-     The dial is the page's largest moving mass, and a mass that changes direction
-     at the speed of the wheel reads as a spinner rather than as an instrument.
-     `useDampedScrub` follows the same band through an exponential approach (see
-     `dampedFollow`), so the card trails the hand slightly, carries a little way
-     after the reader stops and settles into its bearing — no overshoot, because
-     the engine uses a damped follow and not a spring, exactly for the reason
-     springs.ts records for scrub values.
-
-     `tau` 0.13s: the default 0.09 is tuned for a 6 m storey rising 30 px; this is
-     a 200 px dial, so it gets a touch more mass and is back at rest ~0.4s after
-     the wheel stops. `enabled` on visibility is the idle contract for scroll scrub — an
-     off-screen instrument runs no animation frame and reads no geometry. */
   const sectionRef = useRef<HTMLDivElement>(null);
   const onScreen = useOnScreen(sectionRef);
   const entry = useDampedScrub(sectionRef, { enabled: onScreen, tau: 0.13 });
 
   return (
-  <section id="standards" aria-label="Standards and data sources" className="scroll-mt-24 py-24 sm:py-28">
-    <div ref={sectionRef} className="mx-auto max-w-7xl px-6 lg:px-10">
-      <motion.div variants={staggerParent(0.12)} initial="hidden" whileInView="show" viewport={SETTLE_VIEWPORT}>
-        {/* "code and named sources", not "code and open data": the sheet below
-            credits a copyrighted publication publisher (BIS, CPWD) and a
-            commercially licensed basemap (Esri), so "open data" was true of one
-            of its three columns. The claim it replaces is the weaker one to
-            make and the harder one to defend on a page like this. */}
-        <div className="flex items-start justify-between gap-10">
-          <div className="min-w-0">
-            <SectionHeading
-              eyebrow="Standards and data"
-              title="Grounded in code and named sources"
-              copy="Every figure in a dossier traces back to a published standard or a named dataset. Nothing is a black box, and nothing is behind a paid key."
-            />
+    <section id="standards" aria-label="Standards and data sources" className="scroll-mt-24 py-8 md:py-16 lg:py-24">
+      <div ref={sectionRef} className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-10">
+        <motion.div variants={staggerParent(0.08)} initial="hidden" whileInView="show" viewport={SETTLE_VIEWPORT}>
+          <div className="flex items-start justify-between gap-10">
+            <div className="min-w-0">
+              <SectionHeading
+                eyebrow="Standards and data"
+                title="Grounded in code and named sources"
+                copy="Every figure in a dossier traces back to a published standard or a named dataset. Nothing is a black box, and nothing is behind a paid key."
+              />
+            </div>
+            <div className="hidden w-[152px] shrink-0 md:block lg:w-[clamp(152px,15vw,200px)]">
+              <Bearing
+                progress={entry}
+                sweep={-58}
+                counterSweep={108}
+                bearing={189}
+                caption="Survey datum"
+                footnote="IS 1893 · NBC 2016"
+                dialOpacity={0.78}
+                className="text-bw-accent"
+              />
+            </div>
           </div>
-          {/* The header's empty right column, carrying the section's own
-              instrument: a dial that turns as the sheet arrives, captioned with
-              the codes the rows below are cited against. Decorative, so it
-              takes no tab stop and announces nothing — the facts it gestures at
-              are the three lists underneath, which are real content. */}
-          <div className="pointer-events-none hidden w-[clamp(152px,15vw,200px)] shrink-0 lg:block">
-            <Bearing
-              progress={entry}
-              sweep={-58}
-              counterSweep={108}
-              bearing={189}
-              caption="Survey datum"
-              footnote="IS 1893 · NBC 2016"
-              dialOpacity={0.62}
-              className="text-bw-accent"
-            />
+
+          <ScrollRule className="mt-5 md:mt-8" />
+
+          {/* Verbatim certification definition strip */}
+          <motion.div
+            variants={fadeRise}
+            className="mt-6 rounded-[12px] border border-bw-line-soft bg-bw-surface px-4 py-3.5 sm:px-5"
+            style={{ boxShadow: 'var(--bw-shadow-1)' }}
+          >
+            <div className="flex items-start gap-3">
+              <span
+                aria-hidden
+                className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-bw-green-tint text-bw-green-ink"
+              >
+                <Icon name="badge-check" size={15} strokeWidth={2} />
+              </span>
+              <div className="min-w-0">
+                <p
+                  className="font-mono text-[10.5px] font-semibold uppercase text-bw-ink"
+                  style={{ letterSpacing: '0.12em' }}
+                >
+                  Certification Rule Taxonomy
+                </p>
+                <p
+                  data-testid="landing-certified-definition"
+                  className="mt-1 text-[12.5px] leading-[1.6] text-bw-ink-2"
+                >
+                  {CERTIFIED_DEFINITION}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+
+          <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2 min-[1200px]:grid-cols-3">
+            {GROUP_ORDER.map((group) => (
+              <SpecPanel key={group} group={group} rows={sourcesIn(group)} wideTablet={group === 'imagery'} />
+            ))}
           </div>
-        </div>
-        {/* Same drawn boundary as the capabilities grid: the rule is the section
-            edge, and it reports the reader's travel as it draws. */}
-        <ScrollRule className="mt-10" />
-        <p
-          data-testid="landing-certified-definition"
-          className="mt-4 max-w-3xl text-[13px] leading-relaxed text-bw-ink-2"
-        >
-          {CERTIFIED_DEFINITION}
-        </p>
-        <div className="mt-8 grid gap-x-12 gap-y-10 md:grid-cols-2 lg:grid-cols-3">
-          {GROUP_ORDER.map((group) => (
-            <SpecList key={group} group={group} rows={sourcesIn(group)} />
-          ))}
-        </div>
-        {/* The credits above are the sheet's; this line says where the same
-            obligations are discharged in the product — the map's own attribution
-            bar (MapCanvas) and each dossier's data sources panel
-            (DataSourcesDisclosure, rendered per analysis tab in ReportSheet). */}
-        <motion.p variants={fadeRise} className="mt-9 text-[13px] leading-[1.6] text-bw-ink-3">
-          Attribution travels with the data: the map carries its own basemap credits, and every
-          dossier carries a data sources panel.
-        </motion.p>
-      </motion.div>
-    </div>
-  </section>
+
+          <motion.p variants={fadeRise} className="mt-5 md:mt-8 text-[13px] leading-[1.6] text-bw-ink-3">
+            Attribution travels with the data: the map carries its own basemap credits, and every
+            dossier carries a data sources panel.
+          </motion.p>
+        </motion.div>
+      </div>
+    </section>
   );
 };
