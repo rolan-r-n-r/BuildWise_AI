@@ -52,6 +52,20 @@ export function initLenis(): () => void {
   };
 }
 
+/** Pause or resume page & Lenis scrolling (used by mobile navigation drawer). */
+export function setScrollLocked(locked: boolean): void {
+  if (typeof document === 'undefined') return;
+  if (locked) {
+    lenis?.stop();
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+  } else {
+    document.documentElement.style.overflow = '';
+    document.body.style.overflow = '';
+    lenis?.start();
+  }
+}
+
 /**
  * Smoothly scroll to a section id (works with and without Lenis).
  *

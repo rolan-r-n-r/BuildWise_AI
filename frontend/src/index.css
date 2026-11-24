@@ -1419,7 +1419,7 @@ html.bw-landing-open.lenis body {
   --bw-ink: #0b1220;
   --bw-ink-hover: #1b2436;
   --bw-ink-2: #46536a;
-  --bw-ink-3: #6b7787;
+  --bw-ink-3: #596475;
   --bw-slate: #46536a;
   --bw-accent: #2f6fed;
   --bw-accent-a: #2f6fed;
@@ -1428,8 +1428,10 @@ html.bw-landing-open.lenis body {
   --bw-accent-tint: rgba(47, 111, 237, 0.10);
   --bw-green: #1fa955;
   --bw-green-ink: #14663a;
+  --bw-green-tint: rgba(20, 102, 58, 0.09);
   --bw-amber: #e8960c;
   --bw-amber-ink: #8a5300;
+  --bw-amber-tint: rgba(138, 83, 0, 0.09);
   --bw-hairline: rgba(255, 255, 255, 0.18);
   --bw-line: rgba(11, 18, 32, 0.09);
   --bw-line-soft: rgba(11, 18, 32, 0.055);
@@ -1438,6 +1440,13 @@ html.bw-landing-open.lenis body {
   --bw-cta-bg: #0b1220;
   --bw-cta-ink: #ffffff;
   --bw-cta-bg-hover: #1b2436;
+  --bw-model-ground: #f7f9fc;
+  --bw-model-grid: rgba(47, 111, 237, 0.045);
+  --bw-model-dim: rgba(11, 18, 32, 0.72);
+  --bw-model-dim-halo: rgba(247, 249, 252, 0.94);
+  --bw-model-shadow: rgba(11, 18, 32, 0.14);
+  --bw-model-plot-fill: rgba(11, 18, 32, 0.032);
+  --bw-model-buildable-stroke: rgba(47, 111, 237, 0.55);
   --bw-ease-apple: cubic-bezier(0.32, 0.72, 0, 1);
   /* One shadow vocabulary, three elevations: resting card, floating nav,
      window shell. Every landing surface picks one of these — no one-off
@@ -1461,7 +1470,7 @@ html.dark {
   --bw-ink: #f8fafc;
   --bw-ink-hover: #ffffff;
   --bw-ink-2: #94a3b8;
-  --bw-ink-3: #64748b;
+  --bw-ink-3: #8a9bb2;
   --bw-slate: #94a3b8;
   --bw-accent: #3b82f6;
   --bw-accent-a: #38bdf8;
@@ -1470,8 +1479,10 @@ html.dark {
   --bw-accent-tint: rgba(59, 130, 246, 0.16);
   --bw-green: #22c55e;
   --bw-green-ink: #4ade80;
+  --bw-green-tint: rgba(74, 222, 128, 0.14);
   --bw-amber: #f59e0b;
   --bw-amber-ink: #fbbf24;
+  --bw-amber-tint: rgba(251, 191, 36, 0.14);
   --bw-hairline: rgba(255, 255, 255, 0.12);
   --bw-line: rgba(255, 255, 255, 0.12);
   --bw-line-soft: rgba(255, 255, 255, 0.08);
@@ -1480,6 +1491,13 @@ html.dark {
   --bw-cta-bg: #f8fafc;
   --bw-cta-ink: #090d16;
   --bw-cta-bg-hover: #e2e8f0;
+  --bw-model-ground: #0d1526;
+  --bw-model-grid: rgba(96, 165, 250, 0.065);
+  --bw-model-dim: rgba(226, 232, 240, 0.86);
+  --bw-model-dim-halo: rgba(13, 21, 38, 0.94);
+  --bw-model-shadow: rgba(0, 0, 0, 0.48);
+  --bw-model-plot-fill: rgba(59, 130, 246, 0.08);
+  --bw-model-buildable-stroke: rgba(96, 165, 250, 0.72);
   --bw-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
   --bw-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
   --bw-shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
@@ -1494,7 +1512,7 @@ html.dark {
     --bw-ink: #f8fafc;
     --bw-ink-hover: #ffffff;
     --bw-ink-2: #94a3b8;
-    --bw-ink-3: #64748b;
+    --bw-ink-3: #8a9bb2;
     --bw-slate: #94a3b8;
     --bw-accent: #3b82f6;
     --bw-accent-a: #38bdf8;
@@ -1503,8 +1521,10 @@ html.dark {
     --bw-accent-tint: rgba(59, 130, 246, 0.16);
     --bw-green: #22c55e;
     --bw-green-ink: #4ade80;
+    --bw-green-tint: rgba(74, 222, 128, 0.14);
     --bw-amber: #f59e0b;
     --bw-amber-ink: #fbbf24;
+    --bw-amber-tint: rgba(251, 191, 36, 0.14);
     --bw-hairline: rgba(255, 255, 255, 0.12);
     --bw-line: rgba(255, 255, 255, 0.12);
     --bw-line-soft: rgba(255, 255, 255, 0.08);
@@ -1513,6 +1533,13 @@ html.dark {
     --bw-cta-bg: #f8fafc;
     --bw-cta-ink: #090d16;
     --bw-cta-bg-hover: #e2e8f0;
+    --bw-model-ground: #0d1526;
+    --bw-model-grid: rgba(96, 165, 250, 0.065);
+    --bw-model-dim: rgba(226, 232, 240, 0.86);
+    --bw-model-dim-halo: rgba(13, 21, 38, 0.94);
+    --bw-model-shadow: rgba(0, 0, 0, 0.48);
+    --bw-model-plot-fill: rgba(59, 130, 246, 0.08);
+    --bw-model-buildable-stroke: rgba(96, 165, 250, 0.72);
     --bw-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
     --bw-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
     --bw-shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
@@ -1534,11 +1561,37 @@ html.dark .bw-window-bar {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Landing focus ring (adaptive on light and dark) */
+/* Landing focus ring & browser surface polish (adaptive on light and dark) */
+.bw-landing ::selection {
+  background: var(--bw-accent-tint);
+  color: var(--bw-ink);
+}
+
+.bw-bearing-dial {
+  opacity: var(--bw-dial-opacity, 1);
+}
+
+@media (hover: hover) {
+  .bw-bearing-dial[data-interactive='true']:hover {
+    opacity: 1;
+  }
+}
+
+.bw-landing a {
+  text-underline-offset: 3px;
+}
+
 .bw-landing :focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
   box-shadow: 0 0 0 2px var(--bw-porcelain-1), 0 0 0 4px var(--bw-accent-a);
   border-radius: 10px;
+}
+
+@media (forced-colors: active) {
+  .bw-landing :focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
 }
 
 /* Nav link. The hover underline that grew from the centre is gone: the nav now

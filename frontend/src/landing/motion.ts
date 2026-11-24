@@ -62,10 +62,10 @@ const rawBounce = (t: number): number => 1 - Math.exp(-BOUNCE_DECAY * t) * Math.
 export const EASE_DROP = (t: number): number => rawBounce(t) / rawBounce(1);
 
 /** Reveal duration for section content entering the viewport. */
-export const REVEAL = 0.6;
+export const REVEAL = 0.48;
 
 /** Hero entrance: one beat slower than a section reveal, since it owns the fold. */
-export const ENTRANCE = 0.8;
+export const ENTRANCE = 0.68;
 
 /** Interactive spring (buttons, toggles, chips): stiffness 260–320 / damping 26–30. */
 export const SPRING_INTERACTIVE: Transition = {
@@ -108,24 +108,23 @@ export const timed = (duration: number, delay = 0): Transition =>
  * displaced.
  */
 export const fadeRise: RevealPair = {
-  hidden: { opacity: 0, y: 20 },
+  hidden: { opacity: 1, y: 12 },
   show: { opacity: 1, y: 0, transition: timed(REVEAL) },
 };
 
 /**
  * The same reveal, for SHORT elements: a hairline-divided row, a chip, a list
- * line. 20px on a 44px row is half the element's own height, so a table of them
- * travelling that far reads as the list tearing rather than as rows arriving.
- * Identical in timing; only the distance is proportional.
+ * line. Settled from an already-visible default so no row is ever trapped
+ * invisible during fast scrolls, printing, or full-page captures.
  */
 export const fadeRiseTight: RevealPair = {
-  hidden: { opacity: 0, y: 12 },
+  hidden: { opacity: 1, y: 6 },
   show: { opacity: 1, y: 0, transition: timed(REVEAL * 0.8) },
 };
 
 /** Flat fade for reduced-motion swaps (no transform). */
 export const fadeOnly: RevealPair = {
-  hidden: { opacity: 0 },
+  hidden: { opacity: 1 },
   show: { opacity: 1, transition: timed(0.3) },
 };
 
@@ -153,8 +152,8 @@ export const staggerParent = (stagger = 0.08, delayChildren = 0): Variants => ({
  * the cost is only that the line starts a little further out of frame.
  */
 export const maskLift: RevealPair = {
-  hidden: { y: '125%' },
-  show: { y: '0%', transition: timed(0.7) },
+  hidden: { y: '0%' },
+  show: { y: '0%', transition: timed(0.5) },
 };
 
 /**
@@ -184,7 +183,7 @@ export const ruleDraw: RevealPair = {
  * instead of a fraction of a box that changes size from section to section,
  * which is also what makes the timing predictable across the whole page.
  */
-export const SETTLE_MARGIN = '0px 0px -26% 0px';
+export const SETTLE_MARGIN = '0px 0px -8% 0px';
 
 /** The same line, for elements that observe themselves with `useInView`. */
 export const SETTLE_VIEWPORT = { once: true, margin: SETTLE_MARGIN } as const;

@@ -58,8 +58,8 @@ export const LANDING = {
     pill: 999,
   },
   type: {
-    hero: 'clamp(2.6rem, 6vw, 5rem)',
-    sectionTitle: 'clamp(1.75rem, 3.1vw, 2.6rem)',
+    hero: 'clamp(2.15rem, 5.6vw, 4.75rem)',
+    sectionTitle: 'clamp(1.65rem, 3vw, 2.5rem)',
     trackingHero: '-0.04em',
     trackingEyebrow: '0.16em',
   },
