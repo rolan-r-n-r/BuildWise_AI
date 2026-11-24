@@ -83,20 +83,27 @@ async function main() {
   });
 
   // 2. Cold-start progress percentage algorithm
-  test('[2] Cold-start progress smoothly approaches 96% and reaches 100% on online', () => {
-    const ESTIMATED_COLD_START_SEC = 45;
+  test('[2] Cold-start progress smoothly reaches 92% at 60s, scales to 98% at 120s, and 100% on online', () => {
+    const ESTIMATED_COLD_START_SEC = 60;
+    const MAX_POLLING_DURATION_SEC = 120;
     function calcProgress(elapsedSeconds, status) {
-      return Math.min(
-        Math.round((elapsedSeconds / ESTIMATED_COLD_START_SEC) * 100),
-        status === 'ONLINE' ? 100 : 96
-      );
+      if (status === 'ONLINE') return 100;
+      if (status !== 'WAKING_UP') return 0;
+      if (elapsedSeconds <= ESTIMATED_COLD_START_SEC) {
+        return Math.round((elapsedSeconds / ESTIMATED_COLD_START_SEC) * 92);
+      }
+      const extraRatio =
+        (elapsedSeconds - ESTIMATED_COLD_START_SEC) /
+        (MAX_POLLING_DURATION_SEC - ESTIMATED_COLD_START_SEC);
+      return Math.min(98, 92 + Math.round(extraRatio * 6));
     }
 
     assert.strictEqual(calcProgress(0, 'WAKING_UP'), 0);
-    assert.strictEqual(calcProgress(22, 'WAKING_UP'), 49);
-    assert.strictEqual(calcProgress(45, 'WAKING_UP'), 96);
-    assert.strictEqual(calcProgress(60, 'WAKING_UP'), 96); // Capped at 96% until confirmed online
-    assert.strictEqual(calcProgress(45, 'ONLINE'), 100);
+    assert.strictEqual(calcProgress(30, 'WAKING_UP'), 46);
+    assert.strictEqual(calcProgress(60, 'WAKING_UP'), 92);
+    assert.strictEqual(calcProgress(90, 'WAKING_UP'), 95);
+    assert.strictEqual(calcProgress(120, 'WAKING_UP'), 98);
+    assert.strictEqual(calcProgress(60, 'ONLINE'), 100);
   });
 
   // 3. Time formatting helper
