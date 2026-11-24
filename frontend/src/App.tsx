@@ -1070,7 +1070,11 @@ const AppShell: React.FC = () => {
   const controlsPanelBody = (
     <>
       {/* System Error Banner */}
-      <ErrorBanner errorMessage={errorMessage} onDismiss={() => setErrorMessage(null)} />
+      <ErrorBanner
+        errorMessage={errorMessage}
+        onDismiss={() => setErrorMessage(null)}
+        onRetry={() => handleRunAnalysis()}
+      />
 
       {/* Coordinates Input Card */}
       <CoordinatesInput

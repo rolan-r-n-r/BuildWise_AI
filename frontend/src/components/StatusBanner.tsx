@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
+import { triggerServerWakeUp, checkBackendHealth } from '../services/serverHealthService';
 
 interface TelemetryStripProps {
   warnings: string[];
@@ -52,30 +53,154 @@ export const TelemetryStrip: React.FC<TelemetryStripProps> = ({
 interface ErrorBannerProps {
   errorMessage: string | null;
   onDismiss?: () => void;
+  onRetry?: () => void;
+  onWakeUp?: () => void;
 }
 
-export const ErrorBanner: React.FC<ErrorBannerProps> = ({ errorMessage, onDismiss }) => {
+export const ErrorBanner: React.FC<ErrorBannerProps> = ({
+  errorMessage,
+  onDismiss,
+  onRetry,
+  onWakeUp,
+}) => {
+  const [waking, setWaking] = useState(false);
+  const [wakeSuccess, setWakeSuccess] = useState(false);
+  const pollTimerRef = useRef<number | null>(null);
+  const isMountedRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (pollTimerRef.current !== null) {
+        window.clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, []);
+
   if (!errorMessage) return null;
+
+  const msgLower = errorMessage.toLowerCase();
+  const isServerIssue =
+    msgLower.includes('sleeping') ||
+    msgLower.includes('unreachable') ||
+    msgLower.includes('unavailable') ||
+    msgLower.includes('failed to fetch') ||
+    msgLower.includes('502') ||
+    msgLower.includes('503') ||
+    msgLower.includes('504');
+
+  const handleWakeUp = async () => {
+    if (onWakeUp) {
+      onWakeUp();
+      return;
+    }
+    if (pollTimerRef.current !== null) {
+      window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    setWaking(true);
+    await triggerServerWakeUp();
+    if (!isMountedRef.current) return;
+
+    // Poll until online
+    let attempts = 0;
+    pollTimerRef.current = window.setInterval(async () => {
+      attempts += 1;
+      const res = await checkBackendHealth({ skipCache: true });
+      if (!isMountedRef.current) {
+        if (pollTimerRef.current !== null) {
+          window.clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
+        return;
+      }
+      if (res.isOnline) {
+        if (pollTimerRef.current !== null) {
+          window.clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
+        setWaking(false);
+        setWakeSuccess(true);
+      } else if (attempts > 20) {
+        if (pollTimerRef.current !== null) {
+          window.clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
+        setWaking(false);
+      }
+    }, 3500);
+  };
 
   return (
     <div
       role="alert"
       className="bg-[var(--fill)] border border-[var(--hairline)] text-[var(--text-1)] p-3 rounded-[12px] text-[12px] flex items-start justify-between gap-3 shadow-sm"
     >
-      <div className="flex items-start gap-2.5">
+      <div className="flex items-start gap-2.5 flex-1 min-w-0">
         <Icon name="shield-alert" size={15} className="text-[var(--semantic-red-ink)] mt-0.5 shrink-0" />
-        <div className="space-y-0.5">
+        <div className="space-y-1 min-w-0 flex-1">
           <span className="font-semibold block text-[12px] text-[var(--semantic-red-ink)]">
             System Alert
           </span>
           <p className="text-[12px] text-[var(--text-2)] leading-normal">{errorMessage}</p>
+
+          {wakeSuccess ? (
+            <div className="flex items-center gap-2 pt-1 text-[var(--semantic-green-ink)] font-medium">
+              <Icon name="check-circle" size={13} />
+              <span>Server is operational! You can now retry your request.</span>
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="ml-2 underline font-semibold cursor-pointer"
+                >
+                  Retry now
+                </button>
+              )}
+            </div>
+          ) : (
+            isServerIssue && (
+              <div className="flex items-center gap-2 pt-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleWakeUp}
+                  disabled={waking}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-[11px] font-semibold transition-transform active:scale-95 disabled:opacity-60 cursor-pointer"
+                >
+                  {waking ? (
+                    <>
+                      <Icon name="loader" size={11} className="animate-spin" />
+                      <span>Waking up server...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="zap" size={11} className="text-amber-300" />
+                      <span>Wake Up Server</span>
+                    </>
+                  )}
+                </button>
+                {onRetry && !waking && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--surface-overlay)] border border-[var(--panel-border-color)] text-[var(--text-1)] text-[11px] font-medium transition-colors hover:bg-[var(--fill-hover)] active:scale-95 cursor-pointer"
+                  >
+                    <Icon name="refresh" size={11} />
+                    <span>Retry</span>
+                  </button>
+                )}
+              </div>
+            )
+          )}
         </div>
       </div>
       {onDismiss && (
         <button
           type="button"
           onClick={onDismiss}
-          className="text-[var(--text-3)] hover:text-[var(--text-1)] p-1 rounded-[6px] transition-colors focus:outline-none"
+          className="text-[var(--text-3)] hover:text-[var(--text-1)] p-1 rounded-[6px] transition-colors focus:outline-none shrink-0"
           title="Dismiss error"
           aria-label="Dismiss error"
         >
