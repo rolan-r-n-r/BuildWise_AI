@@ -24,10 +24,11 @@ export interface ServerHealthState {
   errorDetail: string | null;
 }
 
-const ESTIMATED_COLD_START_SEC = 45;
-const MAX_POLLING_DURATION_SEC = 75;
-const INITIAL_POLL_INTERVAL_MS = 3000;
-const MAX_POLL_INTERVAL_MS = 6000;
+const ESTIMATED_COLD_START_SEC = 60;
+const MAX_POLLING_DURATION_SEC = 120;
+const PASSIVE_CHECK_TIMEOUT_MS = 5000;
+const ACTIVE_POLL_TIMEOUT_MS = 14000;
+const POLL_INTERVAL_MS = 2500;
 
 export function useServerHealth(options?: {
   autoCheck?: boolean;
@@ -73,10 +74,11 @@ export function useServerHealth(options?: {
   }, []);
 
   const checkHealth = useCallback(
-    async (skipCache = false): Promise<boolean> => {
+    async (skipCache = false, customTimeoutMs?: number): Promise<boolean> => {
       if (!isMountedRef.current) return false;
 
-      const result = await checkBackendHealth({ timeoutMs: 5000, skipCache });
+      const timeoutMs = customTimeoutMs ?? PASSIVE_CHECK_TIMEOUT_MS;
+      const result = await checkBackendHealth({ timeoutMs, skipCache });
       if (!isMountedRef.current) return false;
 
       setLastChecked(new Date(result.timestamp));
@@ -120,13 +122,25 @@ export function useServerHealth(options?: {
       }
     }, 1000);
 
-    // Progressive health probe loop with slight backoff
-    let attempt = 0;
+    // Progressive health probe loop with generous queue timeout
     const probeNext = async () => {
       if (!isMountedRef.current || !isWakingRef.current) return;
 
-      attempt += 1;
-      const healthy = await checkHealth(true);
+      const currentElapsed = Math.floor((Date.now() - wakeStartTimeRef.current) / 1000);
+      if (currentElapsed >= MAX_POLLING_DURATION_SEC) {
+        clearAllTimers();
+        isWakingRef.current = false;
+        if (isMountedRef.current) {
+          setStatus('ERROR');
+          setMessage('The server is taking longer than expected. You can retry in a moment.');
+          setErrorDetail('Timeout reached while waiting for server startup.');
+        }
+        return;
+      }
+
+      // Check health with ACTIVE_POLL_TIMEOUT_MS (14s) so Render's queued request
+      // completes the moment port 8000 opens
+      const healthy = await checkHealth(true, ACTIVE_POLL_TIMEOUT_MS);
       if (!isMountedRef.current || !isWakingRef.current) return;
 
       if (healthy) {
@@ -148,17 +162,12 @@ export function useServerHealth(options?: {
 
       const elapsed = (Date.now() - wakeStartTimeRef.current) / 1000;
       if (elapsed < MAX_POLLING_DURATION_SEC && isWakingRef.current) {
-        // Compute backoff: starts at 3000ms, gently steps up to 5000ms
-        const delay = Math.min(
-          INITIAL_POLL_INTERVAL_MS + attempt * 400,
-          MAX_POLL_INTERVAL_MS
-        );
-        pollTimerRef.current = window.setTimeout(probeNext, delay);
+        pollTimerRef.current = window.setTimeout(probeNext, POLL_INTERVAL_MS);
       }
     };
 
-    // First health probe after 3.5s
-    pollTimerRef.current = window.setTimeout(probeNext, 3500);
+    // First health probe after 2s
+    pollTimerRef.current = window.setTimeout(probeNext, 2000);
   }, [checkHealth, clearAllTimers]);
 
   const wakeUp = useCallback(async () => {
@@ -170,22 +179,17 @@ export function useServerHealth(options?: {
     setMessage('Getting BuildWise ready for you...');
     setErrorDetail(null);
 
-    try {
-      // Step 1: Transmit wake-up packet
-      await triggerServerWakeUp();
-      if (!isMountedRef.current || !isWakingRef.current) return;
+    // CRITICAL: Start UI timer & polling immediately at t=0!
+    // Do NOT await triggerServerWakeUp before starting the clock!
+    startPolling();
 
-      // Step 2: Begin intelligent availability polling
-      startPolling();
-    } catch (err: unknown) {
-      if (!isMountedRef.current) return;
-      isWakingRef.current = false;
-      setStatus('ERROR');
-      setMessage("We couldn't connect to the server. Please try again.");
-      setErrorDetail(err instanceof Error ? err.message : 'Unknown wake-up error');
-      clearAllTimers();
+    // Concurrently dispatch wake-up probe
+    try {
+      void triggerServerWakeUp();
+    } catch {
+      // non-critical: polling will detect when online
     }
-  }, [startPolling, clearAllTimers]);
+  }, [startPolling]);
 
   // Initial check on mount
   useEffect(() => {
@@ -216,10 +220,22 @@ export function useServerHealth(options?: {
   }, [autoCheck, checkHealth, clearAllTimers]);
 
   // Derived progress percentage (0 - 100%)
-  const progressPercent = Math.min(
-    Math.round((elapsedSeconds / ESTIMATED_COLD_START_SEC) * 100),
-    status === 'ONLINE' ? 100 : 96
-  );
+  // Smoothly advances to 92% at ESTIMATED_COLD_START_SEC (60s),
+  // then gently advances up to 98% if cold-start takes up to MAX_POLLING_DURATION_SEC (120s),
+  // and snaps to 100% the moment status is ONLINE.
+  let progressPercent = 0;
+  if (status === 'ONLINE') {
+    progressPercent = 100;
+  } else if (status === 'WAKING_UP') {
+    if (elapsedSeconds <= ESTIMATED_COLD_START_SEC) {
+      progressPercent = Math.round((elapsedSeconds / ESTIMATED_COLD_START_SEC) * 92);
+    } else {
+      const extraRatio =
+        (elapsedSeconds - ESTIMATED_COLD_START_SEC) /
+        (MAX_POLLING_DURATION_SEC - ESTIMATED_COLD_START_SEC);
+      progressPercent = Math.min(98, 92 + Math.round(extraRatio * 6));
+    }
+  }
 
   return {
     status,

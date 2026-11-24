@@ -166,7 +166,9 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
 
             {status === 'WAKING_UP' && (
               <span className="text-bw-ink font-semibold truncate">
-                Waking up server...
+                {elapsedSeconds > estimatedTotalSeconds
+                  ? 'Finalizing server startup...'
+                  : 'Waking up server...'}
                 <span className="ml-1.5 font-normal text-bw-ink-3 ui-font-tabular hidden sm:inline">
                   ({formatTime(elapsedSeconds)} / ~{formatTime(estimatedTotalSeconds)})
                 </span>
@@ -271,7 +273,7 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
                   To provide 100% free site feasibility and architectural blueprints with zero paid APIs, BuildWise backend instances automatically sleep after 15 minutes of inactivity.
                 </p>
                 <p className="mt-1.5 text-bw-ink-3">
-                  Waking up triggers a container cold-start that typically completes in 30–50 seconds. Once online, subsequent requests respond in milliseconds.
+                  Waking up triggers a container cold-start that typically completes in 50–70 seconds. Once online, subsequent requests respond in milliseconds.
                 </p>
               </div>
               <button
