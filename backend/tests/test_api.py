@@ -104,6 +104,40 @@ def test_health_endpoint():
     assert data["status"] == "healthy"
     assert "mock" in data["ai_adapters_available"]
     assert data["active_default_ai"] == "mock"
+    assert data.get("message") == "BuildWise backend is operational"
+
+
+def test_wakeup_endpoint():
+    # Test GET /api/wake-up
+    get_resp = client.get("/api/wake-up")
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["status"] == "online"
+    assert data["message"] == "BuildWise backend is operational"
+    assert data["service"] == "buildwise-api"
+    assert "timestamp" in data
+
+    # Test POST /api/wake-up
+    post_resp = client.post("/api/wake-up")
+    assert post_resp.status_code == 200
+    assert post_resp.json()["status"] == "online"
+
+
+def test_wakeup_rate_limiter():
+    from app.main import check_wakeup_rate_limit, _wakeup_request_history, WAKEUP_RATE_LIMIT_MAX_REQUESTS
+    from fastapi import HTTPException
+
+    ip = "88.88.88.88"
+    _wakeup_request_history[ip] = []
+
+    # Maximum allowed requests succeed
+    for _ in range(WAKEUP_RATE_LIMIT_MAX_REQUESTS):
+        check_wakeup_rate_limit(ip)
+
+    # Subsequent request triggers 429
+    with pytest.raises(HTTPException) as exc_info:
+        check_wakeup_rate_limit(ip)
+    assert exc_info.value.status_code == 429
 
 
 def test_status_endpoint():
