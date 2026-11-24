@@ -260,7 +260,7 @@ def _prune_rate_histories(now: float) -> None:
     if now - _LAST_HISTORY_PRUNE[0] < 60.0:
         return
     _LAST_HISTORY_PRUNE[0] = now
-    for store in (_client_request_history, _proxy_request_history):
+    for store in (_client_request_history, _proxy_request_history, _wakeup_request_history):
         idle = [ip for ip, ts in store.items() if not ts or now - ts[-1] >= RATE_LIMIT_WINDOW_SEC]
         for ip in idle:
             store.pop(ip, None)
@@ -312,6 +312,41 @@ def check_proxy_rate_limit(client_ip: str):
             detail="Rate limit exceeded (maximum 60 requests per minute) for map preview endpoints."
         )
     _proxy_request_history[client_ip].append(now)
+
+# Sliding-window rate limit for wake-up requests: protects cold-start wake triggers from spam
+WAKEUP_RATE_LIMIT_WINDOW_SEC = 60.0
+WAKEUP_RATE_LIMIT_MAX_REQUESTS = 15
+_wakeup_request_history = defaultdict(list)
+
+def check_wakeup_rate_limit(client_ip: str):
+    now = time.time()
+    _prune_rate_histories(now)
+    timestamps = _wakeup_request_history[client_ip]
+    _wakeup_request_history[client_ip] = [t for t in timestamps if now - t < WAKEUP_RATE_LIMIT_WINDOW_SEC]
+    if len(_wakeup_request_history[client_ip]) >= WAKEUP_RATE_LIMIT_MAX_REQUESTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many wake-up attempts. Please wait before retrying."
+        )
+    _wakeup_request_history[client_ip].append(now)
+
+@app.get("/api/wake-up")
+@app.post("/api/wake-up")
+@app.head("/api/wake-up")
+async def wake_up_endpoint(request: Request):
+    """
+    Wake-up probe for sleeping instances (Render free-tier cold-starts or manual wake triggers).
+    Confirms backend availability, applies rate-limiting to prevent request flooding,
+    and returns immediate operational status without exposing internal infrastructure details.
+    """
+    client_ip = _client_ip(request)
+    check_wakeup_rate_limit(client_ip)
+    return {
+        "status": "online",
+        "message": "BuildWise backend is operational",
+        "service": "buildwise-api",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 @app.get("/api/status")
 async def api_status(
@@ -369,7 +404,9 @@ async def api_status(
 @app.get("/", response_model=HealthResponse)
 @app.head("/")
 @app.get("/health", response_model=HealthResponse)
+@app.head("/health")
 @app.get("/api/health", response_model=HealthResponse)
+@app.head("/api/health")
 async def health_check():
     """
     Returns system status, active version, and AI provider availability.
@@ -378,6 +415,7 @@ async def health_check():
     return HealthResponse(
         status="healthy",
         version="1.1.0",
+        message="BuildWise backend is operational",
         ai_adapters_available=["mock", "groq", "gemini", "openai", "anthropic", "ollama"],
         active_default_ai=settings.DEFAULT_AI_PROVIDER
     )

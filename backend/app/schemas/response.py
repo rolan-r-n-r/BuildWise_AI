@@ -300,3 +300,4 @@ class HealthResponse(BaseModel):
     version: str
     ai_adapters_available: List[str]
     active_default_ai: str
+    message: str = "BuildWise backend is operational"
