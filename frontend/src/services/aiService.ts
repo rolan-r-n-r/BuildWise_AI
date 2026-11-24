@@ -43,19 +43,31 @@ export async function generateFeasibilityReport(
   request: AnalysisRequest,
   signal?: AbortSignal
 ): Promise<FeasibilityResult> {
-  const resp = await fetch(`${env.VITE_API_URL}/api/analyze`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify(request),
-    signal,
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(`${env.VITE_API_URL}/api/analyze`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(request),
+      signal,
+    });
+  } catch (err: unknown) {
+    if (signal?.aborted) throw err;
+    throw new Error(
+      'BuildWise backend is currently sleeping or unreachable. Please wake up the server or retry shortly.'
+    );
+  }
 
   if (!resp.ok) {
     const errorData = await resp.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Analysis request failed with status: ${resp.status}`);
+    const is50x = resp.status === 502 || resp.status === 503 || resp.status === 504;
+    const fallbackMsg = is50x
+      ? 'BuildWise backend is temporarily unavailable (sleeping on free tier or restarting).'
+      : `Analysis request failed with status: ${resp.status}`;
+    throw new Error(errorData.detail || fallbackMsg);
   }
 
   const data: AnalysisResponse = await resp.json();

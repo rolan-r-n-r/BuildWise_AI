@@ -12,7 +12,7 @@ import type {
   BlueprintAIAnalysisResponse,
 } from './types';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
 
 /**
  * A non-2xx response with the server's validation detail preserved.
@@ -72,9 +72,35 @@ export function parseApiErrorDetail(detail: unknown, fallback: string): {
 }
 
 async function apiErrorFromResponse(resp: Response, fallback: string): Promise<ApiRequestError> {
+  let contextualFallback = fallback;
+  if (resp.status === 502 || resp.status === 503 || resp.status === 504) {
+    contextualFallback = resp.status === 504
+      ? 'The server took too long to respond. The backend may be sleeping or restarting.'
+      : 'BuildWise backend is temporarily unavailable (sleeping on free tier or restarting).';
+  }
+
   const errorData = await resp.json().catch(() => ({}));
-  const parsed = parseApiErrorDetail((errorData as any)?.detail, fallback);
+  const parsed = parseApiErrorDetail((errorData as any)?.detail, contextualFallback);
   return new ApiRequestError(resp.status, parsed.message, parsed.issues, (errorData as any)?.detail);
+}
+
+/** Determines if an error was caused by the backend being offline, sleeping, or returning 502/503/504 */
+export function isBackendUnavailableError(error: unknown): boolean {
+  if (!error) return false;
+  if (error instanceof ApiRequestError) {
+    return error.status === 502 || error.status === 503 || error.status === 504 || error.status === 0;
+  }
+  const msg = String(error instanceof Error ? error.message : error).toLowerCase();
+  return (
+    msg.includes('failed to fetch') ||
+    msg.includes('network error') ||
+    msg.includes('sleeping') ||
+    msg.includes('unreachable') ||
+    msg.includes('502') ||
+    msg.includes('503') ||
+    msg.includes('504') ||
+    msg.includes('gateway')
+  );
 }
 
 export async function downloadFloorplanDossier(
@@ -117,18 +143,31 @@ export async function submitSiteVision(
   request: SiteVisionRequest,
   signal?: AbortSignal
 ): Promise<SiteVisionResponse> {
-  const resp = await fetch(`${API_BASE_URL}/api/site-vision`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
-    signal,
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(`${API_BASE_URL}/api/site-vision`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      signal,
+    });
+  } catch (err: unknown) {
+    if (signal?.aborted) throw err;
+    throw new ApiRequestError(
+      503,
+      'BuildWise backend is currently unavailable or sleeping. Please wake up the server or retry shortly.',
+      ['Backend server is offline or sleeping'],
+      err
+    );
+  }
 
   if (!resp.ok) {
-    const errorData = await resp.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Site vision request failed with status: ${resp.status}`);
+    throw await apiErrorFromResponse(
+      resp,
+      `Site vision request failed with status: ${resp.status}`,
+    );
   }
 
   return resp.json();
@@ -138,15 +177,26 @@ export async function generateFloorPlan(
   request: FloorPlanRequest,
   signal?: AbortSignal
 ): Promise<FloorPlanResponse> {
-  const resp = await fetch(`${API_BASE_URL}/api/generate-floorplan`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
-    signal,
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(`${API_BASE_URL}/api/generate-floorplan`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      signal,
+    });
+  } catch (err: unknown) {
+    if (signal?.aborted) throw err;
+    throw new ApiRequestError(
+      503,
+      'BuildWise backend is currently unavailable or sleeping. Please wake up the server or retry shortly.',
+      ['Backend server is offline or sleeping'],
+      err
+    );
+  }
 
   if (!resp.ok) {
     throw await apiErrorFromResponse(
@@ -178,12 +228,23 @@ export async function fetchRemediationOptions(
   },
   signal?: AbortSignal,
 ): Promise<RemediationResponse> {
-  const resp = await fetch(`${API_BASE_URL}/api/floorplan/remediation`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal,
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(`${API_BASE_URL}/api/floorplan/remediation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (err: unknown) {
+    if (signal?.aborted) throw err;
+    throw new ApiRequestError(
+      503,
+      'BuildWise backend is currently unavailable or sleeping. Please wake up the server or retry shortly.',
+      ['Backend server is offline or sleeping'],
+      err
+    );
+  }
   if (!resp.ok) {
     throw await apiErrorFromResponse(
       resp,
@@ -295,7 +356,7 @@ export async function parseRequirements(
     if (resp.ok) {
       return await resp.json();
     }
-  } catch (err) {
+  } catch {
     // Network or server error: fall through to client-side fallback
   }
 
