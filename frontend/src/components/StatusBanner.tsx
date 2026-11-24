@@ -73,7 +73,7 @@ export const ErrorBanner: React.FC<ErrorBannerProps> = ({
     return () => {
       isMountedRef.current = false;
       if (pollTimerRef.current !== null) {
-        window.clearInterval(pollTimerRef.current);
+        window.clearTimeout(pollTimerRef.current);
         pollTimerRef.current = null;
       }
     };
@@ -91,46 +91,50 @@ export const ErrorBanner: React.FC<ErrorBannerProps> = ({
     msgLower.includes('503') ||
     msgLower.includes('504');
 
-  const handleWakeUp = async () => {
+  const handleWakeUp = () => {
     if (onWakeUp) {
       onWakeUp();
       return;
     }
     if (pollTimerRef.current !== null) {
-      window.clearInterval(pollTimerRef.current);
+      window.clearTimeout(pollTimerRef.current);
       pollTimerRef.current = null;
     }
     setWaking(true);
-    await triggerServerWakeUp();
-    if (!isMountedRef.current) return;
 
-    // Poll until online
-    let attempts = 0;
-    pollTimerRef.current = window.setInterval(async () => {
-      attempts += 1;
-      const res = await checkBackendHealth({ skipCache: true });
-      if (!isMountedRef.current) {
+    // Fire wake-up probe non-blocking so active polling begins immediately
+    void triggerServerWakeUp();
+
+    const startTime = Date.now();
+    const MAX_WAIT_MS = 120000; // 2 minutes window to match Render free cold-starts
+
+    const poll = async () => {
+      if (!isMountedRef.current) return;
+      const res = await checkBackendHealth({ timeoutMs: 14000, skipCache: true });
+      if (!isMountedRef.current) return;
+
+      if (res.isOnline) {
+        setWaking(false);
+        setWakeSuccess(true);
         if (pollTimerRef.current !== null) {
-          window.clearInterval(pollTimerRef.current);
+          window.clearTimeout(pollTimerRef.current);
           pollTimerRef.current = null;
         }
         return;
       }
-      if (res.isOnline) {
+
+      if (Date.now() - startTime < MAX_WAIT_MS) {
+        pollTimerRef.current = window.setTimeout(poll, 2500);
+      } else {
+        setWaking(false);
         if (pollTimerRef.current !== null) {
-          window.clearInterval(pollTimerRef.current);
+          window.clearTimeout(pollTimerRef.current);
           pollTimerRef.current = null;
         }
-        setWaking(false);
-        setWakeSuccess(true);
-      } else if (attempts > 20) {
-        if (pollTimerRef.current !== null) {
-          window.clearInterval(pollTimerRef.current);
-          pollTimerRef.current = null;
-        }
-        setWaking(false);
       }
-    }, 3500);
+    };
+
+    pollTimerRef.current = window.setTimeout(poll, 1500);
   };
 
   return (
