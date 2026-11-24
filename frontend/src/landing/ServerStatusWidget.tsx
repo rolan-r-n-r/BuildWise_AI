@@ -62,10 +62,13 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
       className={`inline-flex flex-col gap-2 max-w-full ${className}`}
     >
       <div
-        className="group relative inline-flex flex-wrap items-center gap-2.5 rounded-2xl sm:rounded-full border border-bw-line bg-bw-surface/90 px-3.5 py-1.5 text-[12px] font-medium text-bw-ink-2 shadow-xs backdrop-blur-md transition-colors hover:border-bw-line-soft max-w-full"
+        className={`group relative inline-flex ${
+          status === 'WAKING_UP' ? 'flex-wrap' : 'flex-nowrap'
+        } items-center gap-1.5 sm:gap-2 rounded-full border border-bw-line bg-bw-surface px-3 sm:px-3.5 py-1.5 text-[11.5px] sm:text-[12px] font-medium text-bw-ink-2 transition-colors duration-200 hover:border-bw-ink-3 max-w-full min-h-[44px]`}
+        style={{ boxShadow: 'var(--bw-shadow-1)' }}
       >
         {/* Status Indicator Icon / Dot */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1 sm:flex-initial">
           {status === 'CHECKING' && (
             <span
               className="relative flex h-2 w-2"
@@ -83,11 +86,10 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
               aria-hidden="true"
             >
               <span
-                className={`absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${
-                  reduced ? '' : 'animate-ping'
+                className={`relative inline-flex h-2 w-2 rounded-full bg-bw-green ${
+                  reduced ? '' : 'animate-pulse'
                 }`}
               />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
             </span>
           )}
 
@@ -97,17 +99,17 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
               title="Server is sleeping"
               aria-hidden="true"
             >
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-bw-amber" />
             </span>
           )}
 
           {status === 'WAKING_UP' && (
             <span
-              className="relative flex h-2.5 w-2.5 text-blue-500 flex-shrink-0"
+              className="relative flex h-2.5 w-2.5 text-bw-accent flex-shrink-0"
               title="Server is starting up"
               aria-hidden="true"
             >
-              <span className={`inline-block h-2.5 w-2.5 rounded-full border-2 border-blue-500 border-t-transparent ${
+              <span className={`inline-block h-2.5 w-2.5 rounded-full border-2 border-bw-accent border-t-transparent ${
                 reduced ? '' : 'animate-spin'
               }`} />
             </span>
@@ -132,14 +134,16 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
             {status === 'ONLINE' && (
               <span className="truncate">
                 {justWokeUp ? (
-                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold inline-flex items-center gap-1">
-                    <Icon name="check-circle" size={12} className="text-emerald-500" />
+                  <span className="text-bw-green-ink font-semibold inline-flex items-center gap-1">
+                    <Icon name="check-circle" size={12} className="text-bw-green-ink" />
                     <span>Server Ready! · All systems operational</span>
                   </span>
                 ) : (
                   <>
                     <span className="font-semibold text-bw-ink">BuildWise AI</span>
-                    <span className="text-bw-ink-2 ml-1">· All Systems Operational</span>
+                    <span className="text-bw-ink-2 ml-1">
+                      · <span className="hidden xs:inline">All Systems </span>Operational
+                    </span>
                     {latencyMs !== null && latencyMs > 0 && (
                       <span className="ml-1.5 font-normal text-bw-ink-3 ui-font-tabular">
                         ({latencyMs}ms)
@@ -194,7 +198,7 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
             aria-label="Server wake-up progress"
           >
             <motion.div
-              className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
+              className="h-full bg-bw-accent rounded-full"
               initial={{ width: '6%' }}
               animate={{ width: `${Math.max(6, progressPercent)}%` }}
               transition={{ duration: 0.8, ease: 'easeOut' }}
@@ -202,16 +206,17 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
           </div>
         )}
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+        {/* Action Controls — every control keeps >= 44px hit height */}
+        <div className="flex items-center gap-0.5 ml-auto flex-shrink-0 -my-1.5">
           {status === 'OFFLINE' && (
             <button
               type="button"
               onClick={() => void wakeUp()}
-              className="inline-flex items-center gap-1.5 rounded-full bg-bw-cta px-3 py-1 text-[11.5px] font-semibold text-bw-cta-ink shadow-xs transition-transform duration-150 hover:bg-bw-cta-hover active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bw-accent"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-bw-cta px-3.5 text-[11.5px] font-semibold text-bw-cta-ink transition-[background-color,transform] duration-150 hover:bg-bw-cta-hover active:scale-95 cursor-pointer"
+              style={{ boxShadow: 'var(--bw-shadow-1)' }}
               aria-label="Wake up BuildWise backend server"
             >
-              <Icon name="zap" size={12} className="text-amber-400" />
+              <Icon name="zap" size={12} className="text-bw-amber" />
               <span>Wake Up Server</span>
             </button>
           )}
@@ -220,7 +225,7 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
             <button
               type="button"
               onClick={() => void wakeUp()}
-              className="inline-flex items-center gap-1 rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 px-2.5 py-0.5 text-[11px] font-semibold text-rose-700 dark:text-rose-300 transition-colors hover:bg-rose-100 dark:hover:bg-rose-900/60 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+              className="inline-flex min-h-11 items-center gap-1 rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 px-3 text-[11.5px] font-semibold text-rose-700 dark:text-rose-300 transition-colors duration-150 hover:bg-rose-100 dark:hover:bg-rose-900/60 active:scale-95 cursor-pointer"
               aria-label="Retry server wake-up"
             >
               <Icon name="refresh" size={11} />
@@ -232,11 +237,11 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
             <button
               type="button"
               onClick={() => void checkHealth()}
-              className="text-bw-ink-3 hover:text-bw-ink p-1 rounded-full transition-colors active:scale-90 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bw-accent"
+              className="inline-flex h-11 w-11 items-center justify-center text-bw-ink-3 hover:text-bw-ink rounded-full transition-colors duration-150 hover:bg-bw-line-soft active:scale-90 cursor-pointer"
               title="Refresh server status"
               aria-label="Refresh server status"
             >
-              <Icon name="refresh" size={11} />
+              <Icon name="refresh" size={13} />
             </button>
           )}
 
@@ -246,10 +251,10 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
             onClick={() => setShowDetails((prev) => !prev)}
             aria-expanded={showDetails}
             aria-label="Toggle server architecture details"
-            className="text-bw-ink-3 hover:text-bw-ink p-1 rounded-full transition-colors active:scale-90 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bw-accent"
+            className="inline-flex h-11 w-11 items-center justify-center text-bw-ink-3 hover:text-bw-ink rounded-full transition-colors duration-150 hover:bg-bw-line-soft active:scale-90 cursor-pointer"
             title="Why does the server sleep?"
           >
-            <Icon name="info" size={12} />
+            <Icon name="info" size={14} />
           </button>
         </div>
       </div>
@@ -262,7 +267,8 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.15 }}
-            className="rounded-xl border border-bw-line bg-bw-surface/95 p-3 text-[12px] leading-relaxed text-bw-ink-2 shadow-sm backdrop-blur-md max-w-md"
+            className="rounded-xl border border-bw-line bg-bw-surface p-3.5 text-[12px] leading-relaxed text-bw-ink-2 max-w-md"
+            style={{ boxShadow: 'var(--bw-shadow-2)' }}
           >
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -279,10 +285,10 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
               <button
                 type="button"
                 onClick={() => setShowDetails(false)}
-                className="text-bw-ink-3 hover:text-bw-ink p-1 -mr-1 -mt-1 rounded-md transition-colors"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-bw-ink-3 hover:text-bw-ink -mr-2 -mt-2 rounded-full transition-colors duration-150 hover:bg-bw-line-soft cursor-pointer"
                 aria-label="Close information"
               >
-                <Icon name="x" size={13} />
+                <Icon name="x" size={14} />
               </button>
             </div>
           </motion.div>

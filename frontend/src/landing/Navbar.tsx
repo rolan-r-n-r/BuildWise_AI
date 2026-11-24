@@ -6,7 +6,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { EASE_APPLE, SPRING_SOFT } from './motion';
-import { scrollToId } from './scroll';
+import { scrollToId, setScrollLocked } from './scroll';
 import { APP_PATH, SIGN_IN_PATH, SIGN_UP_PATH, navigate } from './router';
 import { useSession } from '../lib/auth-client';
 import { Icon } from '../components/Icon';
@@ -69,6 +69,7 @@ export const Navbar: React.FC = () => {
   const [active, setActive] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
   const navRef = useRef<HTMLElement>(null);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -138,9 +139,16 @@ export const Navbar: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen) {
+      setScrollLocked(false);
+      return;
+    }
+    setScrollLocked(true);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuOpen(false);
+      if (e.key === 'Escape') {
+        setMenuOpen(false);
+        menuBtnRef.current?.focus();
+      }
     };
     const onResize = () => {
       if (window.innerWidth >= 768) setMenuOpen(false);
@@ -148,6 +156,7 @@ export const Navbar: React.FC = () => {
     window.addEventListener('keydown', onKey);
     window.addEventListener('resize', onResize);
     return () => {
+      setScrollLocked(false);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onResize);
     };
@@ -169,7 +178,7 @@ export const Navbar: React.FC = () => {
         <nav
           ref={navRef}
           aria-label="Primary"
-          className="bw-nav relative flex w-full max-w-[48rem] items-center gap-1 rounded-full"
+          className="bw-nav relative flex w-full max-w-[54rem] items-center gap-1 rounded-full"
         >
           {/* Brand */}
           <a
@@ -178,7 +187,7 @@ export const Navbar: React.FC = () => {
               e.preventDefault();
               go('top');
             }}
-            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full pl-1"
+            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full pl-1 pr-1 md:pr-1.5"
             aria-label="BuildWise AI — back to top"
           >
             <img
@@ -187,7 +196,7 @@ export const Navbar: React.FC = () => {
               alt=""
               width={26}
               height={26}
-              className="rounded-[8px] dark:hidden"
+              className="rounded-[8px] dark:hidden shrink-0"
               decoding="async"
             />
             <img
@@ -196,22 +205,22 @@ export const Navbar: React.FC = () => {
               alt=""
               width={26}
               height={26}
-              className="rounded-[8px] hidden dark:block"
+              className="rounded-[8px] hidden dark:block shrink-0"
               decoding="async"
             />
-            <span className="text-[15px] font-bold tracking-[-0.02em] text-bw-ink max-[420px]:hidden">
+            <span className="whitespace-nowrap text-[14.5px] lg:text-[15px] font-bold tracking-[-0.02em] text-bw-ink max-[420px]:hidden">
               BuildWise AI
             </span>
           </a>
 
-          <span aria-hidden className="hidden h-5 w-px shrink-0 bg-bw-line md:block" />
+          <span aria-hidden className="hidden h-5 w-px shrink-0 bg-bw-line lg:block" />
 
-          {/* Links (desktop) */}
-          <ul className="hidden flex-1 items-center justify-center gap-0.5 md:flex">
+          {/* Links (tablet & desktop) */}
+          <ul className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 md:flex">
             {LINKS.map((l) => {
               const isActive = active === l.target;
               return (
-                <li key={l.label}>
+                <li key={l.label} className="shrink-0">
                   <a
                     href={`#${l.target}`}
                     onClick={(e) => {
@@ -219,7 +228,7 @@ export const Navbar: React.FC = () => {
                       go(l.target);
                     }}
                     aria-current={isActive ? 'true' : undefined}
-                    className="bw-nav-link inline-flex h-11 items-center rounded-full px-3 text-[14px] font-medium text-bw-ink-2 transition-colors duration-150 hover:text-bw-ink"
+                    className="bw-nav-link inline-flex h-11 items-center whitespace-nowrap rounded-full px-2.5 lg:px-3.5 text-[13px] lg:text-[14px] font-medium text-bw-ink-2 transition-colors duration-150 hover:text-bw-ink"
                   >
                     {isActive && (
                       <motion.span layoutId="bw-nav-active" className="bw-nav-active" transition={SPRING_SOFT} />
@@ -232,30 +241,30 @@ export const Navbar: React.FC = () => {
           </ul>
 
           {/* Actions / CTA */}
-          <div className="ml-auto flex items-center gap-1.5 md:ml-0">
+          <div className="ml-auto flex shrink-0 items-center gap-1 lg:gap-1.5 md:ml-0">
             {user ? (
               <button
                 type="button"
                 onClick={() => navigate(APP_PATH)}
-                className="hidden sm:inline-flex h-11 items-center gap-2 rounded-full px-3 text-[13px] font-medium text-bw-ink-2 hover:text-bw-ink transition-colors cursor-pointer"
+                className="hidden sm:inline-flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 lg:px-3 text-[13px] font-medium text-bw-ink-2 hover:text-bw-ink transition-colors cursor-pointer"
                 title={`Logged in as ${user.name || user.email}`}
               >
-                <span className="w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center">
+                <span className="w-5 h-5 shrink-0 rounded-full bg-bw-cta text-bw-cta-ink text-[10px] font-bold flex items-center justify-center">
                   {(user.name || user.email || 'U').charAt(0).toUpperCase()}
                 </span>
-                <span className="max-w-[100px] truncate">{user.name?.split(' ')[0] || 'App'}</span>
+                <span className="max-w-[76px] lg:max-w-[100px] truncate">{user.name?.split(' ')[0] || 'App'}</span>
               </button>
             ) : (
               <button
                 type="button"
                 onClick={() => navigate(SIGN_IN_PATH)}
-                className="hidden sm:inline-flex h-11 items-center rounded-full px-3 text-[13px] font-medium text-bw-ink-2 hover:text-bw-ink transition-colors cursor-pointer"
+                className="hidden sm:inline-flex h-11 shrink-0 items-center whitespace-nowrap rounded-full px-2.5 lg:px-3 text-[13px] font-medium text-bw-ink-2 hover:text-bw-ink transition-colors cursor-pointer"
               >
                 Sign in
               </button>
             )}
 
-            {/* Theme Toggle (Desktop) */}
+            {/* Theme Toggle (Desktop & Tablet) */}
             <button
               type="button"
               onClick={toggleTheme}
@@ -269,7 +278,7 @@ export const Navbar: React.FC = () => {
             <button
               type="button"
               onClick={() => navigate(APP_PATH)}
-              className="group inline-flex h-11 shrink-0 items-center gap-1 rounded-full border border-bw-line bg-bw-surface pl-3.5 pr-3 text-[13px] font-semibold text-bw-ink transition-[background-color,border-color,transform] duration-200 hover:bg-bw-line-soft active:scale-[0.97] cursor-pointer"
+              className="group inline-flex h-11 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-bw-line bg-bw-surface pl-3 pr-2.5 lg:pl-3.5 lg:pr-3 text-[13px] font-semibold text-bw-ink transition-[background-color,border-color,transform] duration-200 hover:bg-bw-line-soft active:scale-[0.97] cursor-pointer"
             >
               Open the app
               <span
@@ -282,6 +291,7 @@ export const Navbar: React.FC = () => {
 
             {/* Mobile menu button */}
             <button
+              ref={menuBtnRef}
               type="button"
               onClick={() => setMenuOpen((p) => !p)}
               aria-expanded={menuOpen}
@@ -383,7 +393,7 @@ export const Navbar: React.FC = () => {
                     <button
                       type="button"
                       onClick={toggleTheme}
-                      aria-label={theme === 'dark' ? 'Dark theme' : 'Light theme'}
+                      aria-label={theme === 'dark' ? 'Dark theme, switch to light' : 'Light theme, switch to dark'}
                       className="inline-flex h-11 items-center gap-2 rounded-full px-3 text-[13px] font-medium text-bw-ink bg-bw-surface border border-bw-line transition-colors cursor-pointer"
                     >
                       <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
