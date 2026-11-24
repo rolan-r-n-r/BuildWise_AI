@@ -84,6 +84,7 @@ import {
   type ViewBox,
 } from './interaction';
 import { m2, mM } from './format';
+import { CountUp } from './CountUp';
 
 /* ------------------------------------------------------------------ */
 /* constants                                                           */
@@ -951,8 +952,8 @@ export const HeroModel: React.FC = () => {
   );
 
   const figure = [
-    { label: 'Plot', value: m2(M.plot.areaSqm) },
-    { label: 'Buildable', value: m2(M.buildable.areaSqm) },
+    { label: 'Plot', value: m2(M.plot.areaSqm), num: M.plot.areaSqm, fmt: m2 },
+    { label: 'Buildable', value: m2(M.buildable.areaSqm), num: M.buildable.areaSqm, fmt: m2 },
     { label: 'Footprint', value: `${M.footprint.widthM.toFixed(1)} × ${M.footprint.depthM.toFixed(1)} m` },
     { label: 'Storeys', value: `${M.storeys} × ${M.floorHeightM.toFixed(2)} m` },
   ];
@@ -971,14 +972,15 @@ export const HeroModel: React.FC = () => {
           `a ${M.footprint.widthM} by ${M.footprint.depthM} metre footprint inside a ${M.plot.areaSqm} square metre plot, ` +
           'with the window and entrance openings the engine placed on each facade.'
         }
-        className="relative overflow-hidden rounded-[14px] border border-bw-line-soft"
+        className="group relative overflow-hidden rounded-[14px] border border-bw-line-soft transition-[border-color] duration-200 hover:border-bw-line"
         style={
           {
             aspectRatio: `${vb.w} / ${vb.h}`,
-            /* Solid white, not a gradient: the massing's own tones have to sit ON
-               something neutral, and five tones over a five-stop gradient is eleven
-               greys within 8 % of each other. */
-            background: 'var(--bw-white)',
+            /* Drafting plate ground with faint orthographic sub-grid, adaptive per theme. */
+            backgroundColor: 'var(--bw-model-ground)',
+            backgroundImage:
+              'linear-gradient(var(--bw-model-grid) 1px, transparent 1px), linear-gradient(90deg, var(--bw-model-grid) 1px, transparent 1px)',
+            backgroundSize: '28px 28px',
             boxShadow: 'var(--bw-shadow-1)',
             /* The initial values, so the first paint is already correct rather
                than waiting for the layout effect below. */
@@ -1017,18 +1019,18 @@ export const HeroModel: React.FC = () => {
                   hid all of it, and the model appeared to float. */}
               <path
                 d={rectPath(env.x - 2.4, env.y - 2.9, env.widthM, env.depthM)}
-                fill="rgba(11,18,32,0.13)"
+                fill="var(--bw-model-shadow)"
                 filter="url(#bw-massing-shadow)"
               />
               {/* a tighter shadow right at the base, so the walls sit on the paper */}
               <path
                 d={rectPath(env.x - 0.35, env.y - 0.55, env.widthM + 0.9, env.depthM + 0.9)}
                 fill="none"
-                stroke="rgba(11,18,32,0.16)"
+                stroke="var(--bw-model-shadow)"
                 strokeWidth={0.42}
                 filter="url(#bw-massing-soft)"
               />
-              <path d={plotPath} fill="rgba(11,18,32,0.032)" />
+              <path d={plotPath} fill="var(--bw-model-plot-fill)" />
               {M.outdoor.map((zone) => (
                 <path
                   key={zone.id}
@@ -1057,7 +1059,7 @@ export const HeroModel: React.FC = () => {
                 <path
                   d={buildablePath}
                   fill="none"
-                  stroke="rgba(47,111,237,0.55)"
+                  stroke="var(--bw-model-buildable-stroke)"
                   strokeWidth={HAIR}
                   strokeDasharray={`${(0.34).toFixed(2)} ${(0.26).toFixed(2)}`}
                 />
@@ -1093,7 +1095,7 @@ export const HeroModel: React.FC = () => {
                     <g key={dim.label + (vertical ? 'v' : 'h')}>
                       <path
                         d={`M ${dim.x1} ${-dim.y1} L ${dim.x2} ${-dim.y2}`}
-                        stroke="rgba(11,18,32,0.5)"
+                        stroke="var(--bw-model-dim)"
                         strokeWidth={HAIR}
                       />
                       <path
@@ -1102,7 +1104,7 @@ export const HeroModel: React.FC = () => {
                             ? `M ${dim.x1 - tick / 2} ${-dim.y1} L ${dim.x1 + tick / 2} ${-dim.y1} M ${dim.x2 - tick / 2} ${-dim.y2} L ${dim.x2 + tick / 2} ${-dim.y2}`
                             : `M ${dim.x1} ${-dim.y1 - tick / 2} L ${dim.x1} ${-dim.y1 + tick / 2} M ${dim.x2} ${-dim.y2 - tick / 2} L ${dim.x2} ${-dim.y2 + tick / 2}`
                         }
-                        stroke="rgba(11,18,32,0.5)"
+                        stroke="var(--bw-model-dim)"
                         strokeWidth={HAIR}
                       />
                       {/* A halo rather than a plate: the label has to stay legible
@@ -1113,9 +1115,9 @@ export const HeroModel: React.FC = () => {
                       <text
                         x={dim.textX}
                         y={-dim.textY + (vertical ? 0.26 : 0.26)}
-                        fill="rgba(11,18,32,0.78)"
-                        stroke="rgba(255,255,255,0.92)"
-                        strokeWidth={0.2}
+                        fill="var(--bw-model-dim)"
+                        stroke="var(--bw-model-dim-halo)"
+                        strokeWidth={0.22}
                         paintOrder="stroke"
                         /* The annotation is sized in plane metres, so it scales with
                            the drawing — which is right until the drawing is 11 px to
@@ -1305,16 +1307,22 @@ export const HeroModel: React.FC = () => {
         </div>
 
         {/* ---- the sheet's own furniture, in screen space ---- */}
-        <div className="pointer-events-none absolute left-3 top-2.5 flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase text-bw-ink-2">
-          <span className="font-semibold">{M.generationId}</span>
-          <span aria-hidden className="h-2.5 w-px bg-bw-line" />
-          <span>
-            {M.storeys}F · {M.floorHeightM.toFixed(2)} m
+        <div className="pointer-events-none absolute left-3 top-2.5 right-3 flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] uppercase text-bw-ink-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-bw-ink">{M.generationId}</span>
+            <span aria-hidden className="h-2.5 w-px bg-bw-line" />
+            <span>
+              {M.storeys}F · {M.floorHeightM.toFixed(2)} m
+            </span>
+            <span aria-hidden className="hidden h-2.5 w-px bg-bw-line sm:inline-block" />
+            <span className="hidden sm:inline">{M.plot.areaSqm.toFixed(1)} m² plot</span>
+          </div>
+          <span className="hidden rounded-full border border-bw-line-soft bg-bw-surface px-2.5 py-0.5 text-[9.5px] font-semibold text-bw-ink-2 transition-colors duration-200 group-hover:border-bw-line sm:inline-flex items-center gap-1.5">
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-bw-accent" />
+            {M.floors.reduce((n, f) => n + f.openings.length, 0)} Openings · {(M.storeys * M.floorHeightM).toFixed(1)} m Ridge
           </span>
-          <span aria-hidden className="h-2.5 w-px bg-bw-line" />
-          <span>{M.plot.areaSqm.toFixed(1)} m² plot</span>
         </div>
-        <div className="pointer-events-none absolute bottom-2.5 right-3 flex items-center gap-2 text-[10px] font-medium text-bw-ink-2">
+        <div className="pointer-events-none absolute bottom-2.5 right-3 flex items-center gap-1.5 text-[9.5px] sm:gap-2 sm:text-[10px] font-medium text-bw-ink-2">
           <span className="font-mono">N</span>
           <span aria-hidden className="text-bw-accent-deep">
             ↑
@@ -1327,15 +1335,15 @@ export const HeroModel: React.FC = () => {
           />
           <span className="tabular-nums">5 m</span>
         </div>
-        <div className="pointer-events-none absolute bottom-2.5 left-3 flex items-center gap-2.5 text-[10px] font-medium text-bw-ink-2">
+        <div className="pointer-events-none absolute bottom-2.5 left-3 flex items-center gap-2 text-[9.5px] sm:gap-2.5 sm:text-[10px] font-medium text-bw-ink-2">
           <span className="flex items-center gap-1.5">
-            <span aria-hidden className="h-[3px] w-4 rounded-full bg-bw-ink" />
+            <span aria-hidden className="h-[3px] w-3.5 sm:w-4 rounded-full bg-bw-ink" />
             Plot
           </span>
           <span className="flex items-center gap-1.5">
             <span
               aria-hidden
-              className="h-[3px] w-4 rounded-full"
+              className="h-[3px] w-3.5 sm:w-4 rounded-full"
               style={{ background: 'repeating-linear-gradient(90deg, var(--bw-accent) 0 4px, transparent 4px 7px)' }}
             />
             Buildable
@@ -1344,23 +1352,37 @@ export const HeroModel: React.FC = () => {
       </div>
 
       <figcaption className="mt-4">
-        <dl className="grid max-w-3xl grid-cols-2 gap-x-8 gap-y-4 border-t border-bw-line pt-4 sm:grid-cols-4">
+        <dl className="grid max-w-4xl grid-cols-2 gap-x-8 gap-y-4 border-t border-bw-line pt-4 sm:grid-cols-4">
           {figure.map((cell) => (
             <div key={cell.label}>
               <dt className="text-[11px] font-semibold uppercase text-bw-ink-2" style={{ letterSpacing: '0.14em' }}>
                 {cell.label}
               </dt>
-              <dd className="mt-1 ui-font-tabular text-[15px] font-semibold text-bw-ink">{cell.value}</dd>
+              <dd className="mt-1 ui-font-tabular text-[15px] font-semibold text-bw-ink">
+                {cell.num !== undefined && cell.fmt ? <CountUp value={cell.num} format={cell.fmt} /> : cell.value}
+              </dd>
             </div>
           ))}
         </dl>
-        <p className="mt-3 max-w-3xl text-[12px] leading-[1.6] text-bw-ink-2">
-          Extruded from the engine's own per-floor envelopes and window schedule for{' '}
-          <span className="font-mono">{M.generationId}</span> — {M.storeys} storeys at {M.floorHeightM.toFixed(2)} m
-          floor-to-floor, {M.floors.reduce((n, f) => n + f.openings.length, 0)} openings placed on the facades where the
-          engine put them. Certificate {M.certificate.pass} pass · {M.certificate.warn} warn · {M.certificate.na} N/A of{' '}
-          {M.certificate.total} rule layers: the engine's own verdict for a captured generation, not a marketing figure.
-        </p>
+        <div className="mt-3.5 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between border-t border-bw-line-soft pt-3">
+          <p className="max-w-2xl text-[12px] leading-[1.6] text-bw-ink-2">
+            Extruded from the engine's own per-floor envelopes and window schedule for{' '}
+            <span className="font-mono font-medium text-bw-ink">{M.generationId}</span> — {M.storeys} storeys at{' '}
+            {M.floorHeightM.toFixed(2)} m floor-to-floor, {M.floors.reduce((n, f) => n + f.openings.length, 0)} openings
+            placed on the facades where the engine put them.
+          </p>
+          <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10.5px] font-semibold shrink-0">
+            <span className="rounded-full bg-bw-green-tint px-2.5 py-0.5 text-bw-green-ink">
+              {M.certificate.pass} Pass
+            </span>
+            <span className="rounded-full bg-bw-amber-tint px-2.5 py-0.5 text-bw-amber-ink">
+              {M.certificate.warn} Warn
+            </span>
+            <span className="rounded-full border border-bw-line-soft bg-bw-surface px-2.5 py-0.5 text-bw-ink-2">
+              {M.certificate.na} N/A · {M.certificate.total} Layers
+            </span>
+          </div>
+        </div>
       </figcaption>
     </figure>
   );

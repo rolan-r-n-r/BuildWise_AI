@@ -132,9 +132,9 @@ export const Hero: React.FC = () => {
       sweep={72}
       bearing={42}
       caption="Site bearing"
-      footnote="Datum WGS 84"
+      footnote="Datum WGS 84 · 12.97° N"
       readout
-      dialOpacity={0.5}
+      dialOpacity={0.78}
       className="text-bw-accent"
     />
   );
@@ -146,7 +146,7 @@ export const Hero: React.FC = () => {
       className="relative overflow-hidden"
       aria-label="BuildWise AI — intelligent construction planning"
     >
-      <div className="relative mx-auto max-w-7xl px-6 pb-20 pt-32 sm:pt-36 lg:px-10 lg:pt-40">
+      <div className="relative mx-auto max-w-7xl px-6 pb-8 pt-24 sm:pt-28 md:pb-14 md:pt-32 lg:px-10 lg:pb-20 lg:pt-40">
         {/* The copy column takes a small share of the scroll (0.045x) so the
             first screen has depth against the model below it, which is the
             thing the scrub actually builds. Transform-only: no layout, no
@@ -176,13 +176,13 @@ export const Hero: React.FC = () => {
 
             {/* CTA row. Full-width below `sm`: two buttons of different widths stacked
                 on a phone leave the primary action narrower than the eye expects. */}
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <motion.a
                 href={CAPTURE_HREF}
                 onClick={onPrimaryClick}
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={reduced ? timed(0.3, 0.5) : { type: 'spring', stiffness: 320, damping: 26, delay: 0.54 }}
+                transition={reduced ? timed(0.25, 0.05) : { type: 'spring', stiffness: 320, damping: 26, delay: 0.14 }}
                 className="group inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-bw-cta px-6 text-[15px] font-semibold text-bw-cta-ink transition-[background-color,transform] duration-200 hover:bg-bw-cta-hover active:scale-[0.98] sm:w-auto"
                 style={{ boxShadow: LANDING.shadow.dark }}
               >
@@ -195,9 +195,9 @@ export const Hero: React.FC = () => {
               <motion.button
                 type="button"
                 onClick={() => scrollToId('capabilities')}
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={reduced ? timed(0.3, 0.6) : { type: 'spring', stiffness: 320, damping: 26, delay: 0.62 }}
+                transition={reduced ? timed(0.25, 0.1) : { type: 'spring', stiffness: 320, damping: 26, delay: 0.2 }}
                 className="group inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border border-bw-line bg-bw-surface px-5 text-[15px] font-semibold text-bw-ink transition-[background-color,border-color,transform] duration-200 hover:bg-bw-line-soft active:scale-[0.98] sm:w-auto cursor-pointer"
               >
                 <span aria-hidden className="transition-transform duration-200 group-hover:translate-y-0.5 motion-reduce:transform-none">
@@ -219,27 +219,20 @@ export const Hero: React.FC = () => {
             </div>
           </div>
 
-        {/* THE RIGHT-HAND COLUMN — dial over spec bar, at every width from `lg`.
-            Below `lg` the two halves are still one flow: the spec bar is the
-            three-up row it always was, under the copy.
-
-            WHY THE DIAL IS IN THE COLUMN AND NOT ABSOLUTE. It was an
-            absolutely-placed dial over the empty right third of the
-            sub-`xl` layout, which left the page with an instrument at 1265px and
-            none at 1440px — the same page, two products. Giving the column a
-            real occupant at every one of its widths is what makes the first
-            screen complete rather than patched: measured at 1440px, the spec
-            list used to hang on a 440px-tall divider with 300px of bare paper
-            above it. */}
-        <div className="mt-12 max-w-4xl lg:col-span-4 lg:col-start-9 lg:mt-0 lg:flex lg:max-w-none lg:flex-col lg:justify-center lg:gap-7 lg:self-stretch lg:border-l lg:border-bw-line lg:pl-8">
-          <div className="pointer-events-none hidden w-[min(100%,264px)] lg:block xl:w-[min(100%,300px)]">{siteBearing}</div>
+        {/* THE RIGHT-HAND COLUMN — dial over spec bar from `md` up; omitted on
+            mobile screens so the 3D plot extrusion follows immediately below
+            the hero actions without redundant metadata scrolling. */}
+        <div className="hidden mt-10 max-w-4xl lg:col-span-4 lg:col-start-9 lg:mt-0 md:flex md:flex-row md:items-center md:gap-8 lg:max-w-none lg:flex-col lg:items-stretch lg:justify-center lg:gap-7 lg:self-stretch lg:border-l lg:border-bw-line lg:pl-8">
+          <div className="w-44 shrink-0 lg:w-[min(100%,264px)] xl:w-[min(100%,300px)]">
+            {siteBearing}
+          </div>
 
           {/* Spec bar — the three facts that decide a technical evaluation. */}
           <motion.dl
-            initial={{ opacity: 0, y: 14 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={timed(0.6, 0.7)}
-            className="grid gap-x-10 gap-y-6 border-t border-bw-line pt-7 sm:grid-cols-3 lg:grid-cols-1 lg:gap-y-7 lg:border-t-0 lg:pt-0"
+            transition={timed(0.5, 0.26)}
+            className="grid flex-1 grid-cols-3 gap-x-8 gap-y-5 border-t border-bw-line pt-6 lg:flex-none lg:grid-cols-1 lg:gap-y-7 lg:border-t-0 lg:pt-0"
           >
             {SPECS.map((spec) => (
               <div key={spec.label}>
@@ -260,7 +253,7 @@ export const Hero: React.FC = () => {
         </motion.div>
 
         {/* ---------------- the second beat: the plot, extruded ---------------- */}
-        <div className="mt-16 flex flex-col gap-4 border-t border-bw-line pt-8 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mt-10 flex flex-col gap-4 border-t border-bw-line pt-6 sm:flex-row sm:items-end sm:justify-between md:mt-16 md:pt-8">
           <div>
             <p
               className="flex items-center gap-3 text-[11px] font-semibold uppercase text-bw-ink-2"

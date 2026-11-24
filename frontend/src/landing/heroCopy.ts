@@ -53,9 +53,9 @@ export const HERO_COPY = {
   headlineSecondAccent: 'intelligent building plans',
   headlineSecondTrail: '.',
   subcopy:
-    'BuildWise is an AI-powered construction planning and blueprint generation platform. ' +
-    'From ideas to intelligent building plans: architects, civil engineers, builders, and landowners draw a plot on the map ' +
-    'to generate construction blueprints, elemental cost estimates, material requirements, and a\u00a0complete IS 1893 site feasibility dossier.',
+    'From a map pin to a buildable plan. BuildWise gives architects, civil engineers, builders, and landowners ' +
+    'instant site suitability, IS 1893 hazard zoning, CPWD cost estimates, and dimensioned floorplan blueprints ' +
+    '— grounded in codified standards with zero paid GIS APIs.',
 } as const;
 
 /** Display stack, mirroring FONT_DISPLAY in theme.ts (the landing's `font-sans`). */
@@ -76,12 +76,14 @@ export function firstScreenCss(): string {
   const p = 'html.bw-boot-landing [data-boot-hero]';
   return `
 ${p}{display:block;position:absolute;top:0;left:0;right:0;z-index:1;font-family:${FONT_STACK};color:${LANDING.color.ink}}
-${p} .bh-wrap{margin:0 auto;max-width:80rem;padding:8rem 1.5rem 5rem}
+${p} .bh-wrap{margin:0 auto;max-width:80rem;padding:6rem 1.5rem 2rem}
+${p} .bh-status{height:44px;margin-bottom:1.5rem}
 ${p} .bh-h1{margin:0;font-size:${LANDING.type.hero};font-weight:700;letter-spacing:${LANDING.type.trackingHero};line-height:1.04;color:${LANDING.color.ink}}
 ${p} .bh-h1 span{display:block}
 ${p} .bh-sub{margin:1.5rem 0 0;max-width:38rem;font-size:17px;line-height:1.6;color:${LANDING.color.slate}}
 [data-boot-hero]{display:none}
-@media (min-width:640px){${p} .bh-wrap{padding-top:9rem}}
+@media (min-width:480px){${p} .bh-wrap{padding-top:7rem}}
+@media (min-width:768px){${p} .bh-wrap{padding:8rem 1.5rem 3.5rem}}
 @media (min-width:1024px){${p} .bh-wrap{padding:10rem 2.5rem 5rem}}
 /* THE SWAP IS CSS, NOT A TIMER. The :has() selector below is true the instant
    React has committed a child, so the shell leaves in the SAME style
@@ -126,6 +128,7 @@ export function firstScreenHtml(): string {
   const c = HERO_COPY;
   return (
     `<div data-boot-hero><div class="bh-wrap">` +
+    `<div class="bh-status" aria-hidden="true"></div>` +
     `<h1 class="bh-h1"><span>${esc(c.headlineFirst)}</span>` +
     `<span>${esc(c.headlineSecondLead)}<span>${esc(c.headlineSecondAccent)}</span>${esc(c.headlineSecondTrail)}</span></h1>` +
     `<p class="bh-sub">${esc(c.subcopy)}</p>` +

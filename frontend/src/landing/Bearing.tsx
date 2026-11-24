@@ -39,7 +39,16 @@
  * file with a raw colour as a regression.
  */
 import React, { useRef } from 'react';
-import { motion, useMotionValueEvent, useTransform, type MotionValue } from 'framer-motion';
+import {
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+  useReducedMotion,
+  useSpring,
+  useTransform,
+  type MotionValue,
+} from 'framer-motion';
+import { SPRING_POSE } from './interaction';
 
 export interface BearingProps {
   /** The scroll value that drives the turn — a page progress or an entry progress. */
@@ -63,6 +72,8 @@ export interface BearingProps {
    * landing audit). Text keeps its own token colour.
    */
   dialOpacity?: number;
+  /** Enable subtle local pointer interaction on the needle and outer ring. */
+  interactive?: boolean;
   /** Sizing and tone; the SVG fills the box this element gets. */
   className?: string;
 }
@@ -70,6 +81,7 @@ export interface BearingProps {
 const TICKS = 72;
 const NUMERALS = Array.from({ length: 12 }, (_, i) => i * 30);
 const CARDINALS: Record<number, string> = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
+const SECTORS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
 
 const at = (angleDeg: number, radius: number) => {
   const a = (angleDeg * Math.PI) / 180;
@@ -77,6 +89,10 @@ const at = (angleDeg: number, radius: number) => {
 };
 
 const pad = (v: number) => String(Math.round(((v % 360) + 360) % 360)).padStart(3, '0');
+const sectorOf = (v: number) => {
+  const norm = ((v % 360) + 360) % 360;
+  return SECTORS[Math.round(norm / 45) % 8];
+};
 
 export const Bearing: React.FC<BearingProps> = ({
   progress,
@@ -87,36 +103,88 @@ export const Bearing: React.FC<BearingProps> = ({
   footnote,
   readout = false,
   dialOpacity = 1,
+  interactive = true,
   className,
 }) => {
+  const reduced = useReducedMotion();
   const card = useTransform(progress, [0, 1], [0, sweep]);
   const counter = useTransform(progress, [0, 1], [0, counterSweep]);
+
+  /* Local hover needle deflection (±10° damped spring). Uses zero window
+     listeners and zero React state updates during pointer moves. */
+  const rawDeflect = useMotionValue(0);
+  const needleDeflect = useSpring(rawDeflect, SPRING_POSE);
+  const dialRef = useRef<HTMLDivElement>(null);
 
   /* The readout's text node, written directly. One element, one text write per
      frame at most, and no value at all when `readout` is false. */
   const digits = useRef<HTMLSpanElement>(null);
-  useMotionValueEvent(card, 'change', (v) => {
-    if (digits.current) digits.current.textContent = pad(bearing + v);
-  });
+  const sectorRef = useRef<HTMLSpanElement>(null);
+  const updateReadout = () => {
+    // Both `card` (dial ring) and `needleDeflect` (pointer hover) use clockwise
+    // positive screen rotation, so both add to the printed bearing telemetry.
+    const angle = bearing + card.get() + needleDeflect.get();
+    if (digits.current) digits.current.textContent = pad(angle);
+    if (sectorRef.current) sectorRef.current.textContent = sectorOf(angle);
+  };
+  useMotionValueEvent(card, 'change', updateReadout);
+  useMotionValueEvent(needleDeflect, 'change', updateReadout);
 
-  /* The needle is drawn once, at the bearing it reports, and never turns. */
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (reduced || !interactive || e.pointerType === 'touch') return;
+    const el = dialRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = e.clientX - cx;
+    const dy = e.clientY - cy;
+    const pointerAngle = (Math.atan2(dx, -dy) * 180) / Math.PI;
+    // Shortest signed angular difference from needle bearing, gently damped to ±10°
+    let delta = ((pointerAngle - bearing + 540) % 360) - 180;
+    delta = Math.max(-10, Math.min(10, delta * 0.14));
+    rawDeflect.set(delta);
+  };
+
+  const onPointerLeave = () => {
+    rawDeflect.set(0);
+  };
+
+  /* The needle is drawn once at `bearing` and deflected smoothly on hover. */
   const tip = at(bearing, 58);
-  const tail = at(bearing, -15);
+  const tail = at(bearing, -16);
   const left = at(bearing - 90, 5.4);
   const right = at(bearing + 90, 5.4);
 
   return (
     <div className={className} aria-hidden>
-      <div className="relative aspect-square" style={{ opacity: dialOpacity }}>
+      <div
+        ref={dialRef}
+        onPointerMove={onPointerMove}
+        onPointerLeave={onPointerLeave}
+        data-interactive={interactive && !reduced ? 'true' : undefined}
+        className={`bw-bearing-dial group relative aspect-square rounded-full transition-opacity duration-200 ${
+          interactive && !reduced ? 'cursor-crosshair' : ''
+        }`}
+        style={{ '--bw-dial-opacity': String(dialOpacity) } as React.CSSProperties}
+      >
+        {/* Subtle calibration halo ring visible on hover */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-[2%] rounded-full border border-current opacity-0 transition-opacity duration-200 group-hover:opacity-25"
+        />
+
         {/* The card: ring, ticks, numerals. */}
         <motion.svg viewBox="0 0 200 200" className="absolute inset-0 h-full w-full" style={{ rotate: card }}>
           <g fill="none" stroke="currentColor" strokeLinecap="round">
-            <circle cx="100" cy="100" r="96" strokeWidth="1.1" opacity="0.55" />
+            <circle cx="100" cy="100" r="96" strokeWidth="1.1" opacity="0.6" />
+            <circle cx="100" cy="100" r="99" strokeWidth="0.5" opacity="0.22" />
             {Array.from({ length: TICKS }, (_, i) => {
               const angle = i * 5;
               const cardinal = angle % 90 === 0;
               const major = angle % 30 === 0;
-              const inner = cardinal ? 78 : major ? 84 : 88;
+              const mid = angle % 15 === 0;
+              const inner = cardinal ? 78 : major ? 83 : mid ? 86 : 89;
               const outer = cardinal ? 98 : 96;
               const from = at(angle, inner);
               const to = at(angle, outer);
@@ -127,8 +195,8 @@ export const Bearing: React.FC<BearingProps> = ({
                   y1={from.y}
                   x2={to.x}
                   y2={to.y}
-                  strokeWidth={cardinal ? 1.7 : major ? 1.1 : 0.6}
-                  opacity={cardinal ? 0.85 : major ? 0.6 : 0.4}
+                  strokeWidth={cardinal ? 1.8 : major ? 1.15 : mid ? 0.85 : 0.55}
+                  opacity={cardinal ? 0.92 : major ? 0.68 : mid ? 0.5 : 0.35}
                 />
               );
             })}
@@ -145,7 +213,7 @@ export const Bearing: React.FC<BearingProps> = ({
               const p = at(angle, 70);
               const label = CARDINALS[angle] ?? pad(angle);
               return (
-                <text key={angle} x={p.x} y={p.y} opacity={CARDINALS[angle] ? 0.85 : 0.42}>
+                <text key={angle} x={p.x} y={p.y} opacity={CARDINALS[angle] ? 0.92 : 0.48}>
                   {label}
                 </text>
               );
@@ -156,28 +224,41 @@ export const Bearing: React.FC<BearingProps> = ({
         {/* The inner ring: same centre, opposite turn, at its own rate. */}
         <motion.svg viewBox="0 0 200 200" className="absolute inset-0 h-full w-full" style={{ rotate: counter }}>
           <g fill="none" stroke="currentColor" strokeLinecap="round">
-            <circle cx="100" cy="100" r="50" strokeWidth="0.9" strokeDasharray="2.5 5" opacity="0.5" />
+            <circle cx="100" cy="100" r="50" strokeWidth="0.9" strokeDasharray="2.5 5" opacity="0.55" />
+            <circle cx="100" cy="100" r="32" strokeWidth="0.55" opacity="0.24" />
             {[45, 135, 225, 315].map((angle) => {
               const from = at(angle, 50);
               const to = at(angle, 58);
-              return <line key={angle} x1={from.x} y1={from.y} x2={to.x} y2={to.y} strokeWidth="0.9" opacity="0.45" />;
+              return <line key={angle} x1={from.x} y1={from.y} x2={to.x} y2={to.y} strokeWidth="0.9" opacity="0.5" />;
             })}
           </g>
         </motion.svg>
 
-        {/* The needle — the one thing on the dial that does not move. */}
-        <svg viewBox="0 0 200 200" className="absolute inset-0 h-full w-full">
-          <g fill="none" stroke="currentColor" strokeLinecap="round" opacity="0.6">
-            <line x1={tail.x} y1={tail.y} x2={tip.x} y2={tip.y} strokeWidth="0.8" />
+        {/* Static center reticle crosshair */}
+        <svg viewBox="0 0 200 200" className="pointer-events-none absolute inset-0 h-full w-full">
+          <g stroke="currentColor" strokeWidth="0.65" opacity="0.28">
+            <line x1="100" y1="74" x2="100" y2="126" />
+            <line x1="74" y1="100" x2="126" y2="100" />
+          </g>
+        </svg>
+
+        {/* The needle — points at `bearing`, gently responds to pointer hover. */}
+        <motion.svg
+          viewBox="0 0 200 200"
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          style={{ rotate: needleDeflect }}
+        >
+          <g fill="none" stroke="currentColor" strokeLinecap="round" opacity="0.68">
+            <line x1={tail.x} y1={tail.y} x2={tip.x} y2={tip.y} strokeWidth="0.9" />
           </g>
           <polygon
             points={`${tip.x},${tip.y} ${left.x},${left.y} ${tail.x},${tail.y} ${right.x},${right.y}`}
             fill="currentColor"
-            opacity="0.7"
+            opacity="0.78"
           />
-          <circle cx="100" cy="100" r="4.4" fill="currentColor" opacity="0.8" />
-          <circle cx="100" cy="100" r="1.6" fill="var(--bw-white)" />
-        </svg>
+          <circle cx="100" cy="100" r="4.5" fill="currentColor" opacity="0.86" />
+          <circle cx="100" cy="100" r="1.7" fill="var(--bw-white)" />
+        </motion.svg>
       </div>
 
       {(caption || readout || footnote) && (
@@ -197,7 +278,10 @@ export const Bearing: React.FC<BearingProps> = ({
               {readout && (
                 <span className="font-mono text-[11px] font-semibold tabular-nums text-bw-accent">
                   <span ref={digits}>{pad(bearing)}</span>
-                  <span className="text-bw-ink-2">°</span>
+                  <span className="text-bw-ink-2">° </span>
+                  <span ref={sectorRef} className="text-[10px] text-bw-ink-2">
+                    {sectorOf(bearing)}
+                  </span>
                 </span>
               )}
             </div>
