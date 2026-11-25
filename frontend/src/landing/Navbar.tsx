@@ -173,7 +173,7 @@ export const Navbar: React.FC = () => {
         initial={{ y: -64, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 300, damping: 28, delay: 0.1 }}
-        className="fixed inset-x-0 top-0 z-50 flex justify-center px-4 pt-4"
+        className="fixed inset-x-0 top-0 z-50 flex justify-center px-3 sm:px-4 pt-4"
       >
         <nav
           ref={navRef}
@@ -187,7 +187,7 @@ export const Navbar: React.FC = () => {
               e.preventDefault();
               go('top');
             }}
-            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full pl-1 pr-1 md:pr-1.5"
+            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 sm:gap-2 rounded-full pl-1 pr-1 md:pr-1.5"
             aria-label="BuildWise AI — back to top"
           >
             <img
@@ -208,7 +208,7 @@ export const Navbar: React.FC = () => {
               className="rounded-[8px] hidden dark:block shrink-0"
               decoding="async"
             />
-            <span className="whitespace-nowrap text-[14.5px] lg:text-[15px] font-bold tracking-[-0.02em] text-bw-ink max-[420px]:hidden">
+            <span className="whitespace-nowrap text-[13px] min-[375px]:text-[14px] lg:text-[15px] font-bold tracking-[-0.02em] text-bw-ink">
               BuildWise AI
             </span>
           </a>
@@ -278,7 +278,7 @@ export const Navbar: React.FC = () => {
             <button
               type="button"
               onClick={() => navigate(APP_PATH)}
-              className="group inline-flex h-11 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-bw-line bg-bw-surface pl-3 pr-2.5 lg:pl-3.5 lg:pr-3 text-[13px] font-semibold text-bw-ink transition-[background-color,border-color,transform] duration-200 hover:bg-bw-line-soft active:scale-[0.97] cursor-pointer"
+              className="group inline-flex h-11 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-bw-line bg-bw-surface pl-2.5 pr-2 min-[375px]:pl-3 min-[375px]:pr-2.5 lg:pl-3.5 lg:pr-3 text-[12px] min-[375px]:text-[13px] font-semibold text-bw-ink transition-[background-color,border-color,transform] duration-200 hover:bg-bw-line-soft active:scale-[0.97] cursor-pointer"
             >
               Open the app
               <span
