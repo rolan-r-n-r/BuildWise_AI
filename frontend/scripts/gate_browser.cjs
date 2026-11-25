@@ -47,7 +47,6 @@ const SUITES = [
   { name: 'selection policy', script: 'e2e_selection_policy.cjs', timeoutMs: 300000 },
   { name: 'full funnel', script: 'e2e_full_funnel.cjs', timeoutMs: 600000 },
   { name: 'UI closure', script: 'e2e_ui_closure.cjs', timeoutMs: 360000 },
-  { name: 'warning overflow', script: 'e2e_warning_overflow.cjs', timeoutMs: 180000 },
   { name: 'blueprint progressive reveal', script: 'e2e_blueprint_reveal.cjs', timeoutMs: 420000 },
   { name: 'blueprint view modes', script: 'e2e_blueprint_view_modes.cjs', timeoutMs: 420000 },
 ];

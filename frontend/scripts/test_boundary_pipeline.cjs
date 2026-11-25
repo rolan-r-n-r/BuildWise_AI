@@ -255,8 +255,8 @@ console.log('\n[7] Frontage suggestion math');
   /* ---------- Universal Validation Gate QA-panel logic ---------- */
   const validationGateUI = require(path.join(outDir, 'validationGateUI.js'));
   check(
-    JSON.stringify(validationGateUI.GATE_LAYER_IDS) === JSON.stringify(Array.from({ length: 15 }, (_, i) => `L${i + 1}`)),
-    'gate layer-id list is canonical L1..L15'
+    JSON.stringify(validationGateUI.GATE_LAYER_IDS) === JSON.stringify(Array.from({ length: 16 }, (_, i) => `L${i + 1}`)),
+    'gate layer-id list is canonical L1..L16'
   );
 
   const sampleGate = {
@@ -275,7 +275,7 @@ console.log('\n[7] Frontage suggestion math');
   check(grouped.naRows.length === 1 && grouped.naRows[0].layer_id === 'L3', 'N/A row grouped for explicit-reason surfacing');
   check(grouped.failRows.length === 1 && grouped.failRows[0].layer_id === 'L5', 'FAIL row grouped');
   check(
-    grouped.incompleteIds.length === 10 && grouped.incompleteIds[0] === 'L6' && grouped.incompleteIds.includes('L15'),
+    grouped.incompleteIds.length === 11 && grouped.incompleteIds[0] === 'L6' && grouped.incompleteIds.includes('L16'),
     'incomplete gate flagged (missing layer ids listed, never silently hidden)'
   );
 

@@ -454,6 +454,43 @@ async function main() {
         !/report-sheet-tabs-nav lg:hidden/.test(sheetSrc),
       'no CSS-hidden duplicate tab bar remains',
     );
+
+    console.log('\n[10] Single-source card chips, plot-area provenance, and stale-plan export guard');
+    check(!cardSrc.includes('userFloors'), 'FloorPlanGeneratorCard has no userFloors state');
+    check(!cardSrc.includes('setUserFloors'), 'FloorPlanGeneratorCard has no setUserFloors state');
+    check(!cardSrc.includes('Storeys (Levels)'), 'FloorPlanGeneratorCard has no duplicate Storeys (Levels) input');
+    check(!cardSrc.includes("'1 (G)' : f === 2"), 'FloorPlanGeneratorCard has no duplicate storeys selector buttons');
+    check(cardSrc.includes('inherited-typology-chip'), 'FloorPlanGeneratorCard renders inherited-typology-chip');
+    check(cardSrc.includes('inherited-storeys-chip'), 'FloorPlanGeneratorCard renders inherited-storeys-chip');
+    check(cardSrc.includes('inherited-coverage-chip'), 'FloorPlanGeneratorCard renders inherited-coverage-chip');
+    check(cardSrc.includes('Edit in Project Parameters'), 'FloorPlanGeneratorCard shows Edit in Project Parameters hint');
+
+    const heroSrc = fs.readFileSync(
+      path.join(ROOT, 'src', 'components', 'report', 'ReportHeroHeader.tsx'),
+      'utf8',
+    );
+    const landSrc = fs.readFileSync(
+      path.join(ROOT, 'src', 'components', 'LandValueCard.tsx'),
+      'utf8',
+    );
+    check(heroSrc.includes('plot_area_source'), 'ReportHeroHeader reads plot_area_source');
+    check(!heroSrc.includes("'sq ft (captured boundary)'"), 'ReportHeroHeader does not hardcode captured-boundary label');
+    check(heroSrc.includes('boundary-provenance'), 'ReportHeroHeader renders boundary-provenance line');
+    check(heroSrc.includes('boundary_summary'), 'ReportHeroHeader uses server boundary_summary');
+    check(landSrc.includes('plot_area_source'), 'LandValueCard reads plot_area_source');
+    check(landSrc.includes('plot-area-basis'), 'LandValueCard prints plot-area-basis');
+    check(landSrc.includes('plot_area_warnings'), 'LandValueCard surfaces plot_area_warnings');
+
+    const viewerSrc = fs.readFileSync(
+      path.join(ROOT, 'src', 'components', 'BlueprintViewer.tsx'),
+      'utf8',
+    );
+    check(viewerSrc.includes('isStale?: boolean'), 'BlueprintViewer accepts isStale prop');
+    check(viewerSrc.includes('data-testid="stale-plan-chip"'), 'BlueprintViewer renders card stale-plan-chip');
+    check(viewerSrc.includes('data-testid="modal-stale-plan-chip"'), 'BlueprintViewer renders modal stale-plan-chip');
+    check(viewerSrc.includes('if (isStale) return;'), 'BlueprintViewer export handlers guard on isStale');
+    check(viewerSrc.includes('disabled={isExportingPdf || isStale}'), 'BlueprintViewer PDF export disabled when isStale');
+    check(viewerSrc.includes('disabled={isStale}'), 'BlueprintViewer SVG export disabled when isStale');
   } finally {
     await server.close();
   }
