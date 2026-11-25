@@ -3,19 +3,18 @@ test_hybrid_execution.py — Comprehensive tests for the Hybrid AI Architecture 
 Verifies Scenarios A, B, C, D, E of the Hybrid BYOK specification.
 """
 import pytest
-from app.auth.models import AuthenticatedUser
-from app.ai.execution_resolver import ExecutionResolver, ExecutionPlan
-from app.db.ai_credential_repository import AICredentialRepository
-from app.db.database import get_connection, init_db
-from app.services.ai_crypto import encrypt_api_key
 import httpx
+from app.auth.models import AuthenticatedUser
+from app.ai.execution_resolver import ExecutionResolver
+from app.db.ai_credential_repository import AICredentialRepository
+from app.db.database import get_connection
+from app.services.ai_crypto import encrypt_api_key
 
 
 @pytest.fixture(autouse=True)
-def setup_db():
-    init_db()
+def setup_db(isolated_db):
     now = "2026-11-16T12:00:00Z"
-    with get_connection() as conn:
+    with get_connection(isolated_db) as conn:
         conn.execute(
             "INSERT OR REPLACE INTO user (id, name, email, emailVerified, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)",
             ("user_hybrid_1", "Hybrid Tester", "hybrid@buildwise.ai", 1, now, now)

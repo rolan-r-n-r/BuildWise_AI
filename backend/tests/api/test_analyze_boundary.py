@@ -8,10 +8,8 @@ The captured boundary is additive and optional:
   - statutory violations (EC-03 area < 36 m2, EC-01 edge < 1 m) return 422
   - responses WITHOUT a boundary are byte-comparable to the boundary-less shape
 """
-import pytest
 from fastapi.testclient import TestClient
 from app.main import app
-from unittest.mock import patch, MagicMock
 
 client = TestClient(app)
 
@@ -46,34 +44,6 @@ def _boundary_payload(area_multiplier=1.0):
         "source": "trace",
         "frontage_edge_index": 0,
     }
-
-
-@pytest.fixture
-def mock_external_http():
-    with patch("httpx.AsyncClient.get", side_effect=_mock), patch("httpx.AsyncClient.post", side_effect=_mock):
-        yield
-
-
-def _mock(url, **kwargs):
-    resp = MagicMock()
-    resp.status_code = 200
-    resp.json.return_value = _fallback_json(url)
-    return resp
-
-
-def _fallback_json(url):
-    if "nominatim" in url:
-        return {"display_name": "Bengaluru Urban, Karnataka, India", "address": {"city": "Bengaluru", "state": "Karnataka"}}
-    if "earthquake.usgs.gov" in url:
-        return {"features": []}
-    if "flood-api.open-meteo.com" in url:
-        return {"daily": {"river_discharge": [0.02] * 10}}
-    if "archive-api.open-meteo.com" in url:
-        times = [f"{y}-06-15" for y in range(2015, 2025)]
-        return {"daily": {"time": times, "wind_gusts_10m_max": [55.0] * 10, "precipitation_sum": [15.0] * 10}}
-    if "api.open-elevation.com" in url:
-        return {"results": [{"elevation": 920.0}]}
-    return {}
 
 
 def test_analyze_without_boundary_unchanged(mock_external_http):
@@ -116,7 +86,7 @@ def test_analyze_boundary_below_statutory_area_rejected(mock_external_http):
 
 
 # ---------------------------------------------------------------------------
-# Captured boundary IS the reported plot area 
+# Captured boundary IS the reported plot area
 # ---------------------------------------------------------------------------
 
 SQM_PER_SQFT = 0.09290304

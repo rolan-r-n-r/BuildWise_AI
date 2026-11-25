@@ -6,21 +6,18 @@ import pytest
 import httpx
 from fastapi.testclient import TestClient
 from app.main import app
-from app.db.database import get_connection, init_db
-from app.auth.crypto import hash_password, generate_id, generate_session_token
+from app.db.database import get_connection
 from app.ai.ssrf import validate_outbound_url, SSRFValidationError
 from app.ai.groq_adapter import validate_groq_key
 from app.ai.gemini_adapter import validate_gemini_key
-from app.services.ai_crypto import sanitize_api_key, is_masked_key_hint
 
 client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def setup_test_users():
-    """Sets up two isolated, email-verified test users in SQLite."""
-    init_db()
-    with get_connection() as conn:
+def setup_test_users(isolated_db):
+    """Sets up two isolated, email-verified test users in an isolated temp SQLite DB."""
+    with get_connection(isolated_db) as conn:
         now = "2026-11-16T12:00:00Z"
         # User A
         conn.execute(
@@ -73,7 +70,6 @@ def test_user_initial_config_defaults_to_deterministic():
 
 def test_connect_provider_encrypts_key_and_returns_hint(monkeypatch):
     """Saving an API key must succeed, mask the key hint, and never return the plaintext key."""
-    # Mock validate to succeed
     async def mock_validate(*args, **kwargs):
         return True, "Verified", ["llama-3.3-70b-versatile"]
 

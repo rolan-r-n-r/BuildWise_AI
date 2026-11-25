@@ -1,100 +1,14 @@
 import io
 import time
-import pytest
+from unittest.mock import patch
+
 import pypdf
-from unittest.mock import patch, MagicMock
+import pytest
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)
-
-def _mock_http_response(url: str, **kwargs):
-    resp = MagicMock()
-    resp.status_code = 200
-
-    if "nominatim" in url:
-        if "26.14" in url or "91.73" in url:
-            resp.json.return_value = {
-                "display_name": "GS Road, Guwahati, Kamrup Metropolitan, Assam, India",
-                "address": {"city": "Guwahati", "state": "Assam"}
-            }
-        elif "25.59" in url or "85.13" in url:
-            resp.json.return_value = {
-                "display_name": "Patna, Patna District, Bihar, India",
-                "address": {"city": "Patna", "state": "Bihar"}
-            }
-        else:
-            resp.json.return_value = {
-                "display_name": "Bengaluru Urban, Karnataka, India",
-                "address": {"city": "Bengaluru", "state": "Karnataka"}
-            }
-    elif "earthquake.usgs.gov" in url:
-        if "26.14" in url or "91.73" in url:
-            resp.json.return_value = {
-                "features": [
-                    {
-                        "properties": {"mag": 6.8, "time": 1600000000000, "place": "Assam Tectonic Belt"},
-                        "geometry": {"coordinates": [91.73, 26.14, 10.0]}
-                    },
-                    {
-                        "properties": {"mag": 5.4, "time": 1500000000000, "place": "Kamrup District"},
-                        "geometry": {"coordinates": [91.75, 26.12, 15.0]}
-                    }
-                ]
-            }
-        else:
-            resp.json.return_value = {"features": []}
-    elif "flood-api.open-meteo.com" in url:
-        if "25.59" in url or "85.13" in url:
-            resp.json.return_value = {
-                "daily": {"river_discharge": [20.0, 25.0, 30.0, 180.0, 25.0, 20.0, 22.0, 24.0, 20.0, 25.0]}
-            }
-        else:
-            resp.json.return_value = {
-                "daily": {"river_discharge": [0.02, 0.04, 0.01, 0.03, 0.01, 0.02, 0.01, 0.02, 0.01, 0.02]}
-            }
-    elif "archive-api.open-meteo.com" in url:
-        times = [f"{y}-06-15" for y in range(2015, 2025)]
-        gusts = [55.0] * 10
-        precips = [15.0] * 10
-        resp.json.return_value = {
-            "daily": {"time": times, "wind_gusts_10m_max": gusts, "precipitation_sum": precips}
-        }
-    elif "api.open-elevation.com" in url:
-        if "25.59" in url:
-            resp.json.return_value = {"results": [{"elevation": 53.0}]}
-        elif "26.14" in url:
-            resp.json.return_value = {"results": [{"elevation": 55.0}]}
-        else:
-            resp.json.return_value = {"results": [{"elevation": 920.0}]}
-    else:
-        resp.json.return_value = {}
-
-    return resp
-
-def _mock_http_post(url: str, **kwargs):
-    resp = MagicMock()
-    resp.status_code = 200
-    if "overpass-api.de" in url:
-        resp.json.return_value = {
-            "elements": [
-                {
-                    "geometry": [
-                        {"lat": 12.972, "lon": 77.595},
-                        {"lat": 12.973, "lon": 77.596}
-                    ]
-                }
-            ]
-        }
-    else:
-        resp.json.return_value = {}
-    return resp
-
-@pytest.fixture
-def mock_external_http():
-    with patch("httpx.AsyncClient.get", side_effect=_mock_http_response), \
-         patch("httpx.AsyncClient.post", side_effect=_mock_http_post):
-        yield
 
 
 def test_health_endpoint():
@@ -156,16 +70,15 @@ def test_rate_limiter():
 
     ip = "99.99.99.99"
     _client_request_history[ip] = []
-    
+
     # 30 requests should succeed
     for _ in range(30):
         check_rate_limit(ip)
-    
+
     # 31st request should trigger 429
     with pytest.raises(HTTPException) as exc_info:
         check_rate_limit(ip)
     assert exc_info.value.status_code == 429
-
 
 
 def test_analyze_endpoint(mock_external_http):
@@ -418,9 +331,6 @@ def test_full_user_journey_unified_report(mock_external_http):
     4. POST /api/report with baseline (no site_vision, no floor_plan) vs unified
     Extracts text using pypdf to assert section presence and page count metrics.
     """
-    import io
-    import pypdf
-
     # a. Analyze
     analyze_resp = client.post("/api/analyze", json={
         "latitude": 12.9716,
@@ -700,7 +610,6 @@ def test_client_ip_trusted_proxy_verification():
     """Verify that unverified direct client connections cannot spoof X-Forwarded-For."""
     from unittest.mock import MagicMock
     from app.main import _client_ip
-    from app.config import settings
 
     # 1. Untrusted direct client IP should NOT honor X-Forwarded-For
     req_untrusted = MagicMock()
@@ -730,9 +639,6 @@ def test_cors_origins_json_array_parsing():
 
 def test_cors_vercel_origin_allowed():
     """Verify that Vercel origins are allowed by CORS policy."""
-    from fastapi.testclient import TestClient
-    from app.main import app
-
     c = TestClient(app)
     resp = c.options(
         "/api/floorplan/remediation",
@@ -748,14 +654,13 @@ def test_cors_vercel_origin_allowed():
 
 def test_request_body_size_limit_rejection():
     """Verify that oversized requests are rejected with HTTP 413."""
-    from fastapi.testclient import TestClient
-    from app.main import app, MAX_REQUEST_BODY_BYTES
+    from app.main import MAX_REQUEST_BODY_BYTES
 
-    client = TestClient(app)
+    c = TestClient(app)
 
     # 1. Header-based rejection (Content-Length > MAX_REQUEST_BODY_BYTES)
     oversized_length = MAX_REQUEST_BODY_BYTES + 1024
-    resp = client.post(
+    resp = c.post(
         "/api/analyze",
         headers={"content-length": str(oversized_length)},
         content=b"x"
@@ -764,17 +669,15 @@ def test_request_body_size_limit_rejection():
     assert "Request body too large" in resp.json()["detail"]
 
     # 2. Streaming rejection when chunks exceed MAX_REQUEST_BODY_BYTES
-    # Temporarily patch MAX_REQUEST_BODY_BYTES to a small value for streaming verification
     import app.main as main_mod
     original_max = main_mod.MAX_REQUEST_BODY_BYTES
     try:
         main_mod.MAX_REQUEST_BODY_BYTES = 500
-        # Stream 1000 bytes in chunks of 200 without Content-Length
         def chunk_generator():
             for _ in range(5):
                 yield b"A" * 200
 
-        resp_stream = client.post(
+        resp_stream = c.post(
             "/api/analyze",
             content=chunk_generator(),
             headers={"transfer-encoding": "chunked"}
@@ -785,10 +688,9 @@ def test_request_body_size_limit_rejection():
         main_mod.MAX_REQUEST_BODY_BYTES = original_max
 
 
-def test_app_lifespan_startup_and_shutdown():
+def test_app_lifespan_startup_and_shutdown(isolated_db):
     """Ensure the FastAPI lifespan context manager starts up and shuts down cleanly."""
     with TestClient(app) as test_client:
         resp = test_client.get("/api/health")
         assert resp.status_code == 200
         assert resp.json()["status"] == "healthy"
-

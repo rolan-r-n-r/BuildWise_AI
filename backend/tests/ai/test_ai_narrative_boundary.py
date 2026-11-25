@@ -17,7 +17,7 @@ commentary.  These tests hold the boundary:
     the server, and the removal is disclosed;
   * ordinary descriptive text (percentages, room counts) is left alone.
 """
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,39 +27,6 @@ from app.main import app
 from app.services.ai_narrative import sanitize_narrative
 
 client = TestClient(app)
-
-
-def _mock_http(url, **kwargs):
-    resp = MagicMock()
-    resp.status_code = 200
-    resp.json.return_value = _fallback_json(url)
-    return resp
-
-
-def _fallback_json(url):
-    if "nominatim" in url:
-        return {"display_name": "Bengaluru Urban, Karnataka, India",
-                "address": {"city": "Bengaluru", "state": "Karnataka"}}
-    if "earthquake.usgs.gov" in url:
-        return {"features": []}
-    if "flood-api.open-meteo.com" in url:
-        return {"daily": {"river_discharge": [0.02] * 10}}
-    if "archive-api.open-meteo.com" in url:
-        times = [f"{y}-06-15" for y in range(2015, 2025)]
-        return {"daily": {"time": times, "wind_gusts_10m_max": [55.0] * 10,
-                          "precipitation_sum": [15.0] * 10}}
-    if "api.open-meteo.com" in url:
-        return {"elevation": [920.0]}
-    if "api.open-elevation.com" in url:
-        return {"results": [{"elevation": 920.0}]}
-    return {}
-
-
-@pytest.fixture
-def mock_external_http():
-    with patch("httpx.AsyncClient.get", side_effect=_mock_http), \
-         patch("httpx.AsyncClient.post", side_effect=_mock_http):
-        yield
 
 
 class _HostileAdapter:
@@ -142,7 +109,6 @@ def test_hostile_narrative_claims_are_removed_and_the_removal_is_disclosed(mock_
 
 def test_the_report_pdf_never_carries_the_hostile_claims(mock_external_http):
     from io import BytesIO
-
     from pypdf import PdfReader
 
     resp = _analyze_with_hostile_narrative()
