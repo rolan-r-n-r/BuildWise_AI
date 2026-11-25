@@ -17,7 +17,7 @@ from app.services.floorplan.remediation import (
 from app.services.plan_verdict import compute_plan_verdict
 
 FIXTURE = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
     / "frontend"
     / "src"
     / "test-fixtures"

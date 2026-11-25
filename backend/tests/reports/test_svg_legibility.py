@@ -1,3 +1,4 @@
+import copy
 import re
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Tuple
@@ -5,6 +6,21 @@ import pytest
 
 from app.schemas.floorplan import FloorPlanRequest
 from app.services.floorplan.engine import SoleGeometryEngine
+
+_SOLVE_CACHE: Dict[Tuple[Any, ...], Any] = {}
+
+
+def _cached_solve(req: FloorPlanRequest):
+    key = (
+        req.building_typology,
+        req.floors,
+        req.plot_width_m,
+        req.plot_depth_m,
+        req.ground_coverage_ratio,
+    )
+    if key not in _SOLVE_CACHE:
+        _SOLVE_CACHE[key] = SoleGeometryEngine(req).solve()
+    return copy.deepcopy(_SOLVE_CACHE[key])
 
 
 def extract_text_and_badge_bboxes(svg_str: str) -> List[Dict[str, Any]]:
@@ -164,8 +180,7 @@ def test_svg_zero_pairwise_text_collisions(typology_key: str, typology_name: str
         building_typology=typology_key,
         ground_coverage_ratio=0.60,
     )
-    solver = SoleGeometryEngine(req)
-    building = solver.solve()
+    building = _cached_solve(req)
 
     for f_idx, floor in enumerate(building.floors):
         # Test CAD theme
@@ -207,8 +222,7 @@ def test_ground_floor_main_entrance_annotation(typology_key: str, typology_name:
         floors=2,
         building_typology=typology_key,
     )
-    solver = SoleGeometryEngine(req)
-    building = solver.solve()
+    building = _cached_solve(req)
 
     gf = building.floors[0]
     svg = gf.svg_blueprint_cad
@@ -242,8 +256,7 @@ def test_title_block_lines_non_intersecting(typology_key: str, typology_name: st
         floors=floors_count,
         building_typology=typology_key,
     )
-    solver = SoleGeometryEngine(req)
-    building = solver.solve()
+    building = _cached_solve(req)
 
     for floor in building.floors:
         svg = floor.svg_blueprint_cad
@@ -286,8 +299,7 @@ def test_worst_case_small_plot_legibility():
         floors=2,
         building_typology="T1_SINGLE_FAMILY",
     )
-    solver = SoleGeometryEngine(req)
-    building = solver.solve()
+    building = _cached_solve(req)
 
     for f_idx, floor in enumerate(building.floors):
         svg = floor.svg_blueprint_cad
@@ -314,8 +326,7 @@ def test_core_anchor_badge_outside_core_with_leader():
         floors=3,
         building_typology="T1_SINGLE_FAMILY",
     )
-    solver = SoleGeometryEngine(req)
-    building = solver.solve()
+    building = _cached_solve(req)
 
     # Upper floors must contain F0 CORE ANCHOR badge and leader line
     for f_idx in [1, 2]:
@@ -341,8 +352,7 @@ def test_unit_entry_door_badges_t2_t3(typology_key: str):
         floors=2,
         building_typology=typology_key,
     )
-    solver = SoleGeometryEngine(req)
-    building = solver.solve()
+    building = _cached_solve(req)
 
     for floor in building.floors:
         svg = floor.svg_blueprint_cad

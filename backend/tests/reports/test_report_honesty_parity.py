@@ -7,9 +7,7 @@ tests pin the shared contract:
   - a null seismic zone can never render as a zone letter
 """
 import io
-import sys
 
-sys.path.insert(0, ".")
 from pypdf import PdfReader
 
 from app.services.plan_verdict import plan_truth_labels

@@ -1,12 +1,13 @@
 """
-test_site_intelligence.py — site intelligence contract tests.
-===================================================
+test_site_intelligence.py — site intelligence contract & boundary bounds guard tests.
+=====================================================================================
 Covers:
 - /api/nearest-road Overpass proxy: hit, cache, honest fallback (Amendment 1:
   no fabricated geometry), "no road mapped" case, 1 req/s throttle.
 - /api/site/preview: determinism, hash cache, statutory 422s, taxonomy
   serialization (CALCULATED/ASSUMED/RECOMMENDED/VERIFIED), p95 < 150 ms,
   rectangle golden values, provenance block, frontage annotation.
+- Operational envelope bounds guard for captured boundaries (span/area 422s).
 - Vastu delegation to the shared road service keeps its public contract.
 """
 import time
@@ -22,6 +23,13 @@ from shapely.geometry import Polygon
 from app.main import app
 from app.schemas.site_intelligence import ANNOTATION_STATUSES, SitePreviewRequest
 from app.schemas.request import PlotVertex, BoundarySummary as _BS
+from app.services.boundary_service import (
+    BOUNDARY_MAX_AREA_SQM,
+    BOUNDARY_MAX_SPAN_M,
+    BoundaryValidationError,
+    boundary_bounds_violation,
+    summarize_boundary,
+)
 from app.services.road_service import fetch_nearest_road  # noqa: F401 - re-exported contract
 import app.services.road_service as road_service
 from app.services.site_preview_service import compute_site_preview, clear_preview_cache
@@ -132,6 +140,23 @@ def _hexagon_preview_request():
         ),
         ground_coverage_ratio=0.6,
     )
+
+
+def _boundary(vertices, area_sqm=216.0):
+    return {
+        "vertices": [{"x": x, "y": y} for x, y in vertices],
+        "origin_lat": 12.9716,
+        "origin_lon": 77.5946,
+        "shape_type": "rectangle",
+        "area_sqm": area_sqm,
+        "perimeter_m": 60.0,
+        "source": "trace",
+        "frontage_edge_index": 0,
+    }
+
+
+def _square(side):
+    return [(0.0, 0.0), (side, 0.0), (side, side), (0.0, side)]
 
 
 # --------------------------------------------------------------------------- #
@@ -528,6 +553,67 @@ def test_preview_irregular_plot_wedges_and_policy():
     policy_ann = next((a for a in resp.annotations if a.id == "design_policy"), None)
     assert policy_ann is not None and policy_ann.status == "RECOMMENDED"
     assert resp.provenance["annotation_taxonomy"]["ASSUMED"]
+
+
+# --------------------------------------------------------------------------- #
+#  Operational envelope bounds guard for captured boundaries                   #
+# --------------------------------------------------------------------------- #
+
+def test_bounds_helper_rejects_unbounded_span():
+    assert boundary_bounds_violation(_square(12.0)) is None
+    violation = boundary_bounds_violation(_square(1e9))
+    assert violation is not None
+    assert f"{BOUNDARY_MAX_SPAN_M:,.0f} m" in violation
+
+
+def test_bounds_helper_rejects_oversized_area():
+    # 1500 x 1500 m = 2.25 km²: inside the span? No - span 1500 m is allowed,
+    # area 2,250,000 m² is over the 100 ha ceiling.
+    violation = boundary_bounds_violation(_square(1500.0))
+    assert violation is not None
+    assert f"{BOUNDARY_MAX_AREA_SQM:,.0f} m" in violation
+
+
+def test_summarize_boundary_refuses_unbounded_span():
+    with pytest.raises(BoundaryValidationError) as exc:
+        summarize_boundary(type("B", (), {
+            "vertices": [type("V", (), {"x": x, "y": y})() for x, y in _square(1e9)],
+            "shape_type": "rectangle",
+            "source": "trace",
+            "frontage_edge_index": 0,
+            "origin_lat": 12.9716,
+            "origin_lon": 77.5946,
+            "area_sqm": 1e18,
+        })())
+    assert "operational limit" in str(exc.value)
+
+
+def test_summarize_boundary_still_accepts_a_real_plot():
+    summary = summarize_boundary(type("B", (), {
+        "vertices": [type("V", (), {"x": x, "y": y})() for x, y in _square(12.0)],
+        "shape_type": "rectangle",
+        "source": "trace",
+        "frontage_edge_index": 0,
+        "origin_lat": 12.9716,
+        "origin_lon": 77.5946,
+        "area_sqm": 144.0,
+    })())
+    assert summary["area_sqm"] == 144.0
+
+
+def test_site_preview_returns_422_instead_of_hanging():
+    resp = client.post("/api/site/preview", json={"boundary": _boundary(_square(1e9), area_sqm=1e18)})
+    assert resp.status_code == 422, resp.text
+    assert "operational limit" in resp.json()["detail"]
+
+
+def test_site_preview_bounds_check_precedes_the_grid_scan():
+    """A span just over the limit is refused before any geometry work runs."""
+    resp = client.post(
+        "/api/site/preview",
+        json={"boundary": _boundary(_square(BOUNDARY_MAX_SPAN_M + 1.0), area_sqm=4.0e6)},
+    )
+    assert resp.status_code == 422, resp.text
 
 
 # --------------------------------------------------------------------------- #

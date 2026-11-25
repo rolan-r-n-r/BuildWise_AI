@@ -128,7 +128,7 @@ def test_certified_when_only_listed_within_cap_relaxations_are_named():
 
 def test_certified_definition_is_identical_on_backend_and_frontend():
     """Legend text == policy text == copy deck, byte-for-byte."""
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[3]
     taxonomy = (root / "frontend/src/components/report/statusTaxonomy.ts").read_text(
         encoding="utf-8"
     )
@@ -276,7 +276,7 @@ def test_slope_is_its_own_labelled_cell_not_a_coverage_parenthetical():
 # Every pin here reads the real objects (certificate rows, deviation rows,
 # page-1 rows), not a string that merely mentions a heading.
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 TS_SOURCE = ROOT / "frontend" / "src" / "services" / "warningReport.ts"
 
 ROOM_MAX_BEYOND_CAP = (
