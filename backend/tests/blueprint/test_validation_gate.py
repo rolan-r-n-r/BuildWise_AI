@@ -32,6 +32,7 @@ Covers review points 9, 13, 14, 15, 16, 17, 18, 20, 23, 24 + LLM-boundary:
 4. DETERMINISM: seed=42 twice -> byte-identical gate + certificate.
 """
 
+import copy
 import json
 from typing import Any, List
 
@@ -67,19 +68,28 @@ VALID_STATUSES = {"PASS", "WARN", "FAIL", "N/A"}
 BASE_ROOMS = ["living", "kitchen", "master_bed", "bath_1", "dining", "stairs"]
 
 _RANK = {"PASS": 0, "N/A": 1, "WARN": 2, "FAIL": 3}
+_SOLVE_CACHE: dict[tuple[str, int, str, tuple[str, ...]], Any] = {}
 
 
 def _solve(typology: str, floors: int, strictness: str = "medium",
-           required_rooms: List[str] = None) -> Any:
+           required_rooms: List[str] = None, *, use_cache: bool = True) -> Any:
+    rooms = tuple(required_rooms or BASE_ROOMS)
+    key = (typology, floors, strictness, rooms)
+    if use_cache and key in _SOLVE_CACHE:
+        return copy.deepcopy(_SOLVE_CACHE[key])
     req = FloorPlanRequest(
         plot_width_m=20.0,
         plot_depth_m=18.0,
         floors=floors,
         building_typology=typology,
         vastu_strictness=strictness,
-        required_rooms=list(required_rooms or BASE_ROOMS),
+        required_rooms=list(rooms),
     )
-    return SoleGeometryEngine(req).solve()
+    solved = SoleGeometryEngine(req).solve()
+    if use_cache:
+        _SOLVE_CACHE[key] = solved
+        return copy.deepcopy(solved)
+    return solved
 
 
 # =============================================================================
@@ -667,8 +677,8 @@ def test_gate_determinism_seed42(typology: str, floors: int):
     is excluded from the comparison. All geometry/status/finding fields must
     still match exactly.
     """
-    b1 = _solve(typology, floors)
-    b2 = _solve(typology, floors)
+    b1 = _solve(typology, floors, use_cache=False)
+    b2 = _solve(typology, floors, use_cache=False)
 
     def strip_ts(obj: dict) -> dict:
         """Deep-copy without wall-clock provenance keys (never solver output)."""

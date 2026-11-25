@@ -11,6 +11,8 @@ Encodes the user's exact non-negotiables:
 7. All rooms strictly comply with NBC/catalog area bounds and aspect ratio <= 1:2.2.
 """
 
+import copy
+
 import pytest
 from app.schemas.floorplan import FloorPlanRequest
 from app.services.floorplan.floorplan_service import generate_floor_plan
@@ -41,6 +43,9 @@ TEST_TYPOLOGIES = [
 ]
 
 
+_SOLVE_CACHE: dict[tuple[float, float, tuple[str, ...], str, str], object] = {}
+
+
 def _solved_or_refused(req):
     """Solve a brief that may legitimately exceed the statutory ceiling.
 
@@ -60,7 +65,18 @@ def _solved_or_refused(req):
     a failure with nothing drawn, so those plates are held to the same catalogue
     contract as a pass - strictly more coverage, never less.
     """
-    res = generate_floor_plan(req)
+    key = (
+        float(req.plot_width_m),
+        float(req.plot_depth_m),
+        tuple(req.required_rooms or ()),
+        str(req.vastu_strictness),
+        str(req.ai_provider),
+    )
+    cached = _SOLVE_CACHE.get(key)
+    if cached is None:
+        cached = generate_floor_plan(req)
+        _SOLVE_CACHE[key] = cached
+    res = copy.deepcopy(cached)
     drawn = res.multi_storey is not None and any(
         getattr(floor, "rooms", None) for floor in res.multi_storey.floors
     )

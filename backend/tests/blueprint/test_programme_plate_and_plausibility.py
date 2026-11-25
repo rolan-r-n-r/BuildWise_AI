@@ -11,16 +11,12 @@ that decline against a certification rate measures the wrong thing.  The
 classification is computed from the ontology, before and independently of any
 solve.
 """
-import sys
+import pytest
 
-sys.path.insert(0, ".")
-
-import pytest  # noqa: E402
-
-from app.schemas.floorplan import FloorPlanRequest  # noqa: E402
-from app.services.floorplan.engine import PROGRAM_PLATE_ALLOWANCE  # noqa: E402
-from app.services.floorplan.ontology import ONTOLOGY  # noqa: E402
-from app.services.floorplan.plausibility import (  # noqa: E402
+from app.schemas.floorplan import FloorPlanRequest
+from app.services.floorplan.engine import PROGRAM_PLATE_ALLOWANCE
+from app.services.floorplan.ontology import ONTOLOGY
+from app.services.floorplan.plausibility import (
     IMPLAUSIBLE,
     PLAUSIBLE,
     classify_site_plausibility,
@@ -28,8 +24,8 @@ from app.services.floorplan.plausibility import (  # noqa: E402
     outdoor_allowance_sqm,
     programme_need_sqm,
 )
-from app.services.floorplan.strategy_escalation import _CACHE, solve_with_escalation  # noqa: E402
-from app.services.plan_verdict import CERTIFIED, compute_plan_verdict, plan_truth_labels  # noqa: E402
+from app.services.floorplan.strategy_escalation import _CACHE, solve_with_escalation
+from app.services.plan_verdict import CERTIFIED, compute_plan_verdict, plan_truth_labels
 
 
 def _request(width=20.0, depth=20.0, typology="T1_SINGLE_FAMILY", floors=1):

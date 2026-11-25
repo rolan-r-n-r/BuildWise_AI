@@ -153,7 +153,7 @@ def test_svg_blueprint_validity():
     assert "MASTER BEDROOM" in svg
     # Narrow rooms fall back down the label ladder (abbreviation -> numbered
     # tag) but must still be listed on the sheet; the label ladder is asserted
-    # by test_svg_legibility.
+    # by tests/reports/test_svg_legibility.py.
     assert "KITCHEN" in svg.upper()
     assert "LIVING ROOM" in svg
     assert "MAIN ENTRY" in svg

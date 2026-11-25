@@ -1,4 +1,4 @@
-﻿"""
+"""
 test_typology_modules.py - Per-Typology Module Property Tests
 ======================================================================
 Validates the TypologyModuleProtocol for all four typologies:
@@ -15,6 +15,8 @@ Tests cover:
 7. Core alignment: vertical_program level-0 includes at least one core-adjacent space.
 8. Clutter management: no duplicate space IDs across levels.
 """
+
+import copy
 
 import pytest
 from app.services.floorplan.typologies import (
@@ -242,22 +244,35 @@ def test_all_typologies_egress_and_dimension_chains_always_on(typology):
 # 6. compose_sheet() - SVG output
 # ---------------------------------------------------------------------------
 
+_BUILDING_CACHE: dict[tuple[str, int], object] = {}
+
+
+def _solve_typology_building(typology: str, floors: int = 2):
+    key = (typology, floors)
+    if key not in _BUILDING_CACHE:
+        from app.schemas.floorplan import FloorPlanRequest
+        from app.services.floorplan.engine import SoleGeometryEngine
+        plot_w = 24.0 if typology == TYPOLOGY_T4 else 15.0
+        plot_d = 30.0 if typology == TYPOLOGY_T4 else 18.0
+        req = FloorPlanRequest(
+            plot_width_m=plot_w,
+            plot_depth_m=plot_d,
+            floors=floors,
+            building_typology=typology,
+            vastu_strictness="medium",
+            ground_coverage_ratio=0.60,
+        )
+        _BUILDING_CACHE[key] = SoleGeometryEngine(req).solve()
+    return copy.deepcopy(_BUILDING_CACHE[key]), (
+        24.0 if typology == TYPOLOGY_T4 else 15.0
+    ), (
+        30.0 if typology == TYPOLOGY_T4 else 18.0
+    )
+
+
 def _make_level_plan(typology: str, floor_index: int = 0) -> dict:
     """Build a minimal level_plan dict for compose_sheet() smoke tests."""
-    from app.schemas.floorplan import FloorPlanRequest
-    from app.services.floorplan.engine import SoleGeometryEngine
-    plot_w = 24.0 if typology == TYPOLOGY_T4 else 15.0
-    plot_d = 30.0 if typology == TYPOLOGY_T4 else 18.0
-    req = FloorPlanRequest(
-        plot_width_m=plot_w,
-        plot_depth_m=plot_d,
-        floors=2,
-        building_typology=typology,
-        vastu_strictness="medium",
-        ground_coverage_ratio=0.60,
-    )
-    engine = SoleGeometryEngine(req)
-    building = engine.solve()
+    building, plot_w, plot_d = _solve_typology_building(typology, floors=2)
     floor = building.floors[floor_index]
     return {
         "floor_index": floor.floor_index,
@@ -307,21 +322,8 @@ def test_core_alignment_stacking_invariant(typology):
     This validates that vertical_program / compose_sheet pipelines
     do not introduce per-level core drift.
     """
-    from app.schemas.floorplan import FloorPlanRequest
-    from app.services.floorplan.engine import SoleGeometryEngine
-    plot_w = 24.0 if typology == TYPOLOGY_T4 else 15.0
-    plot_d = 30.0 if typology == TYPOLOGY_T4 else 18.0
     N = 2 if typology == TYPOLOGY_T4 else 2
-    req = FloorPlanRequest(
-        plot_width_m=plot_w,
-        plot_depth_m=plot_d,
-        floors=N,
-        building_typology=typology,
-        vastu_strictness="medium",
-        ground_coverage_ratio=0.60,
-    )
-    engine = SoleGeometryEngine(req)
-    building = engine.solve()
+    building, _, _ = _solve_typology_building(typology, floors=N)
 
     assert len(building.floors) == N
     f0_core = next(r for r in building.floors[0].rooms if r.is_vertical_core)

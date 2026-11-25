@@ -34,7 +34,7 @@ from app.services.floorplan.wall_graph import (
 )
 from app.services.report_service import generate_pdf_report
 
-BACKEND_APP = Path(__file__).resolve().parents[1] / "app"
+BACKEND_APP = Path(__file__).resolve().parents[2] / "app"
 
 ROOMS = [
     {"room_id": "living", "room_name": "Living Room", "x": 0.0, "y": 0.0, "width_m": 5.0, "depth_m": 3.4, "area_sqm": 17.0, "zone": "CENTER", "zone_category": "public"},

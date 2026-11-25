@@ -18,7 +18,7 @@ from app.services.floorplan.floorplan_service import generate_floor_plan
 from app.services.floorplan.ontology import ONTOLOGY
 
 FIXTURE = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
     / "frontend"
     / "src"
     / "test-fixtures"

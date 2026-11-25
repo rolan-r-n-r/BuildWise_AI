@@ -19,7 +19,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-BACKEND = Path(__file__).resolve().parents[1]
+BACKEND = Path(__file__).resolve().parents[2]
 GATE = BACKEND / "scripts" / "qa_circulation_determinism.py"
 
 

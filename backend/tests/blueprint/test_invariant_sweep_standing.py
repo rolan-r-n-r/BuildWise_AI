@@ -25,7 +25,7 @@ from types import SimpleNamespace
 
 import pytest
 
-BACKEND = Path(__file__).resolve().parents[1]
+BACKEND = Path(__file__).resolve().parents[2]
 for _p in (str(BACKEND), str(BACKEND / "scripts")):
     if _p not in sys.path:
         sys.path.insert(0, _p)

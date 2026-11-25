@@ -14,12 +14,17 @@ import pytest
 from app.services.floorplan.ontology import (
     EXPLICIT_OVERRIDES,
     ONTOLOGY,
+    EgressRole,
+    FireHazard,
+    FloorLoad,
     FunctionType,
     HygieneClass,
     HygieneType,
+    OntologyRegistry,
     PublicAccess,
     RelationType,
     SecurityLevel,
+    ServiceSide,
     SpaceTypeSpec,
     SpaceZone,
     VisitorDepth,
@@ -408,3 +413,89 @@ def test_room_id_normalizer_is_exact_and_typology_aware():
     assert ONTOLOGY.resolve_space_id("t2_amenity_F1", "T2_FAMILY_APARTMENT") == "unit_utility"
     # No partial-substring guessing: unknown ids stay unknown.
     assert ONTOLOGY.resolve_space_id("bathroom_widget") is None
+
+
+def test_typology_profiles():
+    """Verify all 4 typology profiles have statutory egress, sanitation, and parking data."""
+    profiles = ONTOLOGY.all_typologies
+    assert "T1_SINGLE_FAMILY" in profiles
+    assert "T2_FAMILY_APARTMENT" in profiles
+    assert "T3_LARGE_COMPLEX" in profiles
+    assert "T4_WAREHOUSE" in profiles
+
+    t1 = profiles["T1_SINGLE_FAMILY"]
+    assert t1.vastu_weight_scale == 1.0
+    assert "NBC 2016" in t1.egress_constants["citation"]
+    assert t1.egress_constants["max_travel_distance_non_sprinklered_m"] == 30.0
+
+    t3 = profiles["T3_LARGE_COMPLEX"]
+    assert t3.vastu_weight_scale < t1.vastu_weight_scale
+    assert t3.egress_constants["min_corridor_width_m"] == 1.50
+    assert "dead_end_corridor_max_m" in t3.egress_constants
+
+    t4 = profiles["T4_WAREHOUSE"]
+    assert t4.vastu_weight_scale <= 0.1
+    assert t4.floor_height_m >= 6.0
+
+
+def test_override_precedence():
+    """Tests that explicit overrides supersede default derived algebra."""
+    # 1. Puja vs Living: override specifies PREFER_ADJACENT
+    puja_liv_rules = ONTOLOGY.get_relations("puja", "living")
+    assert len(puja_liv_rules) == 1
+    assert puja_liv_rules[0].is_override is True
+    assert puja_liv_rules[0].rule_id == "OVR-01-PUJA-LIVING"
+    assert puja_liv_rules[0].relation == RelationType.PREFER_ADJACENT
+
+    # 2. Master Bed vs Bath 1: override specifies MUST_ADJACENT for ensuite
+    mbed_bath_rules = ONTOLOGY.get_relations("master_bed", "bath_1")
+    assert len(mbed_bath_rules) == 1
+    assert mbed_bath_rules[0].is_override is True
+    assert mbed_bath_rules[0].rule_id == "OVR-02-ENSUITE-MASTER"
+    assert mbed_bath_rules[0].relation == RelationType.MUST_ADJACENT
+
+    # 3. Kitchen vs Utility: override specifies MUST_ADJACENT
+    kitch_util_rules = ONTOLOGY.get_relations("kitchen", "utility")
+    assert len(kitch_util_rules) == 1
+    assert kitch_util_rules[0].is_override is True
+    assert kitch_util_rules[0].rule_id == "OVR-04-UTILITY-KITCHEN"
+    assert kitch_util_rules[0].relation == RelationType.MUST_ADJACENT
+
+
+def test_zero_solver_change_extensibility():
+    """Verify that a brand new custom space type can be registered and queried dynamically."""
+    custom_registry = OntologyRegistry()
+
+    lab_spec = SpaceTypeSpec(
+        id="biotech_lab",
+        name="Bio-Tech Cleanroom Lab",
+        typologies=["T3_LARGE_COMPLEX"],
+        function=FunctionType.PRODUCTION,
+        hygiene=HygieneType.SACRED,  # Requires ultra-clean sterile conditions
+        odor_emit=0, moisture_emit=0, grease_emit=0, noise_emit=1,
+        noise_sensitive=3, acoustic_privacy=3,
+        public_access=PublicAccess.RESTRICTED,
+        visitor_depth=VisitorDepth.DEEP,
+        security=SecurityLevel.SECURE,
+        service_side=ServiceSide.BACK_OF_HOUSE,
+        fire_hazard=FireHazard.MEDIUM,
+        egress_role=EgressRole.NONE,
+        floor_load=FloorLoad.NORMAL,
+        daylight_req=False,
+        ventilation_req="mechanical",
+        min_area_sqm=50.0,
+        min_width_m=6.00,
+        max_aspect_ratio=1.50,
+        permitted_levels=[1, 2],
+    )
+
+    custom_registry.register_space(lab_spec)
+
+    # Cleanroom (sacred hygiene) vs Bathroom (foul hygiene) -> Algebra automatically triggers
+    rules = custom_registry.get_relations("biotech_lab", "bath_1")
+    assert any(r.rule_id == "HYG-01-FOUL-SACRED-WALL" for r in rules)
+    assert custom_registry.is_forbidden_wall("biotech_lab", "bath_1") is True
+
+    # Wet stack test: bath over cleanroom -> forbidden above
+    v_rules = custom_registry.evaluate_vertical_stack(upper_space_id="bath_1", lower_space_id="biotech_lab", upper_level=2)
+    assert any(r.rule_id == "VERT-02-NO-WET-OVER-HABITABLE" for r in v_rules)

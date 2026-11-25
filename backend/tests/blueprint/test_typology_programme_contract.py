@@ -169,7 +169,7 @@ def test_frontend_catalog_matches_backend_ontology_catalog():
     drift from the solver's programme vocabulary again.  Parsing the literal
     table is intentional: it fails loudly if someone edits one side only.
     """
-    ts_path = Path(__file__).resolve().parents[2] / "frontend" / "src" / "services" / "typology.ts"
+    ts_path = Path(__file__).resolve().parents[3] / "frontend" / "src" / "services" / "typology.ts"
     assert ts_path.exists(), ts_path
     source = ts_path.read_text(encoding="utf-8")
 

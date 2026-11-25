@@ -41,6 +41,7 @@ Covers review points 2, 3, 4, 5, 6, 7 of the living-quality hardening brief:
    - Certificate field l8_program_intent_satisfied is True.
 """
 
+import copy
 import math
 
 import pytest
@@ -80,17 +81,24 @@ TYPOLogies = ["T1_SINGLE_FAMILY", "T2_FAMILY_APARTMENT", "T3_LARGE_COMPLEX", "T4
 BASE_ROOMS = ["living", "kitchen", "master_bed", "bath_1", "dining", "stairs"]
 
 
+_SOLVE_CACHE: dict[tuple[str, int, float, float], object] = {}
+
+
 def _solve(typology: str, floors: int, plot_w: float = 20.0, plot_d: float = 18.0):
-    req = FloorPlanRequest(
-        plot_width_m=plot_w,
-        plot_depth_m=plot_d,
-        floors=floors,
-        building_typology=typology,
-        vastu_strictness="medium",
-        required_rooms=list(BASE_ROOMS),
-    )
-    engine = SoleGeometryEngine(req)
-    return engine.solve()
+    key = (typology, floors, plot_w, plot_d)
+    cached = _SOLVE_CACHE.get(key)
+    if cached is None:
+        req = FloorPlanRequest(
+            plot_width_m=plot_w,
+            plot_depth_m=plot_d,
+            floors=floors,
+            building_typology=typology,
+            vastu_strictness="medium",
+            required_rooms=list(BASE_ROOMS),
+        )
+        cached = SoleGeometryEngine(req).solve()
+        _SOLVE_CACHE[key] = cached
+    return copy.deepcopy(cached)
 
 
 # =============================================================================

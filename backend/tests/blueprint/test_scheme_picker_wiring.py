@@ -7,7 +7,7 @@ and a land-economics panel that recomputes its own KPIs still looks right.
 import re
 from pathlib import Path
 
-FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "src"
+FRONTEND = Path(__file__).resolve().parents[3] / "frontend" / "src"
 
 CARD = FRONTEND / "components" / "FloorPlanGeneratorCard.tsx"
 PICKER = FRONTEND / "components" / "SchemePicker.tsx"

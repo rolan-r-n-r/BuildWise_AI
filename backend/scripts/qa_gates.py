@@ -47,17 +47,17 @@ PY = sys.executable
 #: pytest node ids per gate.  Keeping them explicit means the CI log names the
 #: contract that broke, not just "tests/".
 PARITY_TESTS = [
-    "tests/test_report_honesty_parity.py",
-    "tests/test_svg_pdf_content_parity.py",
-    "tests/test_pdf_report_v9.py",
-    "tests/test_pdf_hygiene_parity.py",
-    "tests/test_gate_integrity.py",
-    "tests/test_proportion_surface.py",
+    "tests/reports/test_report_honesty_parity.py",
+    "tests/reports/test_svg_pdf_content_parity.py",
+    "tests/reports/test_pdf_report_v9.py",
+    "tests/reports/test_pdf_hygiene_parity.py",
+    "tests/blueprint/test_gate_integrity.py",
+    "tests/blueprint/test_proportion_surface.py",
 ]
 
 RECTANGLE_TESTS = [
-    "tests/test_floor_plate_variations.py::test_rectangle_equivalence_unaffected",
-    "tests/test_floor_plate_variations.py::test_rectangle_equivalence_no_band_identical",
+    "tests/blueprint/test_floor_plate_variations.py::test_rectangle_equivalence_unaffected",
+    "tests/blueprint/test_floor_plate_variations.py::test_rectangle_equivalence_no_band_identical",
 ]
 
 
