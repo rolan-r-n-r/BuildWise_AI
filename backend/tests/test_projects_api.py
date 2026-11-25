@@ -1,5 +1,6 @@
 import os
 import tempfile
+from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
@@ -17,8 +18,9 @@ def client_with_db():
 
     from app.db.database import get_connection
 
-    now = "2026-11-15T00:00:00.000Z"
-    expires = "2026-11-25T00:00:00.000Z"
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    expires = (now_dt + timedelta(days=7)).isoformat()
     with get_connection(path) as conn:
         conn.execute(
             "INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)",
