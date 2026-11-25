@@ -153,7 +153,7 @@ This batch script automatically performs first-time bootstrapping (creates Pytho
 | `net::ERR_CONNECTION_REFUSED` at `http://localhost:8000` | Backend server is not running or failed during boot. | Check backend terminal logs. Confirm virtual environment is activated and run `uvicorn app.main:app --reload`. |
 | `429 Rate limit exceeded` | Client exceeded 30 requests per 60 seconds per IP limit. | The sliding window limiter resets automatically within 60 seconds. |
 | Map tiles render blank | Network block or corporate firewall on open tile CDN. | Toggle map style in the top right to `Satellite` (ESRI) or `Terrain` (OpenTopoMap) via `MapStyleSelector`. |
-| PDF download returns `500 Server Error` | Missing `reportlab` font or corrupted SVG XML payload. | Run `pytest tests/test_pdf_report_v9.py` in `backend/` to isolate ReportLab canvas failures. |
+| PDF download returns `500 Server Error` | Missing `reportlab` font or corrupted SVG XML payload. | Run `pytest tests/reports/test_pdf_report_v9.py` in `backend/` to isolate ReportLab canvas failures. |
 | TypeScript build error in frontend | Outdated dependencies or modified interfaces. | Run `npm run build` in `frontend/` to view exact compiler diagnostic errors. |
 
 ---

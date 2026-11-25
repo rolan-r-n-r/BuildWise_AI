@@ -62,13 +62,13 @@ Each subsystem is verified by its own regression suite:
 
 | Subsystem | What it makes true | Where |
 |:--|:--|:--|
-| Ontology as data | Every space carries a zone, hygiene class, furniture set, clear-area basis and orientation preferences; 57 catalogue entries; relations algebra for forbidden / facing / above pairs | `ontology.py`, `tests/test_coverage_truth.py`, `tests/test_ontology_contracts.py` |
-| Constrained solver & schemes | Deterministic plate solver plus three ranked profiles (`max_area`, `max_light_vent`, `max_vastu`) that can actually be selected and re-solved | `constrained_solver.py`, `scheme_solver.py`, `tests/test_scheme_selection.py`, `tests/test_scheme_solver.py` |
-| Land economics | Programme area demanded from the ontology, programme-aware footprint (opt-in), residual absorption, and a land report on every response | `land_economics.py`, `tests/test_land_economics.py` |
-| Identity as naming source | Model label, wall-graph schedule, SVG text, PDF legend and service classification all read one `SpaceIdentity` | `identity.py`, `tests/test_scheme_picker_wiring.py`, `tests/test_space_identity.py` |
-| Furniture & fresh air | The plate is divided against the real furniture catalogue, not audited afterwards; every wet room leaves the solver with a ventilation path, so L4 and L9 stop discovering failures the dimensions made inevitable | `furniture.py`, `tests/test_furniture_ventilation.py`, `tests/test_proportions_and_wet_stack.py` |
-| Typology programme | The generation records the typology it actually built, emits that typology's programme (kitchen / utility / balcony included for T2) and names the same rooms on every surface | `typologies/`, `room_aliases.py`, `tests/test_room_program_v10.py` |
-| Compact apartment unit plan | The canonical 12 × 15 T2 plate stops publishing 11.7 m² living rooms: the stair moves to the east flank and the freed pocket carries Unit A's bedroom plus Unit B's bathroom, so both units meet every catalogue gross minimum without stacking a bath against a kitchen (HYG-02) | `engine.py` (`_t2_pocket_plan`), `tests/test_compact_t2_unit_plan.py` |
+| Ontology as data | Every space carries a zone, hygiene class, furniture set, clear-area basis and orientation preferences; 57 catalogue entries; relations algebra for forbidden / facing / above pairs | `ontology.py`, `tests/blueprint/test_coverage_truth.py`, `tests/blueprint/test_ontology_contracts.py` |
+| Constrained solver & schemes | Deterministic plate solver plus three ranked profiles (`max_area`, `max_light_vent`, `max_vastu`) that can actually be selected and re-solved | `constrained_solver.py`, `scheme_solver.py`, `tests/blueprint/test_scheme_selection.py`, `tests/blueprint/test_scheme_solver.py` |
+| Land economics | Programme area demanded from the ontology, programme-aware footprint (opt-in), residual absorption, and a land report on every response | `land_economics.py`, `tests/blueprint/test_land_economics.py` |
+| Identity as naming source | Model label, wall-graph schedule, SVG text, PDF legend and service classification all read one `SpaceIdentity` | `identity.py`, `tests/blueprint/test_scheme_picker_wiring.py`, `tests/blueprint/test_space_identity.py` |
+| Furniture & fresh air | The plate is divided against the real furniture catalogue, not audited afterwards; every wet room leaves the solver with a ventilation path, so L4 and L9 stop discovering failures the dimensions made inevitable | `furniture.py`, `tests/blueprint/test_furniture_ventilation.py`, `tests/blueprint/test_proportions_and_wet_stack.py` |
+| Typology programme | The generation records the typology it actually built, emits that typology's programme (kitchen / utility / balcony included for T2) and names the same rooms on every surface | `typologies/`, `room_aliases.py`, `tests/blueprint/test_room_program_v10.py` |
+| Compact apartment unit plan | The canonical 12 × 15 T2 plate stops publishing 11.7 m² living rooms: the stair moves to the east flank and the freed pocket carries Unit A's bedroom plus Unit B's bathroom, so both units meet every catalogue gross minimum without stacking a bath against a kitchen (HYG-02) | `engine.py` (`_t2_pocket_plan`), `tests/blueprint/test_compact_t2_unit_plan.py` |
 
 ## Two independent judges: gate layers and sweep invariants
 
@@ -118,7 +118,7 @@ deviation beyond its cap.
 no plan is invented to fill the gap.
 
 The `CERTIFIED_DEFINITION` string is the legend the UI and the PDF print verbatim
-(pinned by `tests/test_plan_verdict_parity.py`), and the same suite pins the three
+(pinned by `tests/reports/test_plan_verdict_parity.py`), and the same suite pins the three
 truth-label headings and their counts across `plan_verdict.py` and
 `frontend/src/services/warningReport.ts`.
 
@@ -216,7 +216,7 @@ python scripts/qa_invariant_sweep.py --quick
 python scripts/qa_invariant_sweep.py --only T3-rect-20x20-F2
 
 # The sweep is also a standing test: two pinned reproductions run in every pytest run
-python -m pytest tests/test_invariant_sweep_standing.py -q
+python -m pytest tests/blueprint/test_invariant_sweep_standing.py -q
 ```
 
 The sweep is occurrence-level on purpose: each violation is stamped with its case id,

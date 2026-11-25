@@ -118,7 +118,7 @@ engine: it subtracts NBC 2016 setbacks from the plot boundary, fills the
 resulting envelope with rectangular rooms, and rejects any layout that does not
 tile it.
 
-`tests/test_floorplan.py::test_dissection_engine_contiguity_and_no_voids` pins
+`tests/blueprint/test_floorplan.py::test_dissection_engine_contiguity_and_no_voids` pins
 the tiling contract — 100% envelope coverage, no interior voids, and no
 overlapping room rectangles. `csp_engine.py` holds the earlier backtracking
 constraint solver; it is retained for the single-floor regression tests and is
@@ -219,7 +219,7 @@ A new room type is a data change: add a `SpaceTypeSpec` to `UNIVERSAL_SPACE_CATA
 `derive_spatial_rules` — hygiene, emissions, security and floor load generate the
 rule ids, so a new cleanroom inherits the foul-vs-sacred wall ban and the
 wet-over-habitable stacking ban without touching the engine.
-`tests/test_ontology.py::test_zero_solver_change_extensibility` pins that contract.
+`tests/blueprint/test_ontology_contracts.py::test_zero_solver_change_extensibility` pins that contract.
 
 ---
 

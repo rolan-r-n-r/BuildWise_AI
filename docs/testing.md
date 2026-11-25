@@ -8,10 +8,10 @@ Complete guide to testing, regression prevention, structural invariants validati
 ## Table of Contents
 - [Test Strategy Overview](#test-strategy-overview)
 - [Backend Test Suites (`backend/tests/`)](#backend-test-suites-backendtests)
-  - [Architectural Placement Regression Suite (`test_placement_rules.py`)](#architectural-placement-regression-suite-test_placement_rulespy)
-  - [Generative Room Program Suite (`test_room_program_v10.py`)](#generative-room-program-suite-test_room_program_v10py)
-  - [Formal PDF Report Suite (`test_pdf_report_v9.py`)](#formal-pdf-report-suite-test_pdf_report_v9py)
-  - [API Contract & Rate Limit Suite (`test_api.py`)](#api-contract--rate-limit-suite-test_apipy)
+  - [Architectural Placement Regression Suite (`blueprint/test_placement_rules.py`)](#architectural-placement-regression-suite-blueprinttest_placement_rulespy)
+  - [Generative Room Program Suite (`blueprint/test_room_program_v10.py`)](#generative-room-program-suite-blueprinttest_room_program_v10py)
+  - [Formal PDF Report Suite (`reports/test_pdf_report_v9.py`)](#formal-pdf-report-suite-reportstest_pdf_report_v9py)
+  - [API Contract & Rate Limit Suite (`api/test_api.py`)](#api-contract--rate-limit-suite-apitest_apipy)
   - [Geospatial & Hazard Suites](#geospatial--hazard-suites)
   - [Space-Engine, Gate & Economics Suites](#space-engine-gate--economics-suites)
     - [Per-module engine suites](#per-module-engine-suites)
@@ -34,7 +34,8 @@ BuildWise AI employs a multi-tiered verification hierarchy ensuring that zero in
 │                        Continuous Quality Gates                        │
 ├──────────────────────────────────┬─────────────────────────────────────┤
 │        Backend Verification      │        Frontend Verification        │
-│  • 1,352 Automated Pytest Cases  │  • Oxlint Fast Static Analysis      │
+│  • 1,524 Automated Pytest Cases  │  • Oxlint Fast Static Analysis      │
+│    across 77 domain modules      │  • TypeScript Strict Typing (tsc)   │
 │  • 145 Placement Regression Test │  • TypeScript Strict Typing (tsc)   │
 │  • Vastu / Topological Invariant │  • Vite Production Bundling         │
 │  • CPWD Mathematical Accuracy    │  • Puppeteer 9-Viewport Audit       │
@@ -51,7 +52,7 @@ cd backend
 python -m pytest tests/ -v
 ```
 
-### Architectural Placement Regression Suite (`test_placement_rules.py`)
+### Architectural Placement Regression Suite (`blueprint/test_placement_rules.py`)
 Encodes non-negotiable architectural invariants into 145 parameterized tests across 6 plot geometries and 3 typologies:
 
 ```python
@@ -84,14 +85,14 @@ TEST_TYPOLOGIES = [
 
 ---
 
-### Generative Room Program Suite (`test_room_program_v10.py`)
+### Generative Room Program Suite (`blueprint/test_room_program_v10.py`)
 - Verifies dynamic room program generation across diverse plinth areas (800 sqft to 5,000 sqft) and specification grades.
 - Validates fallback program selection when LLM inference is disabled.
 - Asserts that room programs respect client notes (e.g. requesting a home office, study, or additional ensuite).
 
 ---
 
-### Formal PDF Report Suite (`test_pdf_report_v9.py`)
+### Formal PDF Report Suite (`reports/test_pdf_report_v9.py`)
 - Tests end-to-end vector PDF compilation in ReportLab.
 - Verifies page layout constraints: A4 portrait, 18mm margins, Inter TTF font subsetting.
 - Tests Section 10 dedicated full-page blueprint layout with the 4-tile solver metric strip and 174mm vector drawing.
@@ -99,20 +100,20 @@ TEST_TYPOLOGIES = [
 
 ---
 
-### API Contract & Rate Limit Suite (`test_api.py`)
+### API Contract & Rate Limit Suite (`api/test_api.py`)
 - Tests `POST /api/analyze` request validation and Pydantic response models.
 - Tests sliding window in-memory rate limiting (asserts `HTTP 429` on the 31st request within 60s).
-- **`test_external_provider_rate_limit.py`:** proves upstream 429s degrade honestly — Nominatim/Photon return no invented results, Overpass falls back to a named `ASSUMED` frontage, Groq drops to the deterministic mock with the `429` in `fallback_reason`.
+- **`site/test_external_provider_rate_limit.py`:** proves upstream 429s degrade honestly — Nominatim/Photon return no invented results, Overpass falls back to a named `ASSUMED` frontage, Groq drops to the deterministic mock with the `429` in `fallback_reason`.
 - Tests CORS headers and preflight `OPTIONS` requests.
 - Validates graceful degradation when external telemetry APIs simulate timeouts.
 
 ---
 
 ### Geospatial & Hazard Suites
-- **`test_hazard.py`:** Tests USGS FDSN seismic parsing, 50-year filtering, and GloFAS river discharge ratio calculations.
-- **`test_site_vision.py`:** Tests Copernicus Sentinel-2 multispectral vegetation index calculation (NDVI) and tree preservation clustering.
-- **`test_cost.py`:** Tests CPWD Plinth Area Rate formulas and floor height adjustments.
-- **`test_vastu.py`:** Tests 8-directional cardinal analysis and entrance scoring.
+- **`site/test_hazard.py`:** Tests USGS FDSN seismic parsing, 50-year filtering, and GloFAS river discharge ratio calculations.
+- **`site/test_site_vision.py`:** Tests Copernicus Sentinel-2 multispectral vegetation index calculation (NDVI) and tree preservation clustering.
+- **`site/test_cost_and_landvalue.py`:** Tests CPWD Plinth Area Rate formulas, floor height adjustments, and circle-rate land valuation.
+- **`site/test_orientation_and_vastu.py`:** Tests solar/wind axis calculations, 8-directional cardinal analysis, and entrance scoring.
 
 ---
 
@@ -124,32 +125,36 @@ The architecture behind these suites is documented in [Space Engine](space-engin
 
 | Suite | What it pins |
 |:---|:---|
-| `test_validation_gate.py` | Every layer L1–L15 is evaluated, `N/A` never silently passes, the PDF sheet carries the same layer table as the UI |
-| `test_gate_integrity.py` | Gate verdicts, refusal gates, and certificates are recomputed after mutation; a stale PASS cannot survive |
-| `test_coverage_truth.py`, `test_plot_coverage_contract.py` | Captured boundary drives plate size; coverage is a hard cap, never an unwarned breach |
-| `test_land_economics.py` | Land economics certificate: footprint source, residuals, dead corners, circulation band |
-| `test_scheme_solver.py`, `test_scheme_selection.py`, `test_scheme_picker_wiring.py` | The three scheme profiles score deterministically, and choosing one **re-partitions** the plate (with the outcome recorded as applied / recorded only / refused) |
-| `test_furniture_ventilation.py`, `test_living_quality_layers.py` | Furniture sets fit their rooms; ventilation and daylight layers are evaluated |
-| `test_invariant_sweep_standing.py` | A standing multi-seed sweep keeps the hard invariants true across typologies |
-| `test_sidebar_control_wiring.py` | Every sidebar control reaches a visible output — no dead control, no orphan payload field |
-| `test_analyze_boundary.py` | Analysis plot area comes from the boundary, with the basis named |
+| `blueprint/test_validation_gate.py` | Every layer L1–L16 is evaluated, `N/A` never silently passes, the PDF sheet carries the same layer table as the UI |
+| `blueprint/test_gate_integrity.py` | Gate verdicts, refusal gates, and certificates are recomputed after mutation; a stale PASS cannot survive |
+| `blueprint/test_coverage_truth.py` | Captured boundary drives plate size; coverage is a hard cap, never an unwarned breach; traced boundaries never overhang |
+| `blueprint/test_land_economics.py` | Land economics certificate: footprint source, residuals, dead corners, circulation band |
+| `blueprint/test_scheme_solver.py`, `blueprint/test_scheme_selection.py`, `blueprint/test_scheme_picker_wiring.py` | The three scheme profiles score deterministically, and choosing one **re-partitions** the plate (with the outcome recorded as applied / recorded only / refused) |
+| `blueprint/test_furniture_ventilation.py`, `blueprint/test_living_quality_layers.py` | Furniture sets fit their rooms; ventilation and daylight layers are evaluated |
+| `blueprint/test_invariant_sweep_standing.py` | A standing multi-seed sweep keeps the hard invariants true across typologies |
+| `blueprint/test_sidebar_control_wiring.py` | Every sidebar control reaches a visible output — no dead control, no orphan payload field |
+| `api/test_analyze_boundary.py` | Analysis plot area comes from the boundary, with the basis named |
 
 ---
 
 #### The gate set — one command, one exit status
 
 Every change that can move a drawn plan, a printed page or an invariant runs the
-same commands. CI (`.github/workflows/ci.yml`) runs the backend gates and the
-build/report-surface and selection-policy steps; the full browser set below is
-run locally before delivery, and uses the same scripts CI runs.
+same commands. CI (`.github/workflows/ci.yml`) runs the backend gates (`python scripts/qa_gates.py`)
+plus frontend `npm run lint`, `npm run gates` (`tsc -b && vite build` and all 13 Node
+unit/contract suites), and the static `lint:tokens`, `lint:emoji`, `lint:css`,
+`lint:material`, and `check:contrast` gates. The browser set (`npm run gates:browser`)
+is run locally against live servers (`E2E_URL`, `CHROME_PATH`); `/app`-direct browser
+suites require an authenticated session because `ProtectedApp` redirects unauthenticated
+requests to `/sign-in`.
 
 | Gate | Command (from the stated directory) | Passes when |
 |:---|:---|:---|
 | Backend gates | `cd backend && python scripts/qa_gates.py` | the suite, the report/PDF/SVG parity contracts, rectangle equivalence, the cross-process matrix and the invariant sweep all pass |
 | — of which matrix | `cd backend && python scripts/qa_circulation_determinism.py --matrix` | all 64 cases are generated in **two separate processes** (`PYTHONHASHSEED=0` and `=1`) and their warning lists, sponsor doors and door sets are byte-identical |
 | — of which sweep | `cd backend && python scripts/qa_invariant_sweep.py` | its verdict names **0 TRUE FAILURES**; a DISCLOSED-only register is tolerated (the runner reads the verdict block, not just the exit code) |
-| Build + report surface | `cd frontend && npm run gates` | `tsc -b && vite build`, then the L16 table / FAIL stamp / print-wiring pins pass |
-| Browser gates | `cd frontend && npm run gates:browser` | the selection-policy pass, the full funnel pass and the UI-closure pass against live servers (`E2E_URL`, `CHROME_PATH`) |
+| Build + unit/contract gates | `cd frontend && npm run gates` | `tsc -b && vite build`, then all 13 Node unit/contract suites pass (reset reducer, L16 report surface, warning report, plan advisor, validation guards, boundary pipeline, blueprint reveal/view mode, plot camera, map controls, interaction primitives, design system, and email verification flow) |
+| Browser gates | `cd frontend && npm run gates:browser` | reset-contract, selection-policy, full-funnel, UI-closure, blueprint-reveal and blueprint-view-modes pass against live servers (`E2E_URL`, `CHROME_PATH`; `/app`-direct suites require an authenticated session due to `ProtectedApp`) |
 
 `python scripts/qa_gates.py --list` prints the command set it runs, and
 `--only sweep` runs one gate. The backend gates working directory is fixed to
@@ -160,20 +165,20 @@ run locally before delivery, and uses the same scripts CI runs.
 #### Per-module engine suites
 | Suite | What it locks down |
 |:---|:---|
-| `test_floorplan.py` | Grid discretisation, Vastu quadrant constraints, plumbing adjacency, disjointness/containment, dissection contiguity, SVG validity |
-| `test_multi_floor_engine.py` | Vertical core stacking, cross-floor graph reachability, wet-stack alignment, graceful degradation (EC01–EC04), typology × storey × strictness matrix |
-| `test_validation_gate.py` | The L1–L15 gate: severity typing, `pass/warn/na` tallies, a layer that did not run cannot pass, refusal honesty |
-| `test_land_economics.py` | Programme-aware footprint, coverage ceiling, residual sliver absorption, explicit (never silent) programme deficit |
-| `test_coverage_truth.py` | Captured-boundary coverage ceiling, plate fill, refusal on an unplaceable brief |
-| `test_ontology_contracts.py` | Space semantics, symmetric relation matrix, vertical no-wet-over-habitable law, typology catalog completeness |
-| `test_drawing_ir.py` / `test_drafting_hygiene.py` | Sheet parity with the model, bbox containment, `L0/L1` level ladders, `m²` typography, title-block fields |
-| `test_living_quality_layers.py` | Layers 2–4: door swings, fixture clearances, furniture placement and kitchen working triangle |
-| `test_pipeline_contracts.py` | API ↔ frontend response contract, wall-graph DTO, dimension-chain sum, sidebar single-source combinations |
-| `test_proportions_and_wet_stack.py` | Frontage is capped at each space's catalogue proportion, bands are split so their rooms can fill them, every disproportionate room is named, and `VERT-01` is only claimed where the room measurably stacks |
-| `test_compact_t2_unit_plan.py` | The 12 × 15 T2 plate holds both unit programmes: stair on the east flank, pocket bedroom + second bath, every room at its catalogue gross minimum, both living rooms opening off the lobby, no bath/kitchen shared wall (HYG-02), identical wet positions on every storey, and the row plan untouched on plates that already fit |
-| `test_analyze_boundary.py` / `test_plot_coverage_contract.py` | Boundary echo, statutory-area rejection, area disagreement surfacing, traced boundaries never overhanging |
-| `test_irregular_site_geometry.py` | Projection round-trip, self-intersection and narrow-wedge rejection, golden L-shape/courtyard cases, PDF parity |
-| `test_report_honesty_parity.py` / `test_pdf_hygiene_parity.py` | Warnings verbatim in UI and PDF, null seismic zone never rendered as a letter, no mid-word PDF truncation |
+| `blueprint/test_floorplan.py` | Grid discretisation, Vastu quadrant constraints, plumbing adjacency, disjointness/containment, dissection contiguity, SVG validity |
+| `blueprint/test_multi_floor_engine.py` | Vertical core stacking, cross-floor graph reachability, wet-stack alignment, graceful degradation (EC01–EC04), typology × storey × strictness matrix |
+| `blueprint/test_validation_gate.py` | The L1–L16 gate: severity typing, `pass/warn/na` tallies, a layer that did not run cannot pass, refusal honesty |
+| `blueprint/test_land_economics.py` | Programme-aware footprint, coverage ceiling, residual sliver absorption, explicit (never silent) programme deficit |
+| `blueprint/test_coverage_truth.py` | Captured-boundary coverage ceiling, plate fill, refusal on an unplaceable brief, traced boundaries never overhanging |
+| `blueprint/test_ontology_contracts.py` | Space semantics, symmetric relation matrix, vertical no-wet-over-habitable law, typology catalog completeness |
+| `reports/test_drawing_ir.py` | Sheet parity with the model, bbox containment, `L0/L1` level ladders, `m²` typography, title-block fields |
+| `blueprint/test_living_quality_layers.py` | Layers 2–4: door swings, fixture clearances, furniture placement and kitchen working triangle |
+| `reports/test_pipeline_contracts.py` | API ↔ frontend response contract, wall-graph DTO, dimension-chain sum, sidebar single-source combinations |
+| `blueprint/test_proportions_and_wet_stack.py` | Frontage is capped at each space's catalogue proportion, bands are split so their rooms can fill them, every disproportionate room is named, and `VERT-01` is only claimed where the room measurably stacks |
+| `blueprint/test_compact_t2_unit_plan.py` | The 12 × 15 T2 plate holds both unit programmes: stair on the east flank, pocket bedroom + second bath, every room at its catalogue gross minimum, both living rooms opening off the lobby, no bath/kitchen shared wall (HYG-02), identical wet positions on every storey, and the row plan untouched on plates that already fit |
+| `api/test_analyze_boundary.py` / `blueprint/test_coverage_truth.py` | Boundary echo, statutory-area rejection, area disagreement surfacing, traced boundaries never overhanging |
+| `blueprint/test_irregular_site_geometry.py` | Projection round-trip, self-intersection and narrow-wedge rejection, golden L-shape/courtyard cases, PDF parity |
+| `reports/test_report_honesty_parity.py` / `reports/test_pdf_hygiene_parity.py` | Warnings verbatim in UI and PDF, null seismic zone never rendered as a letter, no mid-word PDF truncation |
 
 #### Engine scripts (`backend/scripts/`)
 ```bash
@@ -243,22 +248,23 @@ built tree (`vite preview` on port 4173 for `audit:landing`) or the dev servers 
 
 | Command | Contract it proves |
 |:---|:---|
-| `node scripts/test_boundary_pipeline.cjs` | Projection parity, boundary canonicalisation, gate layer ids (L1–L15), sheet-truth chips, frontage callouts |
-| `node scripts/test_unified_source.cjs` | One source of truth for the capture → analysis → report payload |
+| `npm run test:boundary` | Projection parity, boundary canonicalisation, gate layer ids (L1–L16), sheet-truth chips, frontage callouts |
+| `npm run test:reset-reducer` | Session reset reducer state transitions and saved-parameter preservation |
+| `npm run test:report-surface` | L16 proportion table, FAIL stamp, and print-wiring pins |
+| `npm run test:warning-report` · `test:plan-advisor` | Warning severity grouping, truth-label counts, and deterministic remediation advisor parity |
+| `npm run test:validation-guards` | Coordinate guards, typology programme floor, and abort/request validation |
+| `npm run test:blueprint-reveal` · `test:blueprint-view-mode` | Progressive SVG reveal groups, sanitization, and CAD/Paper view modes |
+| `npm run test:plot-camera` | Plot camera framing and bounds calculation |
+| `npm run test:verify-email` | Email verification OTP redirect and `ProtectedApp` verified-session routing |
 | `npm run test:design` | Design-token grammar and interaction primitives |
 | `npm run test:interaction` | Focus, keyboard and pressed-state behaviour |
 | `npm run test:map-controls` | Map control offsets against the HUD |
-| `npm run test:trace-ui` | Capture wizard tracing flow |
+| `npm run test:trace-ui` *(dev servers + auth session required)* | Capture wizard tracing flow |
 | `npm run lint:tokens` · `lint:emoji` · `lint:css` | No ad-hoc colour literals, no banned glyphs, no orphan CSS |
 | `npm run lint:material` | Every blur/translucency surface is classified chrome (pinned ledger; regenerate with `--update`) |
 | `npm run check:contrast` | Text contrast against the design tokens |
 | `npm run assert:bundle` | Route-level bundle split is intact |
-| `npm run test:e2e` *(dev servers required)* | Full funnel in Chromium: capture → analysis → blueprint, including land economics, the scheme picker re-solving the plate, the 390 px report section-nav fade, the frontage vertex pair and float-free numeric inputs |
-| `node scripts/audit_sidebar_wiring.cjs` *(dev servers required)* | Every sidebar control moves a visible output, light + dark proofs, dropdown/menu keyboard behaviour |
-| `node scripts/e2e_certificate_truth.cjs` *(dev servers required)* | Certificate truth labels in the browser: the CERTIFIED and the FAIL-stamp case each render their own group counts, the definition legend verbatim, and the PDF page-1 rows |
-| `node scripts/e2e_certification_search.cjs` *(dev servers required)* | The T2 certification-search case: strategy chip, grouped rows, and applying the named alternative through the real API |
-| `node scripts/e2e_warning_surface.cjs` *(dev servers required)* | The 55-message warning surface at 1280 and 390 with zero horizontal spill, then a real engine remediation whose certificate matches the card's dry-run |
-| `node scripts/e2e_plan_advisor.cjs` *(dev servers required)* | Advisor offline vs live renders the same cards, order and measured numbers; writes the parity table and screenshots |
+| `npm run test:e2e` *(dev servers + auth session required)* | Full funnel in Chromium: capture → analysis → blueprint, including land economics, the scheme picker re-solving the plate, the 390 px report section-nav fade, the frontage vertex pair and float-free numeric inputs |
 | `npm run audit:landing` *(preview build on 4173)* | Landing console, axe, overflow, CLS and LCP across viewports, 44 px tap targets and the fixed porcelain palette under an OS `prefers-color-scheme: dark` preference. The landing is intentionally light-only (see `index.css`); the dark pass asserts it stays porcelain rather than inverting. Exits non-zero on console/page errors, axe violations, undersized targets, document overflow or an inverted palette |
 
 ---

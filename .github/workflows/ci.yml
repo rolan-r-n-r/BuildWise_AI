@@ -44,10 +44,15 @@ jobs:
       - name: Lint
         working-directory: frontend
         run: npm run lint
-      - name: Typecheck + production build
+      - name: Typecheck, build & unit/contract gates
         working-directory: frontend
-        run: npm run build
-      - name: Report surface (L16 table, FAIL stamp, print wiring)
+        run: npm run gates
+      - name: Static design, material, emoji, CSS & contrast lints
         working-directory: frontend
-        run: npm run test:report-surface
+        run: |
+          npm run lint:tokens
+          npm run lint:emoji
+          npm run lint:css
+          npm run lint:material
+          npm run check:contrast
 
