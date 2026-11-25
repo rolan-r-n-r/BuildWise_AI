@@ -55,23 +55,32 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  const isWaking = status === 'WAKING_UP';
+  const isActionBar = status === 'OFFLINE' || status === 'ERROR';
+
   return (
     <div
       role="region"
       aria-label="BuildWise Backend Server Status"
-      className={`inline-flex flex-col gap-2 max-w-full ${className}`}
+      className={`inline-flex flex-col gap-2 max-w-full ${
+        isWaking || isActionBar ? 'w-full xs:w-auto' : ''
+      } ${className}`}
     >
       <div
-        className={`group relative inline-flex ${
-          status === 'WAKING_UP' ? 'flex-wrap' : 'flex-nowrap'
-        } items-center gap-1.5 sm:gap-2 rounded-full border border-bw-line bg-bw-surface px-3 sm:px-3.5 py-1.5 text-[11.5px] sm:text-[12px] font-medium text-bw-ink-2 transition-colors duration-200 hover:border-bw-ink-3 max-w-full min-h-[44px]`}
+        className={`group relative ${
+          isWaking
+            ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 rounded-[18px] px-3.5 py-2.5 md:inline-flex md:flex-nowrap md:gap-2.5 md:rounded-full md:py-1 md:pl-3.5 md:pr-1.5'
+            : isActionBar
+              ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 rounded-[18px] px-3.5 py-2.5 xs:inline-flex xs:flex-nowrap xs:gap-2 xs:rounded-full xs:py-0.5 xs:pl-3.5 xs:pr-1'
+              : 'inline-grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5 sm:gap-2 rounded-full pl-3.5 pr-1 py-0.5'
+        } border border-bw-line bg-bw-surface text-[12px] font-medium text-bw-ink-2 transition-colors duration-200 hover:border-bw-ink-3 max-w-full min-h-[44px]`}
         style={{ boxShadow: 'var(--bw-shadow-1)' }}
       >
-        {/* Status Indicator Icon / Dot */}
-        <div className="flex items-center gap-2 min-w-0 flex-1 sm:flex-initial">
+        {/* Status Indicator Icon / Dot + Message */}
+        <div className="flex items-center gap-2 min-w-0">
           {status === 'CHECKING' && (
             <span
-              className="relative flex h-2 w-2"
+              className="relative flex h-2 w-2 shrink-0"
               title="Checking server status"
               aria-hidden="true"
             >
@@ -81,7 +90,7 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
 
           {status === 'ONLINE' && (
             <span
-              className="relative flex h-2 w-2"
+              className="relative flex h-2 w-2 shrink-0"
               title="Server is operational"
               aria-hidden="true"
             >
@@ -95,7 +104,7 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
 
           {status === 'OFFLINE' && (
             <span
-              className="relative flex h-2 w-2"
+              className="relative flex h-2 w-2 shrink-0"
               title="Server is sleeping"
               aria-hidden="true"
             >
@@ -105,7 +114,7 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
 
           {status === 'WAKING_UP' && (
             <span
-              className="relative flex h-2.5 w-2.5 text-bw-accent flex-shrink-0"
+              className="relative flex h-2.5 w-2.5 text-bw-accent shrink-0"
               title="Server is starting up"
               aria-hidden="true"
             >
@@ -117,7 +126,7 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
 
           {status === 'ERROR' && (
             <span
-              className="relative flex h-2 w-2"
+              className="relative flex h-2 w-2 shrink-0"
               title="Connection error"
               aria-hidden="true"
             >
@@ -164,17 +173,23 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
             {status === 'OFFLINE' && (
               <span className="text-bw-ink-2 truncate">
                 <span className="font-semibold text-bw-ink">Server Sleeping</span>
-                <span className="hidden xs:inline ml-1">· Free tier cold start</span>
+                <span className="ml-1 md:hidden">· Cold start</span>
+                <span className="hidden md:inline ml-1">· Free tier cold start</span>
               </span>
             )}
 
             {status === 'WAKING_UP' && (
-              <span className="text-bw-ink font-semibold truncate">
-                {elapsedSeconds > estimatedTotalSeconds
-                  ? 'Finalizing server startup...'
-                  : 'Waking up server...'}
-                <span className="ml-1.5 font-normal text-bw-ink-3 ui-font-tabular hidden sm:inline">
-                  ({formatTime(elapsedSeconds)} / ~{formatTime(estimatedTotalSeconds)})
+              <span className="flex items-baseline gap-1.5 min-w-0">
+                <span className="text-bw-ink font-semibold truncate">
+                  {elapsedSeconds > estimatedTotalSeconds
+                    ? 'Finalizing server startup...'
+                    : 'Waking up server...'}
+                </span>
+                <span className="font-normal text-bw-ink-3 ui-font-tabular shrink-0 text-[11px]">
+                  <span className="md:hidden">({formatTime(elapsedSeconds)})</span>
+                  <span className="hidden md:inline">
+                    ({formatTime(elapsedSeconds)} / ~{formatTime(estimatedTotalSeconds)})
+                  </span>
                 </span>
               </span>
             )}
@@ -187,52 +202,12 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
           </div>
         </div>
 
-        {/* Progress Bar (during WAKING_UP) */}
-        {status === 'WAKING_UP' && (
-          <div
-            className="w-full xs:w-28 sm:w-32 h-1.5 bg-bw-line rounded-full overflow-hidden flex-shrink-0"
-            role="progressbar"
-            aria-valuenow={progressPercent}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="Server wake-up progress"
-          >
-            <motion.div
-              className="h-full bg-bw-accent rounded-full"
-              initial={{ width: '6%' }}
-              animate={{ width: `${Math.max(6, progressPercent)}%` }}
-              transition={{ duration: 0.8, ease: 'easeOut' }}
-            />
-          </div>
-        )}
-
-        {/* Action Controls — every control keeps >= 44px hit height */}
-        <div className="flex items-center gap-0.5 ml-auto flex-shrink-0 -my-1.5">
-          {status === 'OFFLINE' && (
-            <button
-              type="button"
-              onClick={() => void wakeUp()}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-bw-cta px-3.5 text-[11.5px] font-semibold text-bw-cta-ink transition-[background-color,transform] duration-150 hover:bg-bw-cta-hover active:scale-95 cursor-pointer"
-              style={{ boxShadow: 'var(--bw-shadow-1)' }}
-              aria-label="Wake up BuildWise backend server"
-            >
-              <Icon name="zap" size={12} className="text-bw-amber" />
-              <span>Wake Up Server</span>
-            </button>
-          )}
-
-          {status === 'ERROR' && (
-            <button
-              type="button"
-              onClick={() => void wakeUp()}
-              className="inline-flex min-h-11 items-center gap-1 rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 px-3 text-[11.5px] font-semibold text-rose-700 dark:text-rose-300 transition-colors duration-150 hover:bg-rose-100 dark:hover:bg-rose-900/60 active:scale-95 cursor-pointer"
-              aria-label="Retry server wake-up"
-            >
-              <Icon name="refresh" size={11} />
-              <span>Retry</span>
-            </button>
-          )}
-
+        {/* Info / Refresh Utility Controls — always top-right; every control keeps >= 44px hit box */}
+        <div
+          className={`flex items-center gap-0.5 justify-self-end shrink-0 ${
+            isWaking || isActionBar ? '-my-1.5 xs:my-0' : ''
+          } ${isActionBar ? 'xs:order-3' : 'md:order-3'}`}
+        >
           {status === 'ONLINE' && (
             <button
               type="button"
@@ -257,6 +232,57 @@ export const ServerStatusWidget: React.FC<ServerStatusWidgetProps> = ({
             <Icon name="info" size={14} />
           </button>
         </div>
+
+        {/* Action CTA (row 2 full-width on narrow phones, centered h-8 pill inside 44px tap wrapper on xs+) */}
+        {status === 'OFFLINE' && (
+          <button
+            type="button"
+            onClick={() => void wakeUp()}
+            className="group/btn col-span-full w-full xs:w-auto xs:order-2 inline-flex min-h-11 items-center justify-center rounded-[12px] xs:rounded-full cursor-pointer"
+            aria-label="Wake Up Server — start BuildWise backend"
+          >
+            <span
+              className="w-full xs:w-auto inline-flex h-10 xs:h-8 items-center justify-center gap-1.5 rounded-[11px] xs:rounded-full bg-bw-cta px-3.5 text-[11.5px] font-semibold text-bw-cta-ink transition-[background-color,transform] duration-150 group-hover/btn:bg-bw-cta-hover group-active/btn:scale-95 whitespace-nowrap"
+              style={{ boxShadow: 'var(--bw-shadow-1)' }}
+            >
+              <Icon name="zap" size={12} className="text-bw-amber shrink-0" />
+              <span>Wake Up Server</span>
+            </span>
+          </button>
+        )}
+
+        {status === 'ERROR' && (
+          <button
+            type="button"
+            onClick={() => void wakeUp()}
+            className="group/btn col-span-full w-full xs:w-auto xs:order-2 inline-flex min-h-11 items-center justify-center rounded-[12px] xs:rounded-full cursor-pointer"
+            aria-label="Retry server wake-up"
+          >
+            <span className="w-full xs:w-auto inline-flex h-10 xs:h-8 items-center justify-center gap-1.5 rounded-[11px] xs:rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 px-3.5 text-[11.5px] font-semibold text-rose-700 dark:text-rose-300 transition-colors duration-150 group-hover/btn:bg-rose-100 dark:group-hover/btn:bg-rose-900/60 group-active/btn:scale-95 whitespace-nowrap">
+              <Icon name="refresh" size={11} />
+              <span>Retry</span>
+            </span>
+          </button>
+        )}
+
+        {/* Progress Bar (full bottom track on mobile/narrow tablet, inline on md+) */}
+        {status === 'WAKING_UP' && (
+          <div
+            className="col-span-full w-full md:order-2 md:w-32 h-1.5 bg-bw-line rounded-full overflow-hidden shrink-0"
+            role="progressbar"
+            aria-valuenow={progressPercent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Server wake-up progress"
+          >
+            <motion.div
+              className="h-full bg-bw-accent rounded-full"
+              initial={{ width: '6%' }}
+              animate={{ width: `${Math.max(6, progressPercent)}%` }}
+              transition={{ duration: 0.8, ease: 'easeOut' }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Expandable Info Popover / Disclosure */}
